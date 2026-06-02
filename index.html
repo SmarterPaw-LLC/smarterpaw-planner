@@ -94,6 +94,37 @@
   .add-row { display: flex; gap: 8px; margin-top: 9px; } .add-row input { flex: 1; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--danger);
     color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 80; display: none; max-width: 90vw; }
+  /* calendar */
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; background: var(--panel-2); padding: 6px 13px; }
+  .seg button.active { background: var(--accent); color: #fff; font-weight: 600; }
+  #calendar { display: none; flex: 1; flex-direction: column; padding: 14px 20px; overflow: hidden; }
+  .cal-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .cal-label { font-weight: 700; font-size: 15px; margin-left: 6px; }
+  .cal-main { flex: 1; display: flex; gap: 14px; overflow: hidden; }
+  .tray { width: 230px; min-width: 230px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .tray h3 { font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 2px 4px 4px; letter-spacing: .3px; }
+  .cal-grid-wrap { flex: 1; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .month { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .dow { padding: 7px 8px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+    border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  .day-cell { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 108px;
+    padding: 4px 5px 7px; display: flex; flex-direction: column; gap: 3px; }
+  .day-cell.other .daynum { opacity: .35; }
+  .day-head { display: flex; align-items: center; justify-content: space-between; }
+  .daynum { font-size: 12px; font-weight: 600; padding: 1px 6px; }
+  .day-cell.today .daynum { background: var(--accent); color: #fff; border-radius: 999px; }
+  .add-day { font-size: 13px; color: var(--muted); cursor: pointer; opacity: 0; transition: .1s; padding: 0 4px; }
+  .day-cell:hover .add-day { opacity: .7; }
+  .add-day:hover { opacity: 1; color: var(--text); }
+  .day-cell.drag-over { background: rgba(109,93,252,.14); }
+  .week { display: grid; grid-template-columns: repeat(7, 1fr); min-height: 100%; }
+  .week-col { min-height: 100%; }
+  .dayview { min-height: 100%; border: none; }
+  .ev { font-size: 12px; padding: 3px 7px; border-radius: 6px; color: #fff; cursor: grab; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .ev:active { cursor: grabbing; }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 </style>
@@ -102,6 +133,7 @@
 <header>
   <div class="brand-title">Smarter<span>Paw</span> · Channel Planner</div>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
+  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button></div>
   <div class="filters" id="brandFilters"></div>
   <div class="filters">
     <select id="channelFilter"><option value="">All channels</option></select>
@@ -116,6 +148,20 @@
 </header>
 
 <div class="board" id="board"></div>
+
+<div id="calendar">
+  <div class="cal-controls">
+    <div class="seg" id="calModeSeg"><button data-m="month" class="active">Month</button><button data-m="week">Week</button><button data-m="day">Day</button></div>
+    <button id="calPrev" title="Previous">‹</button>
+    <button id="calToday">Today</button>
+    <button id="calNext" title="Next">›</button>
+    <div class="cal-label" id="calLabel"></div>
+  </div>
+  <div class="cal-main">
+    <div class="tray" id="calTray"></div>
+    <div class="cal-grid-wrap" id="calGrid"></div>
+  </div>
+</div>
 
 <!-- Add / Edit deliverable -->
 <div class="overlay" id="overlay">
@@ -204,6 +250,7 @@ let activeBrands = new Set(BRANDS.map(b => b.name));
 let channelFilter = "", searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
+let view = "board", calMode = "month", calRef = new Date();
 let _idc = Date.now();
 function uid() { return "c" + (_idc++).toString(36); }
 function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 3500); }
@@ -234,6 +281,11 @@ async function updateCard(id, d) {
 async function patchStatus(id, status) {
   if (!ONLINE) { cards.find(c => c.id === id).status = status; saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").update({ status }).eq("id", id);
+  if (error) toast("Update failed: " + error.message); else refetch();
+}
+async function patchDue(id, due) {
+  if (!ONLINE) { const c = cards.find(c => c.id === id); if (c) c.due = due; saveLocal(); render(); return; }
+  const { error } = await db.from("deliverables").update({ due: due || null }).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
 }
 async function removeCard(id) {
@@ -305,7 +357,8 @@ function visibleCards() {
   return cards.filter(c => activeBrands.has(c.brand) && (!channelFilter || c.channel === channelFilter) &&
     (!q || (c.title + " " + (c.notes||"") + " " + (c.owner||"")).toLowerCase().includes(q)));
 }
-function render() {
+function render() { if (view === "calendar") renderCalendar(); else renderBoard(); }
+function renderBoard() {
   const board = document.getElementById("board"); board.innerHTML = "";
   const vis = visibleCards();
   STATUSES.forEach(st => {
@@ -337,6 +390,107 @@ function cardEl(c) {
   el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); el.classList.add("dragging"); });
   el.addEventListener("dragend", () => el.classList.remove("dragging"));
   return el;
+}
+
+/* ---------- calendar view ---------- */
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function startOfWeek(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate()-x.getDay()); return x; }
+function setView(v) {
+  view = v;
+  document.getElementById("board").style.display = v === "board" ? "flex" : "none";
+  document.getElementById("calendar").style.display = v === "calendar" ? "flex" : "none";
+  document.querySelectorAll("#viewToggle button").forEach(b => b.classList.toggle("active", b.dataset.v === v));
+  render();
+}
+function setCalMode(m) {
+  calMode = m;
+  document.querySelectorAll("#calModeSeg button").forEach(b => b.classList.toggle("active", b.dataset.m === m));
+  renderCalendar();
+}
+function calNav(dir) {
+  if (calMode === "month") calRef = new Date(calRef.getFullYear(), calRef.getMonth()+dir, 1);
+  else if (calMode === "week") calRef = addDays(calRef, 7*dir);
+  else calRef = addDays(calRef, dir);
+  renderCalendar();
+}
+function eventsFor(date) { const k = ymd(date); return visibleCards().filter(c => c.due === k); }
+function evEl(c) {
+  const e = document.createElement("div"); e.className = "ev";
+  e.style.background = BRAND_HEX[c.brand] || "#555"; e.textContent = c.title;
+  e.title = c.brand + " · " + c.channel + (c.owner ? " · " + c.owner : "");
+  e.draggable = true;
+  e.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); });
+  e.addEventListener("click", ev => { ev.stopPropagation(); openModal(c); });
+  return e;
+}
+function attachDrop(cell, date) {
+  cell.addEventListener("dragover", e => { e.preventDefault(); cell.classList.add("drag-over"); });
+  cell.addEventListener("dragleave", () => cell.classList.remove("drag-over"));
+  cell.addEventListener("drop", e => { e.preventDefault(); cell.classList.remove("drag-over");
+    const id = e.dataTransfer.getData("text/plain"); if (id) patchDue(id, ymd(date)); });
+}
+function dayCell(date, inMonth, todayKey) {
+  const cell = document.createElement("div");
+  cell.className = "day-cell" + (inMonth ? "" : " other") + (ymd(date) === todayKey ? " today" : "");
+  const head = document.createElement("div"); head.className = "day-head";
+  const num = document.createElement("span"); num.className = "daynum"; num.textContent = date.getDate();
+  const plus = document.createElement("span"); plus.className = "add-day"; plus.textContent = "＋"; plus.title = "Add deliverable";
+  plus.onclick = ev => { ev.stopPropagation(); openModal(null, { due: ymd(date) }); };
+  head.appendChild(num); head.appendChild(plus); cell.appendChild(head);
+  eventsFor(date).forEach(c => cell.appendChild(evEl(c)));
+  attachDrop(cell, date); return cell;
+}
+function renderTray() {
+  const tray = document.getElementById("calTray"); tray.innerHTML = "<h3>Unscheduled</h3>";
+  const un = visibleCards().filter(c => !c.due);
+  if (un.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Nothing unscheduled"; tray.appendChild(e); return; }
+  un.forEach(c => { const e = evEl(c); e.style.whiteSpace = "normal"; tray.appendChild(e); });
+}
+function renderCalendar() {
+  const label = document.getElementById("calLabel"); const grid = document.getElementById("calGrid"); grid.innerHTML = "";
+  const todayKey = ymd(new Date());
+  if (calMode === "month") {
+    const y = calRef.getFullYear(), m = calRef.getMonth();
+    label.textContent = MONTHS[m] + " " + y;
+    const first = new Date(y, m, 1); const gridStart = startOfWeek(first);
+    const daysInMonth = new Date(y, m+1, 0).getDate(); const weeks = Math.ceil((first.getDay() + daysInMonth) / 7);
+    const month = document.createElement("div"); month.className = "month";
+    DOW.forEach(d => { const h = document.createElement("div"); h.className = "dow"; h.textContent = d; month.appendChild(h); });
+    for (let i = 0; i < weeks*7; i++) { const date = addDays(gridStart, i); month.appendChild(dayCell(date, date.getMonth() === m, todayKey)); }
+    grid.appendChild(month);
+  } else if (calMode === "week") {
+    const start = startOfWeek(calRef); const end = addDays(start, 6);
+    label.textContent = (start.getMonth() === end.getMonth())
+      ? MONTHS[start.getMonth()] + " " + start.getDate() + " – " + end.getDate() + ", " + end.getFullYear()
+      : MONTHS[start.getMonth()] + " " + start.getDate() + " – " + MONTHS[end.getMonth()] + " " + end.getDate() + ", " + end.getFullYear();
+    const week = document.createElement("div"); week.className = "week";
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(start, i);
+      const col = document.createElement("div"); col.className = "day-cell week-col" + (ymd(date) === todayKey ? " today" : "");
+      const head = document.createElement("div"); head.className = "day-head";
+      const lbl = document.createElement("span"); lbl.className = "daynum"; lbl.textContent = DOW[date.getDay()] + " " + date.getDate();
+      const plus = document.createElement("span"); plus.className = "add-day"; plus.textContent = "＋";
+      plus.onclick = ev => { ev.stopPropagation(); openModal(null, { due: ymd(date) }); };
+      head.appendChild(lbl); head.appendChild(plus); col.appendChild(head);
+      eventsFor(date).forEach(c => col.appendChild(evEl(c))); attachDrop(col, date); week.appendChild(col);
+    }
+    grid.appendChild(week);
+  } else {
+    const date = new Date(calRef.getFullYear(), calRef.getMonth(), calRef.getDate());
+    label.textContent = DOW[date.getDay()] + ", " + MONTHS[date.getMonth()] + " " + date.getDate() + ", " + date.getFullYear();
+    const dv = document.createElement("div"); dv.className = "dayview day-cell" + (ymd(date) === todayKey ? " today" : "");
+    const head = document.createElement("div"); head.className = "day-head";
+    const plus = document.createElement("button"); plus.textContent = "＋ Add for this day"; plus.onclick = () => openModal(null, { due: ymd(date) });
+    head.appendChild(plus); dv.appendChild(head);
+    const evs = eventsFor(date);
+    if (evs.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Nothing scheduled"; dv.appendChild(e); }
+    else evs.forEach(c => { const e = evEl(c); e.style.whiteSpace = "normal"; dv.appendChild(e); });
+    attachDrop(dv, date); grid.appendChild(dv);
+  }
+  renderTray();
 }
 
 /* ---------- filters / selects ---------- */
@@ -384,7 +538,7 @@ function renderOwnerChips() {
 }
 
 /* ---------- modal ---------- */
-function openModal(card) {
+function openModal(card, prefill) {
   modalOpen = true;
   document.getElementById("modalTitle").textContent = card ? "Edit deliverable" : "New deliverable";
   document.getElementById("f_id").value = card ? card.id : "";
@@ -394,7 +548,7 @@ function openModal(card) {
   document.getElementById("f_channel").value = card ? card.channel : (channelsList[0] ? channelsList[0].name : "");
   modalOwners = new Set((card && card.owner ? card.owner.split(",") : []).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
-  document.getElementById("f_due").value = card ? (card.due||"") : "";
+  document.getElementById("f_due").value = card ? (card.due||"") : (prefill && prefill.due ? prefill.due : "");
   document.getElementById("f_status").value = card ? card.status : STATUSES[0].key;
   document.getElementById("f_notes").value = card ? (card.notes||"") : "";
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
@@ -517,6 +671,12 @@ async function init() {
 
   document.getElementById("channelFilter").onchange = e => { channelFilter = e.target.value; render(); };
   document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
+
+  document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => setView(b.dataset.v));
+  document.querySelectorAll("#calModeSeg button").forEach(b => b.onclick = () => setCalMode(b.dataset.m));
+  document.getElementById("calPrev").onclick = () => calNav(-1);
+  document.getElementById("calNext").onclick = () => calNav(1);
+  document.getElementById("calToday").onclick = () => { calRef = new Date(); renderCalendar(); };
 
   document.getElementById("addBtn").onclick = () => openModal(null);
   document.getElementById("saveBtn").onclick = saveModal;

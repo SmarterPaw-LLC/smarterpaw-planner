@@ -16,3 +16,5 @@ supabase/.env
 # local scratch
 *.local
 test.xlsx
+.preview-server.cjs
+.claude/
