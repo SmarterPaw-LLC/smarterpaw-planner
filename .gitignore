@@ -1,0 +1,18 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# node (only if you later add tooling)
+node_modules/
+npm-debug.log*
+
+# supabase CLI local files
+.branches/
+.temp/
+supabase/.env
+
+# local scratch
+*.local
+test.xlsx
