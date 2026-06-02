@@ -125,6 +125,18 @@
   .ev { font-size: 12px; padding: 3px 7px; border-radius: 6px; color: #fff; cursor: grab; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .ev:active { cursor: grabbing; }
+  .ver { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--panel-2);
+    color: var(--muted); border: 1px solid var(--line); }
+  .ver:hover { color: var(--text); border-color: var(--accent); }
+  .row-ctrls { display: inline-flex; gap: 4px; align-items: center; }
+  .mv { padding: 2px 8px; color: var(--text); border-color: transparent; background: transparent; font-weight: 700; }
+  .mv:hover { border-color: var(--accent); }
+  .mv:disabled { opacity: .25; cursor: default; border-color: transparent; }
+  .lane-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+  #changelogList { display: flex; flex-direction: column; gap: 9px; }
+  #changelogList .cl { font-size: 13px; color: var(--text); padding: 8px 11px; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 8px; }
+  #changelogList .cl.new { border-color: var(--accent); }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 </style>
@@ -132,6 +144,7 @@
 <body>
 <header>
   <div class="brand-title">Smarter<span>Paw</span> · Channel Planner</div>
+  <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
   <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button></div>
   <div class="filters" id="brandFilters"></div>
@@ -193,7 +206,12 @@
 <!-- Manage channels & people -->
 <div class="overlay" id="manageOverlay">
   <div class="modal">
-    <h2>Manage channels &amp; people</h2>
+    <h2>Manage board</h2>
+    <div class="manage-sec">
+      <span class="seclabel">Board lanes (drag order with ↑ ↓)</span>
+      <div class="manage-list" id="manageStatuses"></div>
+      <div class="add-row"><input id="mAddStatus" placeholder="New lane…" /><button class="primary" id="mAddStatusBtn">Add</button></div>
+    </div>
     <div class="manage-sec">
       <span class="seclabel">Channels</span>
       <div class="manage-list" id="manageChannels"></div>
@@ -222,6 +240,15 @@
   </div>
 </div>
 
+<!-- Version history -->
+<div class="overlay" id="verOverlay">
+  <div class="modal" style="width:420px">
+    <h2>Version history</h2>
+    <div id="changelogList"></div>
+    <div class="modal-actions"><div class="spacer"></div><button id="verClose">Close</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -232,10 +259,21 @@ const BRANDS = [{ name: "Meowi" }, { name: "Doggi" }, { name: "Kitty" }];
 const BRAND_HEX = { Meowi: "#6d5dfc", Doggi: "#f5a524", Kitty: "#ec4899" };
 const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / Landing"];
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
-const STATUSES = [
-  { key: "Backlog", color: "var(--backlog)" }, { key: "In Progress", color: "var(--progress)" },
-  { key: "Review", color: "var(--review)" }, { key: "Scheduled", color: "var(--scheduled)" }, { key: "Live", color: "var(--live)" },
+// ── Version & changelog ───────────────────────────────────────────────
+// To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
+const VERSION = "1.3";
+const CHANGELOG = [
+  "v1.3 — Custom Kanban lanes, add channels from the dropdown, version history",
+  "v1.2 — Calendar view (month / week / day) with drag-to-reschedule + unscheduled tray",
+  "v1.1 — Manageable channels & people, multiple owners per deliverable",
+  "v1.0 — Initial board + Supabase live-sync backend",
 ];
+
+const DEFAULT_STATUSES = ["Backlog", "In Progress", "Review", "Scheduled", "Live"];
+const STATUS_COLORS = { "Backlog": "var(--backlog)", "In Progress": "var(--progress)",
+  "Review": "var(--review)", "Scheduled": "var(--scheduled)", "Live": "var(--live)" };
+const PALETTE = ["#6b7280","#3b82f6","#a855f7","#f59e0b","#22c55e","#ec4899","#06b6d4","#84cc16","#f43f5e","#14b8a6"];
+function statusColor(name, idx) { return STATUS_COLORS[name] || PALETTE[idx % PALETTE.length]; }
 const STORE_KEY = "smarterpaw-planner-v1";
 const LIST_KEY = "smarterpaw-planner-lists-v1";
 
@@ -246,6 +284,7 @@ const db = ONLINE ? window.supabase.createClient(CFG.url, CFG.anonKey) : null;
 let cards = [];
 let channelsList = [];   // [{id?, name}]
 let peopleList = [];     // [{id?, name}]
+let statusList = [];     // [{id?, name}] — the Kanban lanes, in order
 let activeBrands = new Set(BRANDS.map(b => b.name));
 let channelFilter = "", searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
@@ -304,33 +343,37 @@ function sampleData() {
 }
 
 /* ---------- channels & people lists ---------- */
-function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList })); }
+function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList, statuses: statusList })); }
 async function loadLists() {
   if (!ONLINE) {
     const raw = JSON.parse(localStorage.getItem(LIST_KEY) || "null");
-    if (raw && raw.channels) { channelsList = raw.channels; peopleList = raw.people || []; }
-    else { channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n })); saveListsLocal(); }
+    if (raw && raw.channels) { channelsList = raw.channels; peopleList = raw.people || []; statusList = raw.statuses || DEFAULT_STATUSES.map(n => ({ name: n })); }
+    else { channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n })); statusList = DEFAULT_STATUSES.map(n => ({ name: n })); saveListsLocal(); }
     return;
   }
   const { data, error } = await db.from("lists").select("*").order("position", { ascending: true });
   if (error) {
-    channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
-    if (!_listsWarned) { _listsWarned = true; toast("Channels/people not saved yet — run the lists SQL (0002) in Supabase."); }
+    channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n })); statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
+    if (!_listsWarned) { _listsWarned = true; toast("Lists not saved yet — run the lists SQL (0002/0003) in Supabase."); }
     return;
   }
   channelsList = data.filter(r => r.kind === "channel").map(r => ({ id: r.id, name: r.name }));
   peopleList = data.filter(r => r.kind === "person").map(r => ({ id: r.id, name: r.name }));
+  statusList = data.filter(r => r.kind === "status").map(r => ({ id: r.id, name: r.name }));
   if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
+  if (statusList.length === 0) statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
 }
+function listFor(kind) { return kind === "channel" ? channelsList : kind === "person" ? peopleList : statusList; }
 async function reloadListsAndUI() { await loadLists(); afterListsChanged(); }
 function afterListsChanged() {
-  buildChannelFilter(); buildChannelSelect();
+  buildChannelFilter(); buildChannelSelect(); buildStatusSelect();
   if (modalOpen) renderOwnerChips();
   if (manageOpen) renderManage();
+  render();
 }
 async function addList(kind, name) {
   name = (name || "").trim(); if (!name) return false;
-  const arr = kind === "channel" ? channelsList : peopleList;
+  const arr = listFor(kind);
   if (arr.some(x => x.name.toLowerCase() === name.toLowerCase())) { toast('"' + name + '" already exists'); return false; }
   if (!ONLINE) { arr.push({ name }); saveListsLocal(); afterListsChanged(); return true; }
   const { error } = await db.from("lists").insert({ kind, name, position: arr.length + 1 });
@@ -338,14 +381,26 @@ async function addList(kind, name) {
   await reloadListsAndUI(); return true;
 }
 async function removeList(kind, item) {
-  if (!confirm('Remove "' + item.name + '"? Cards already using it keep the name.')) return;
+  if (kind === "status" && statusList.length <= 1) { toast("Keep at least one lane."); return; }
+  const extra = kind === "status" ? " Cards keep that status in a leftover column until you move them." : " Cards already using it keep the name.";
+  if (!confirm('Remove "' + item.name + '"?' + extra)) return;
   if (!ONLINE) {
-    if (kind === "channel") channelsList = channelsList.filter(x => x.name !== item.name);
-    else peopleList = peopleList.filter(x => x.name !== item.name);
+    const arr = listFor(kind);
+    if (kind === "channel") channelsList = arr.filter(x => x.name !== item.name);
+    else if (kind === "person") peopleList = arr.filter(x => x.name !== item.name);
+    else statusList = arr.filter(x => x.name !== item.name);
     saveListsLocal(); afterListsChanged(); return;
   }
   const { error } = await db.from("lists").delete().eq("id", item.id);
   if (error) toast("Remove failed: " + error.message); else reloadListsAndUI();
+}
+async function moveStatus(item, dir) {
+  const arr = [...statusList]; const i = arr.findIndex(s => s.name === item.name); const j = i + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  if (!ONLINE) { statusList = arr; saveListsLocal(); afterListsChanged(); return; }
+  await Promise.all(arr.map((s, k) => db.from("lists").update({ position: k + 1 }).eq("id", s.id)));
+  await reloadListsAndUI();
 }
 
 /* ---------- render board ---------- */
@@ -361,19 +416,27 @@ function render() { if (view === "calendar") renderCalendar(); else renderBoard(
 function renderBoard() {
   const board = document.getElementById("board"); board.innerHTML = "";
   const vis = visibleCards();
-  STATUSES.forEach(st => {
+  const laneNames = statusList.map(s => s.name);
+  const orphans = [...new Set(vis.map(c => c.status))].filter(s => s && !laneNames.includes(s));
+  const lanes = laneNames.map((name, i) => ({ name, color: statusColor(name, i) }))
+    .concat(orphans.map(name => ({ name, color: "#475569" })));
+  lanes.forEach(st => {
     const col = document.createElement("div"); col.className = "col";
-    const colCards = vis.filter(c => c.status === st.key);
-    col.innerHTML = `<div class="col-head"><div class="bar" style="background:${st.color}"></div>` +
-      `<h2>${st.key}</h2><span class="count">${colCards.length}</span></div><div class="col-body" data-status="${st.key}"></div>`;
-    const body = col.querySelector(".col-body");
-    if (colCards.length === 0) body.innerHTML = `<div class="empty">Drop here</div>`;
+    const colCards = vis.filter(c => c.status === st.name);
+    const head = document.createElement("div"); head.className = "col-head";
+    const bar = document.createElement("div"); bar.className = "bar"; bar.style.background = st.color;
+    const h2 = document.createElement("h2"); h2.textContent = st.name;
+    const cnt = document.createElement("span"); cnt.className = "count"; cnt.textContent = colCards.length;
+    head.appendChild(bar); head.appendChild(h2); head.appendChild(cnt);
+    const body = document.createElement("div"); body.className = "col-body";
+    col.appendChild(head); col.appendChild(body);
+    if (colCards.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Drop here"; body.appendChild(e); }
     else colCards.forEach(c => body.appendChild(cardEl(c)));
     body.addEventListener("dragover", e => { e.preventDefault(); body.classList.add("drag-over"); });
     body.addEventListener("dragleave", () => body.classList.remove("drag-over"));
     body.addEventListener("drop", e => { e.preventDefault(); body.classList.remove("drag-over");
       const id = e.dataTransfer.getData("text/plain"); const card = cards.find(c => c.id === id);
-      if (card && card.status !== st.key) patchStatus(id, st.key); });
+      if (card && card.status !== st.name) patchStatus(id, st.name); });
     board.appendChild(col);
   });
 }
@@ -511,13 +574,17 @@ function buildChannelFilter() {
 function buildChannelSelect() {
   const s = document.getElementById("f_channel"); const cur = s.value; s.innerHTML = "";
   channelsList.forEach(c => { const o = document.createElement("option"); o.value = c.name; o.textContent = c.name; s.appendChild(o); });
+  const add = document.createElement("option"); add.value = "__add_channel__"; add.textContent = "＋ Add new channel…"; s.appendChild(add);
   if (channelsList.some(c => c.name === cur)) s.value = cur;
+}
+function buildStatusSelect() {
+  const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
+  statusList.forEach(s => { const o = document.createElement("option"); o.value = s.name; o.textContent = s.name; ss.appendChild(o); });
+  if (statusList.some(s => s.name === cur)) ss.value = cur;
 }
 function fillStaticSelects() {
   const sb = document.getElementById("f_brand"); sb.innerHTML = "";
   BRANDS.forEach(b => { const o = document.createElement("option"); o.value = b.name; o.textContent = b.name; sb.appendChild(o); });
-  const ss = document.getElementById("f_status"); ss.innerHTML = "";
-  STATUSES.forEach(s => { const o = document.createElement("option"); o.value = s.key; o.textContent = s.key; ss.appendChild(o); });
 }
 
 /* ---------- owner chips ---------- */
@@ -544,12 +611,16 @@ function openModal(card, prefill) {
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
   document.getElementById("f_brand").value = card ? card.brand : BRANDS[0].name;
-  buildChannelSelect();
-  document.getElementById("f_channel").value = card ? card.channel : (channelsList[0] ? channelsList[0].name : "");
+  buildChannelSelect(); buildStatusSelect();
+  const chSel = document.getElementById("f_channel");
+  if (card && card.channel && !channelsList.some(c => c.name === card.channel)) { const o = document.createElement("option"); o.value = card.channel; o.textContent = card.channel; chSel.insertBefore(o, chSel.firstChild); }
+  chSel.value = card ? card.channel : (channelsList[0] ? channelsList[0].name : "");
   modalOwners = new Set((card && card.owner ? card.owner.split(",") : []).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
   document.getElementById("f_due").value = card ? (card.due||"") : (prefill && prefill.due ? prefill.due : "");
-  document.getElementById("f_status").value = card ? card.status : STATUSES[0].key;
+  const stSel = document.getElementById("f_status");
+  if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
+  stSel.value = card ? card.status : (statusList[0] ? statusList[0].name : "Backlog");
   document.getElementById("f_notes").value = card ? (card.notes||"") : "";
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
   document.getElementById("overlay").classList.add("show");
@@ -570,16 +641,28 @@ function deleteCard() { const id = document.getElementById("f_id").value; if (id
 
 /* ---------- manage panel ---------- */
 function renderManage() {
+  const ms = document.getElementById("manageStatuses"); ms.innerHTML = "";
+  statusList.forEach((s, i) => ms.appendChild(manageRow("status", s, i)));
   const mc = document.getElementById("manageChannels"); mc.innerHTML = "";
   channelsList.forEach(c => mc.appendChild(manageRow("channel", c)));
   const mp = document.getElementById("managePeople"); mp.innerHTML = "";
   peopleList.forEach(p => mp.appendChild(manageRow("person", p)));
 }
-function manageRow(kind, item) {
+function manageRow(kind, item, idx) {
   const row = document.createElement("div"); row.className = "manage-row";
-  const span = document.createElement("span"); span.textContent = item.name;
+  const span = document.createElement("span");
+  if (kind === "status") { const dot = document.createElement("span"); dot.className = "lane-dot";
+    dot.style.background = statusColor(item.name, idx); span.appendChild(dot); }
+  span.appendChild(document.createTextNode(item.name));
+  const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
+  if (kind === "status") {
+    const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
+    const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
+    ctrls.appendChild(up); ctrls.appendChild(dn);
+  }
   const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item);
-  row.appendChild(span); row.appendChild(btn); return row;
+  ctrls.appendChild(btn);
+  row.appendChild(span); row.appendChild(ctrls); return row;
 }
 function openManage() { manageOpen = true; renderManage(); document.getElementById("manageOverlay").classList.add("show"); }
 function closeManage() { manageOpen = false; document.getElementById("manageOverlay").classList.remove("show"); }
@@ -635,8 +718,9 @@ function zipStore(filesObj){
 }
 function exportXLSX(){
   const cols = ["Brand","Channel","Title","Owners","Due","Status","Notes"]; const rows = [cols];
-  const order = {}; STATUSES.forEach((s,i)=>order[s.key]=i);
-  [...cards].sort((a,b)=> a.brand.localeCompare(b.brand) || (order[a.status]-order[b.status]) || a.channel.localeCompare(b.channel))
+  const order = {}; statusList.forEach((s,i)=>order[s.name]=i);
+  const ord = s => (s in order ? order[s] : 999);
+  [...cards].sort((a,b)=> a.brand.localeCompare(b.brand) || (ord(a.status)-ord(b.status)) || a.channel.localeCompare(b.channel))
     .forEach(c => rows.push([c.brand, c.channel, c.title, c.owner||"", c.due||"", c.status, (c.notes||"").replace(/\n/g," ")]));
   download("smarterpaw-planner.xlsx", new Blob([buildXlsx(rows)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
@@ -657,11 +741,17 @@ function setSyncUI() {
     ? "Connected to Supabase. Changes sync live across everyone with the board open."
     : "Not connected — saving to this browser only.";
 }
+function renderChangelog() {
+  const box = document.getElementById("changelogList"); box.innerHTML = "";
+  CHANGELOG.forEach((line, i) => { const d = document.createElement("div"); d.className = "cl" + (i === 0 ? " new" : ""); d.textContent = line; box.appendChild(d); });
+}
 async function init() {
   fillStaticSelects();
   await loadLists();
-  buildBrandFilters(); buildChannelFilter(); buildChannelSelect();
+  buildBrandFilters(); buildChannelFilter(); buildChannelSelect(); buildStatusSelect();
   setSyncUI();
+  document.getElementById("verBtn").textContent = "v" + VERSION;
+  renderChangelog();
   await refetch();
 
   if (ONLINE) {
@@ -687,17 +777,29 @@ async function init() {
     const name = (prompt("New channel name:") || "").trim(); if (!name) return;
     const ok = await addList("channel", name); if (ok) document.getElementById("f_channel").value = name;
   };
+  document.getElementById("f_channel").addEventListener("change", async e => {
+    if (e.target.value !== "__add_channel__") return;
+    const name = (prompt("New channel name:") || "").trim();
+    if (name) { const ok = await addList("channel", name); e.target.value = ok ? name : (channelsList[0] || {}).name || ""; }
+    else e.target.value = (channelsList[0] || {}).name || "";
+  });
   document.getElementById("xlsxBtn").onclick = exportXLSX;
+  document.getElementById("verBtn").onclick = () => document.getElementById("verOverlay").classList.add("show");
+  document.getElementById("verClose").onclick = () => document.getElementById("verOverlay").classList.remove("show");
+  document.getElementById("verOverlay").onclick = e => { if (e.target.id === "verOverlay") e.currentTarget.classList.remove("show"); };
 
   document.getElementById("manageBtn").onclick = openManage;
   document.getElementById("manageClose").onclick = closeManage;
   document.getElementById("manageOverlay").onclick = e => { if (e.target.id === "manageOverlay") closeManage(); };
   const addCh = () => { const i = document.getElementById("mAddChannel"); addList("channel", i.value).then(ok => { if (ok) i.value = ""; }); };
   const addPe = () => { const i = document.getElementById("mAddPerson"); addList("person", i.value).then(ok => { if (ok) i.value = ""; }); };
+  const addSt = () => { const i = document.getElementById("mAddStatus"); addList("status", i.value).then(ok => { if (ok) i.value = ""; }); };
   document.getElementById("mAddChannelBtn").onclick = addCh;
   document.getElementById("mAddPersonBtn").onclick = addPe;
+  document.getElementById("mAddStatusBtn").onclick = addSt;
   document.getElementById("mAddChannel").addEventListener("keydown", e => { if (e.key === "Enter") addCh(); });
   document.getElementById("mAddPerson").addEventListener("keydown", e => { if (e.key === "Enter") addPe(); });
+  document.getElementById("mAddStatus").addEventListener("keydown", e => { if (e.key === "Enter") addSt(); });
 
   const menu = document.getElementById("menuOverlay");
   document.getElementById("menuBtn").onclick = () => menu.classList.add("show");
@@ -712,7 +814,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") saveModal();
   });
 }
