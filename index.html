@@ -69,14 +69,31 @@
   .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; width: 460px; max-width: 92vw; max-height: 90vh; overflow-y: auto; padding: 20px; }
   .modal h2 { margin: 0 0 16px; font-size: 16px; }
   .field { margin-bottom: 13px; }
-  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+  .field label, .seclabel { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+  .seclabel { text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
   .field input, .field select, .field textarea { width: 100%; }
   .field textarea { resize: vertical; min-height: 64px; }
   .row2 { display: flex; gap: 12px; } .row2 > .field { flex: 1; }
+  .ch-wrap { display: flex; gap: 6px; }
+  .ch-wrap select { flex: 1; }
+  .ch-wrap button { padding: 7px 11px; }
   .modal-actions { display: flex; gap: 8px; margin-top: 18px; } .modal-actions .spacer { flex: 1; }
   .hint { font-size: 11px; color: var(--muted); margin-top: 14px; }
+  .owner-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .owner-chip { cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px;
+    padding: 5px 12px; font-size: 12px; user-select: none; }
+  .owner-chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .owner-chip.add { border-style: dashed; color: var(--muted); }
+  .owner-chips .none { color: var(--muted); font-size: 12px; }
+  .manage-sec { margin-bottom: 18px; }
+  .manage-list { display: flex; flex-direction: column; gap: 6px; }
+  .manage-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px 6px 12px; }
+  .manage-row button { padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
+  .manage-row button:hover { border-color: var(--danger); }
+  .add-row { display: flex; gap: 8px; margin-top: 9px; } .add-row input { flex: 1; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--danger);
-    color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 80; display: none; }
+    color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 80; display: none; max-width: 90vw; }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 </style>
@@ -92,6 +109,7 @@
   </div>
   <div class="toolbar">
     <button class="primary" id="addBtn">+ Deliverable</button>
+    <button id="manageBtn">⚙ Manage</button>
     <button id="xlsxBtn">Export Excel</button>
     <button class="ghost" id="menuBtn">⋯</button>
   </div>
@@ -99,6 +117,7 @@
 
 <div class="board" id="board"></div>
 
+<!-- Add / Edit deliverable -->
 <div class="overlay" id="overlay">
   <div class="modal">
     <h2 id="modalTitle">New deliverable</h2>
@@ -106,13 +125,15 @@
     <div class="field"><label>Title</label><input id="f_title" placeholder="e.g. July sale carousel" /></div>
     <div class="row2">
       <div class="field"><label>Brand</label><select id="f_brand"></select></div>
-      <div class="field"><label>Channel</label><select id="f_channel"></select></div>
+      <div class="field"><label>Channel</label>
+        <div class="ch-wrap"><select id="f_channel"></select><button id="f_channelAdd" title="Add a channel">＋</button></div>
+      </div>
     </div>
+    <div class="field"><label>Owners</label><div class="owner-chips" id="f_owners"></div></div>
     <div class="row2">
-      <div class="field"><label>Owner</label><input id="f_owner" placeholder="Who's on it" /></div>
       <div class="field"><label>Due date</label><input id="f_due" type="date" /></div>
+      <div class="field"><label>Status</label><select id="f_status"></select></div>
     </div>
-    <div class="field"><label>Status</label><select id="f_status"></select></div>
     <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Brief, links, copy direction…"></textarea></div>
     <div class="modal-actions">
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
@@ -123,6 +144,26 @@
   </div>
 </div>
 
+<!-- Manage channels & people -->
+<div class="overlay" id="manageOverlay">
+  <div class="modal">
+    <h2>Manage channels &amp; people</h2>
+    <div class="manage-sec">
+      <span class="seclabel">Channels</span>
+      <div class="manage-list" id="manageChannels"></div>
+      <div class="add-row"><input id="mAddChannel" placeholder="New channel…" /><button class="primary" id="mAddChannelBtn">Add</button></div>
+    </div>
+    <div class="manage-sec">
+      <span class="seclabel">People</span>
+      <div class="manage-list" id="managePeople"></div>
+      <div class="add-row"><input id="mAddPerson" placeholder="New person…" /><button class="primary" id="mAddPersonBtn">Add</button></div>
+    </div>
+    <div class="modal-actions"><div class="spacer"></div><button id="manageClose">Done</button></div>
+    <div class="hint">Removing an item won't change cards that already use it — they keep the name.</div>
+  </div>
+</div>
+
+<!-- Data & backup -->
 <div class="overlay" id="menuOverlay">
   <div class="modal" style="width:360px">
     <h2>Data &amp; backup</h2>
@@ -143,29 +184,33 @@
 "use strict";
 const BRANDS = [{ name: "Meowi" }, { name: "Doggi" }, { name: "Kitty" }];
 const BRAND_HEX = { Meowi: "#6d5dfc", Doggi: "#f5a524", Kitty: "#ec4899" };
-const CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / Landing"];
+const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / Landing"];
+const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 const STATUSES = [
   { key: "Backlog", color: "var(--backlog)" }, { key: "In Progress", color: "var(--progress)" },
   { key: "Review", color: "var(--review)" }, { key: "Scheduled", color: "var(--scheduled)" }, { key: "Live", color: "var(--live)" },
 ];
 const STORE_KEY = "smarterpaw-planner-v1";
+const LIST_KEY = "smarterpaw-planner-lists-v1";
 
-/* ---------- data layer: Supabase if configured, else localStorage ---------- */
 const CFG = window.PLANNER_CONFIG || {};
 const ONLINE = !!(CFG.url && CFG.anonKey && window.supabase);
 const db = ONLINE ? window.supabase.createClient(CFG.url, CFG.anonKey) : null;
 
 let cards = [];
+let channelsList = [];   // [{id?, name}]
+let peopleList = [];     // [{id?, name}]
 let activeBrands = new Set(BRANDS.map(b => b.name));
 let channelFilter = "", searchText = "";
+let modalOpen = false, manageOpen = false, _listsWarned = false;
+let modalOwners = new Set();
 let _idc = Date.now();
 function uid() { return "c" + (_idc++).toString(36); }
-
 function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 3500); }
 
+/* ---------- deliverables data ---------- */
 function loadLocal() { try { return JSON.parse(localStorage.getItem(STORE_KEY)) || sampleData(); } catch (e) { return sampleData(); } }
 function saveLocal() { localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
-
 async function refetch() {
   if (!ONLINE) { cards = loadLocal(); render(); return; }
   const { data, error } = await db.from("deliverables").select("*").order("created_at", { ascending: true });
@@ -176,7 +221,6 @@ async function refetch() {
 }
 function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
   due: d.due || null, status: d.status, notes: d.notes || "" }; }
-
 async function createCard(d) {
   if (!ONLINE) { cards.push(Object.assign({ id: uid() }, d)); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").insert(dbObj(d));
@@ -197,7 +241,6 @@ async function removeCard(id) {
   const { error } = await db.from("deliverables").delete().eq("id", id);
   if (error) toast("Delete failed: " + error.message); else refetch();
 }
-
 function sampleData() {
   return [
     { id: uid(), title: "July sale teaser reels (3x)", brand: "Meowi", channel: "Organic Social", owner: "Brennan", due: "", status: "Backlog", notes: "Hook on Super Zoomies. Vertical 9:16." },
@@ -208,7 +251,52 @@ function sampleData() {
   ];
 }
 
-/* ---------- render ---------- */
+/* ---------- channels & people lists ---------- */
+function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList })); }
+async function loadLists() {
+  if (!ONLINE) {
+    const raw = JSON.parse(localStorage.getItem(LIST_KEY) || "null");
+    if (raw && raw.channels) { channelsList = raw.channels; peopleList = raw.people || []; }
+    else { channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n })); saveListsLocal(); }
+    return;
+  }
+  const { data, error } = await db.from("lists").select("*").order("position", { ascending: true });
+  if (error) {
+    channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
+    if (!_listsWarned) { _listsWarned = true; toast("Channels/people not saved yet — run the lists SQL (0002) in Supabase."); }
+    return;
+  }
+  channelsList = data.filter(r => r.kind === "channel").map(r => ({ id: r.id, name: r.name }));
+  peopleList = data.filter(r => r.kind === "person").map(r => ({ id: r.id, name: r.name }));
+  if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
+}
+async function reloadListsAndUI() { await loadLists(); afterListsChanged(); }
+function afterListsChanged() {
+  buildChannelFilter(); buildChannelSelect();
+  if (modalOpen) renderOwnerChips();
+  if (manageOpen) renderManage();
+}
+async function addList(kind, name) {
+  name = (name || "").trim(); if (!name) return false;
+  const arr = kind === "channel" ? channelsList : peopleList;
+  if (arr.some(x => x.name.toLowerCase() === name.toLowerCase())) { toast('"' + name + '" already exists'); return false; }
+  if (!ONLINE) { arr.push({ name }); saveListsLocal(); afterListsChanged(); return true; }
+  const { error } = await db.from("lists").insert({ kind, name, position: arr.length + 1 });
+  if (error) { toast("Add failed: " + error.message); return false; }
+  await reloadListsAndUI(); return true;
+}
+async function removeList(kind, item) {
+  if (!confirm('Remove "' + item.name + '"? Cards already using it keep the name.')) return;
+  if (!ONLINE) {
+    if (kind === "channel") channelsList = channelsList.filter(x => x.name !== item.name);
+    else peopleList = peopleList.filter(x => x.name !== item.name);
+    saveListsLocal(); afterListsChanged(); return;
+  }
+  const { error } = await db.from("lists").delete().eq("id", item.id);
+  if (error) toast("Remove failed: " + error.message); else reloadListsAndUI();
+}
+
+/* ---------- render board ---------- */
 function isOverdue(c) { if (!c.due || c.status === "Live") return false; const t = new Date(); t.setHours(0,0,0,0); return new Date(c.due + "T00:00:00") < t; }
 function fmtDue(d) { if (!d) return ""; return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function esc(s) { return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -251,30 +339,61 @@ function cardEl(c) {
   return el;
 }
 
-/* ---------- filters ---------- */
-function buildFilters() {
-  const bf = document.getElementById("brandFilters");
-  BRANDS.forEach(b => { const chip = document.createElement("span"); chip.className = "chip";
+/* ---------- filters / selects ---------- */
+function buildBrandFilters() {
+  const bf = document.getElementById("brandFilters"); bf.innerHTML = "";
+  BRANDS.forEach(b => { const chip = document.createElement("span"); chip.className = "chip" + (activeBrands.has(b.name) ? "" : " off");
     chip.innerHTML = `<span class="dot" style="background:${BRAND_HEX[b.name]}"></span>${b.name}`;
     chip.onclick = () => { if (activeBrands.has(b.name)) activeBrands.delete(b.name); else activeBrands.add(b.name);
       chip.classList.toggle("off", !activeBrands.has(b.name)); render(); };
     bf.appendChild(chip); });
-  const cf = document.getElementById("channelFilter");
-  CHANNELS.forEach(ch => { const o = document.createElement("option"); o.value = ch; o.textContent = ch; cf.appendChild(o); });
-  cf.onchange = () => { channelFilter = cf.value; render(); };
-  document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
+}
+function buildChannelFilter() {
+  const cf = document.getElementById("channelFilter"); const cur = cf.value;
+  cf.innerHTML = '<option value="">All channels</option>';
+  channelsList.forEach(c => { const o = document.createElement("option"); o.value = c.name; o.textContent = c.name; cf.appendChild(o); });
+  if (channelsList.some(c => c.name === cur)) cf.value = cur; else { cf.value = ""; channelFilter = ""; }
+}
+function buildChannelSelect() {
+  const s = document.getElementById("f_channel"); const cur = s.value; s.innerHTML = "";
+  channelsList.forEach(c => { const o = document.createElement("option"); o.value = c.name; o.textContent = c.name; s.appendChild(o); });
+  if (channelsList.some(c => c.name === cur)) s.value = cur;
+}
+function fillStaticSelects() {
+  const sb = document.getElementById("f_brand"); sb.innerHTML = "";
+  BRANDS.forEach(b => { const o = document.createElement("option"); o.value = b.name; o.textContent = b.name; sb.appendChild(o); });
+  const ss = document.getElementById("f_status"); ss.innerHTML = "";
+  STATUSES.forEach(s => { const o = document.createElement("option"); o.value = s.key; o.textContent = s.key; ss.appendChild(o); });
+}
+
+/* ---------- owner chips ---------- */
+function renderOwnerChips() {
+  const box = document.getElementById("f_owners"); box.innerHTML = "";
+  if (peopleList.length === 0) { const n = document.createElement("span"); n.className = "none"; n.textContent = "No people yet — add one →"; box.appendChild(n); }
+  peopleList.forEach(p => {
+    const chip = document.createElement("span");
+    chip.className = "owner-chip" + (modalOwners.has(p.name) ? " sel" : "");
+    chip.textContent = p.name;
+    chip.onclick = () => { if (modalOwners.has(p.name)) modalOwners.delete(p.name); else modalOwners.add(p.name); renderOwnerChips(); };
+    box.appendChild(chip);
+  });
+  const add = document.createElement("span"); add.className = "owner-chip add"; add.textContent = "＋ Person";
+  add.onclick = async () => { const name = (prompt("New person name:") || "").trim(); if (!name) return;
+    const ok = await addList("person", name); if (ok) { modalOwners.add(name); renderOwnerChips(); } };
+  box.appendChild(add);
 }
 
 /* ---------- modal ---------- */
-function fillSelect(id, items, gv, gl) { const s = document.getElementById(id); s.innerHTML = "";
-  items.forEach(it => { const o = document.createElement("option"); o.value = gv(it); o.textContent = gl(it); s.appendChild(o); }); }
 function openModal(card) {
+  modalOpen = true;
   document.getElementById("modalTitle").textContent = card ? "Edit deliverable" : "New deliverable";
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
   document.getElementById("f_brand").value = card ? card.brand : BRANDS[0].name;
-  document.getElementById("f_channel").value = card ? card.channel : CHANNELS[0];
-  document.getElementById("f_owner").value = card ? (card.owner||"") : "";
+  buildChannelSelect();
+  document.getElementById("f_channel").value = card ? card.channel : (channelsList[0] ? channelsList[0].name : "");
+  modalOwners = new Set((card && card.owner ? card.owner.split(",") : []).map(s => s.trim()).filter(Boolean));
+  renderOwnerChips();
   document.getElementById("f_due").value = card ? (card.due||"") : "";
   document.getElementById("f_status").value = card ? card.status : STATUSES[0].key;
   document.getElementById("f_notes").value = card ? (card.notes||"") : "";
@@ -282,30 +401,45 @@ function openModal(card) {
   document.getElementById("overlay").classList.add("show");
   document.getElementById("f_title").focus();
 }
-function closeModal() { document.getElementById("overlay").classList.remove("show"); }
+function closeModal() { modalOpen = false; document.getElementById("overlay").classList.remove("show"); }
 function saveModal() {
   const id = document.getElementById("f_id").value;
   const title = document.getElementById("f_title").value.trim();
   if (!title) { document.getElementById("f_title").focus(); return; }
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
-    owner: document.getElementById("f_owner").value.trim(), due: document.getElementById("f_due").value,
+    owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value,
     status: document.getElementById("f_status").value, notes: document.getElementById("f_notes").value.trim() };
   if (id) updateCard(id, d); else createCard(d);
   closeModal();
 }
 function deleteCard() { const id = document.getElementById("f_id").value; if (id && confirm("Delete this deliverable?")) { removeCard(id); closeModal(); } }
 
+/* ---------- manage panel ---------- */
+function renderManage() {
+  const mc = document.getElementById("manageChannels"); mc.innerHTML = "";
+  channelsList.forEach(c => mc.appendChild(manageRow("channel", c)));
+  const mp = document.getElementById("managePeople"); mp.innerHTML = "";
+  peopleList.forEach(p => mp.appendChild(manageRow("person", p)));
+}
+function manageRow(kind, item) {
+  const row = document.createElement("div"); row.className = "manage-row";
+  const span = document.createElement("span"); span.textContent = item.name;
+  const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item);
+  row.appendChild(span); row.appendChild(btn); return row;
+}
+function openManage() { manageOpen = true; renderManage(); document.getElementById("manageOverlay").classList.add("show"); }
+function closeManage() { manageOpen = false; document.getElementById("manageOverlay").classList.remove("show"); }
+
 /* ---------- exports ---------- */
 function download(filename, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
 function exportCSV() {
-  const cols = ["Brand","Channel","Title","Owner","Due","Status","Notes"]; const rows = [cols];
+  const cols = ["Brand","Channel","Title","Owners","Due","Status","Notes"]; const rows = [cols];
   cards.forEach(c => rows.push([c.brand, c.channel, c.title, c.owner||"", c.due||"", c.status, (c.notes||"").replace(/\n/g," ")]));
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\r\n");
   download("smarterpaw-planner.csv", new Blob([csv], { type: "text/csv" }));
 }
 function exportJSON() { download("smarterpaw-planner-backup.json", new Blob([JSON.stringify(cards,null,2)], { type: "application/json" })); }
-
 function colLetter(n){ let s=""; n++; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26);} return s; }
 function xmlEsc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"}[c])); }
 function sheetXml(rows){
@@ -346,7 +480,7 @@ function zipStore(filesObj){
   const out = new Uint8Array(total); let p = 0; all.forEach(c => { out.set(c, p); p += c.length; }); return out;
 }
 function exportXLSX(){
-  const cols = ["Brand","Channel","Title","Owner","Due","Status","Notes"]; const rows = [cols];
+  const cols = ["Brand","Channel","Title","Owners","Due","Status","Notes"]; const rows = [cols];
   const order = {}; STATUSES.forEach((s,i)=>order[s.key]=i);
   [...cards].sort((a,b)=> a.brand.localeCompare(b.brand) || (order[a.status]-order[b.status]) || a.channel.localeCompare(b.channel))
     .forEach(c => rows.push([c.brand, c.channel, c.title, c.owner||"", c.due||"", c.status, (c.notes||"").replace(/\n/g," ")]));
@@ -356,40 +490,54 @@ function exportXLSX(){
 /* ---------- import ---------- */
 async function importJSON(arr) {
   if (!ONLINE) { cards = arr; saveLocal(); render(); return; }
-  const rows = arr.map(dbObj);
-  const { error } = await db.from("deliverables").insert(rows);
+  const { error } = await db.from("deliverables").insert(arr.map(dbObj));
   if (error) toast("Import failed: " + error.message); else refetch();
 }
 
-/* ---------- wiring ---------- */
+/* ---------- init ---------- */
 function setSyncUI() {
   const el = document.getElementById("syncStatus");
   if (ONLINE) { el.classList.add("live"); el.querySelector(".t").textContent = "Live · synced"; }
   else { el.classList.add("local"); el.querySelector(".t").textContent = "Local only (not connected)"; }
   document.getElementById("menuHint").textContent = ONLINE
     ? "Connected to Supabase. Changes sync live across everyone with the board open."
-    : "Not connected — saving to this browser only. Add your Supabase URL + anon key in config.js to go live.";
+    : "Not connected — saving to this browser only.";
 }
-function init() {
-  buildFilters();
-  fillSelect("f_brand", BRANDS, b => b.name, b => b.name);
-  fillSelect("f_channel", CHANNELS, c => c, c => c);
-  fillSelect("f_status", STATUSES, s => s.key, s => s.key);
+async function init() {
+  fillStaticSelects();
+  await loadLists();
+  buildBrandFilters(); buildChannelFilter(); buildChannelSelect();
   setSyncUI();
-  refetch();
+  await refetch();
 
   if (ONLINE) {
-    db.channel("planner-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "deliverables" }, refetch)
-      .subscribe();
+    db.channel("planner-deliverables").on("postgres_changes", { event: "*", schema: "public", table: "deliverables" }, refetch).subscribe();
+    db.channel("planner-lists").on("postgres_changes", { event: "*", schema: "public", table: "lists" }, reloadListsAndUI).subscribe();
   }
+
+  document.getElementById("channelFilter").onchange = e => { channelFilter = e.target.value; render(); };
+  document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
 
   document.getElementById("addBtn").onclick = () => openModal(null);
   document.getElementById("saveBtn").onclick = saveModal;
   document.getElementById("cancelBtn").onclick = closeModal;
   document.getElementById("deleteBtn").onclick = deleteCard;
   document.getElementById("overlay").onclick = e => { if (e.target.id === "overlay") closeModal(); };
+  document.getElementById("f_channelAdd").onclick = async () => {
+    const name = (prompt("New channel name:") || "").trim(); if (!name) return;
+    const ok = await addList("channel", name); if (ok) document.getElementById("f_channel").value = name;
+  };
   document.getElementById("xlsxBtn").onclick = exportXLSX;
+
+  document.getElementById("manageBtn").onclick = openManage;
+  document.getElementById("manageClose").onclick = closeManage;
+  document.getElementById("manageOverlay").onclick = e => { if (e.target.id === "manageOverlay") closeManage(); };
+  const addCh = () => { const i = document.getElementById("mAddChannel"); addList("channel", i.value).then(ok => { if (ok) i.value = ""; }); };
+  const addPe = () => { const i = document.getElementById("mAddPerson"); addList("person", i.value).then(ok => { if (ok) i.value = ""; }); };
+  document.getElementById("mAddChannelBtn").onclick = addCh;
+  document.getElementById("mAddPersonBtn").onclick = addPe;
+  document.getElementById("mAddChannel").addEventListener("keydown", e => { if (e.key === "Enter") addCh(); });
+  document.getElementById("mAddPerson").addEventListener("keydown", e => { if (e.key === "Enter") addPe(); });
 
   const menu = document.getElementById("menuOverlay");
   document.getElementById("menuBtn").onclick = () => menu.classList.add("show");
@@ -404,8 +552,8 @@ function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); menu.classList.remove("show"); }
-    if (e.key === "Enter" && document.getElementById("overlay").classList.contains("show") && e.target.tagName !== "TEXTAREA") saveModal();
+    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); }
+    if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") saveModal();
   });
 }
 init();
