@@ -176,7 +176,9 @@
   .dchip.overdue { border-color: #fff; background: var(--danger); color: #fff; }
   .dimrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
   .dimrow .dchip { margin-left: 0; font-size: 11px; padding: 3px 10px; }
-  .dimrow.text { color: var(--muted); font-size: 12px; }
+  .dimrow.text { color: var(--muted); font-size: 12px; gap: 0; }
+  .dtext.overdue { color: var(--danger); font-weight: 700; }
+  .dsep { opacity: .45; }
   .disp-dims { display: flex; flex-direction: column; gap: 10px; }
   .disp-dims .disp-opt { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; margin: 0; color: var(--text); font-weight: 400; text-transform: none; letter-spacing: 0; }
   .disp-dims .disp-opt input[type=checkbox] { width: 16px; height: 16px; margin: 0; flex: none; }
@@ -343,8 +345,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.6";
+const VERSION = "1.7";
 const CHANGELOG = [
+  "v1.7 — Plain-text display mode keeps its own formatting (overdue dates show red again)",
   "v1.6 — Pill badges with borders, color legend at top, Display settings available in all views, rename lanes/channels/people/fields (cards update automatically)",
   "v1.5 — Continuous spanning bars on the calendar, display-settings gear (choose dimensions + badge/text style on events & cards), combined due/end date field",
   "v1.4 — End dates (multi-day spans on calendar), color-by switcher + custom colors, custom fields, Grid view",
@@ -388,12 +391,14 @@ function dimBadges(c) {
   const over = isOverdue(c);
   const parts = displaySettings.dims.map(k => {
     const d = dimInfo(c, k); if (!d.text) return "";
-    if (!displaySettings.badge) return esc(d.text);
     const od = (k === "dates" && over) ? " overdue" : "";
+    if (!displaySettings.badge) {
+      return `<span class="dtext${od}">${esc(d.text)}</span>`;
+    }
     const style = d.color ? ` style="background:${d.color};border-color:rgba(255,255,255,.85);color:#fff"` : "";
     return `<span class="dchip${od}"${style}>${esc(d.text)}</span>`;
   }).filter(Boolean);
-  return parts.join(displaySettings.badge ? "" : " · ");
+  return displaySettings.badge ? parts.join("") : parts.join('<span class="dsep"> · </span>');
 }
 const STORE_KEY = "smarterpaw-planner-v1";
 const LIST_KEY = "smarterpaw-planner-lists-v1";
