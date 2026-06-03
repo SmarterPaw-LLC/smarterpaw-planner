@@ -152,6 +152,33 @@
   #gridTable tbody tr { cursor: pointer; }
   #gridTable tbody tr:hover { background: var(--panel-2); }
   .gdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+  /* spanning-bar calendar */
+  .month-bars { display: flex; flex-direction: column; min-width: 760px; }
+  .dow-row { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .cal-week { position: relative; }
+  .cal-week.tall { min-height: 480px; }
+  .week-days { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(7, 1fr); }
+  .wday { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 3px 5px; overflow: hidden; }
+  .wday.other { background: rgba(255,255,255,.015); }
+  .wday.other .daynum { opacity: .35; }
+  .wday.today .daynum { background: var(--accent); color: #fff; border-radius: 999px; }
+  .wday.drag-over { background: rgba(109,93,252,.14); }
+  .bars-layer { position: absolute; inset: 0; pointer-events: none; }
+  .ev-bar { position: absolute; height: 19px; line-height: 19px; border-radius: 5px; color: #fff; font-size: 11px;
+    padding: 0 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; pointer-events: auto;
+    box-sizing: border-box; }
+  .ev-bar:active { cursor: grabbing; }
+  .bt { font-weight: 600; }
+  .bardims { opacity: .92; }
+  .dchip { display: inline-block; font-size: 10px; line-height: 15px; padding: 0 5px; border-radius: 4px;
+    background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.3); margin-left: 4px; vertical-align: middle; }
+  .dchip.overdue { border-color: var(--danger); color: var(--danger); }
+  .dimrow { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; align-items: center; }
+  .dimrow .dchip { margin-left: 0; font-size: 11px; background: var(--panel); }
+  .dimrow.text { color: var(--muted); font-size: 12px; }
+  .disp-dims { display: flex; flex-direction: column; gap: 8px; }
+  .disp-opt { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+  .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 4px 0; }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 </style>
@@ -185,6 +212,7 @@
     <button id="calToday">Today</button>
     <button id="calNext" title="Next">›</button>
     <div class="cal-label" id="calLabel"></div>
+    <button id="calSettingsBtn" title="Display settings">⚙ Display</button>
   </div>
   <div class="cal-main">
     <div class="tray" id="calTray"></div>
@@ -207,9 +235,13 @@
       </div>
     </div>
     <div class="field"><label>Owners</label><div class="owner-chips" id="f_owners"></div></div>
-    <div class="row2">
-      <div class="field"><label>Start / due date</label><input id="f_due" type="date" /></div>
-      <div class="field"><label>End date <span class="opt">(optional — spans the calendar)</span></label><input id="f_end" type="date" /></div>
+    <div class="field">
+      <label>Due date</label>
+      <div class="ch-wrap"><input id="f_due" type="date" /><button type="button" id="f_addEnd" class="ghost">＋ end date</button></div>
+      <div id="f_endWrap" style="display:none;margin-top:8px;">
+        <label class="opt">End date — spans the calendar</label>
+        <div class="ch-wrap"><input id="f_end" type="date" /><button type="button" id="f_clearEnd" title="Remove end date">✕</button></div>
+      </div>
     </div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
     <div id="f_fields"></div>
@@ -269,6 +301,19 @@
   </div>
 </div>
 
+<!-- Display settings -->
+<div class="overlay" id="dispOverlay">
+  <div class="modal" style="width:400px">
+    <h2>Display on events &amp; cards</h2>
+    <div class="field"><span class="seclabel">Show these on each item</span><div id="dispDims" class="disp-dims"></div></div>
+    <div class="field"><span class="seclabel">Style</span>
+      <div class="seg" id="dispStyle"><button data-s="badge">Badges</button><button data-s="text">Plain text</button></div>
+    </div>
+    <div class="modal-actions"><div class="spacer"></div><button id="dispClose">Done</button></div>
+    <div class="hint">Applies to both calendar events and Kanban cards. Saved in this browser.</div>
+  </div>
+</div>
+
 <!-- Version history -->
 <div class="overlay" id="verOverlay">
   <div class="modal" style="width:420px">
@@ -290,8 +335,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.4";
+const VERSION = "1.5";
 const CHANGELOG = [
+  "v1.5 — Continuous spanning bars on the calendar, display-settings gear (choose dimensions + badge/text style on events & cards), combined due/end date field",
   "v1.4 — End dates (multi-day spans on calendar), color-by switcher + custom colors, custom fields, Grid view",
   "v1.3 — Custom Kanban lanes, add channels from the dropdown, version history",
   "v1.2 — Calendar view (month / week / day) with drag-to-reschedule + unscheduled tray",
@@ -315,6 +361,31 @@ function brandColor(n) { return colorOf(brandsList, n, DEFAULT_BRAND_HEX); }
 function channelColorOf(n) { return colorOf(channelsList, n, null); }
 function statusColor(name) { return colorOf(statusList, name, STATUS_COLORS); }
 function colorFor(c) { return colorBy === "channel" ? channelColorOf(c.channel) : colorBy === "status" ? statusColor(c.status) : brandColor(c.brand); }
+function availableDims() {
+  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owners", label: "Owners" },
+    { key: "status", label: "Lane / status" }, { key: "dates", label: "Dates" }]
+    .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
+}
+function dimInfo(c, key) {
+  if (key === "brand") return { text: c.brand, color: brandColor(c.brand) };
+  if (key === "channel") return { text: c.channel, color: channelColorOf(c.channel) };
+  if (key === "owners") return { text: c.owner, color: null };
+  if (key === "status") return { text: c.status, color: statusColor(c.status) };
+  if (key === "dates") return { text: fmtRange(c.due, c.end), color: null };
+  if (key.indexOf("field:") === 0) { const n = key.slice(6); return { text: (c.fields && c.fields[n]) || "", color: null }; }
+  return { text: "", color: null };
+}
+function dimBadges(c) {
+  const over = isOverdue(c);
+  const parts = displaySettings.dims.map(k => {
+    const d = dimInfo(c, k); if (!d.text) return "";
+    if (!displaySettings.badge) return esc(d.text);
+    const od = (k === "dates" && over) ? " overdue" : "";
+    const style = d.color ? ` style="background:${d.color};border-color:${d.color};color:#fff"` : "";
+    return `<span class="dchip${od}"${style}>${esc(d.text)}</span>`;
+  }).filter(Boolean);
+  return parts.join(displaySettings.badge ? "" : " · ");
+}
 const STORE_KEY = "smarterpaw-planner-v1";
 const LIST_KEY = "smarterpaw-planner-lists-v1";
 
@@ -329,6 +400,8 @@ let statusList = [];     // [{id?, name, color?}] — the Kanban lanes, in order
 let brandsList = [];     // [{id?, name, color}]
 let fieldsList = [];     // [{id?, name}] — custom field definitions
 let colorBy = localStorage.getItem("planner-colorby") || "brand";
+let displaySettings = JSON.parse(localStorage.getItem("planner-display") || "null") || { dims: ["brand", "channel", "owners", "dates"], badge: true };
+function saveDisplay() { localStorage.setItem("planner-display", JSON.stringify(displaySettings)); }
 let activeBrands = new Set(BRANDS.map(b => b.name));
 let channelFilter = "", searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
@@ -434,6 +507,7 @@ function afterListsChanged() {
   buildChannelFilter(); buildChannelSelect(); buildStatusSelect();
   if (modalOpen) renderOwnerChips();
   if (manageOpen) renderManage();
+  if (document.getElementById("dispOverlay").classList.contains("show")) renderDispSettings();
   render();
 }
 async function addList(kind, name) {
@@ -510,19 +584,12 @@ function fmtRange(due, end) {
   if (due && end && end !== due) return fmtDue(due) + " → " + fmtDue(end);
   return fmtDue(due || end);
 }
-function fieldBits(c) {
-  return fieldsList.map(f => c.fields && c.fields[f.name] ? esc(f.name) + ": " + esc(c.fields[f.name]) : "").filter(Boolean).join(" · ");
-}
 function cardEl(c) {
   const el = document.createElement("div"); el.className = "card";
   el.style.borderLeftColor = colorFor(c); el.draggable = true;
-  const over = isOverdue(c);
-  const fb = fieldBits(c);
-  el.innerHTML = `<div class="tags"><span class="pill" style="background:${brandColor(c.brand)}">${esc(c.brand)}</span>` +
-    `<span class="pill channel">${esc(c.channel)}</span></div><h3>${esc(c.title)}</h3>` +
-    `<div class="meta">${c.owner ? `<span>👤 ${esc(c.owner)}</span>` : ""}` +
-    `${(c.due||c.end) ? `<span class="due ${over?'overdue':''}">📅 ${fmtRange(c.due,c.end)}${over?' · overdue':''}</span>` : ""}</div>` +
-    (fb ? `<div class="cardfields">${fb}</div>` : "") +
+  const badges = dimBadges(c);
+  el.innerHTML = `<h3>${esc(c.title)}</h3>` +
+    (badges ? `<div class="dimrow${displaySettings.badge ? "" : " text"}">${badges}</div>` : "") +
     (c.notes ? `<div class="notes">${esc(c.notes)}</div>` : "");
   el.addEventListener("click", () => openModal(c));
   el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); el.classList.add("dragging"); });
@@ -593,12 +660,28 @@ function setCalMode(m) {
   document.querySelectorAll("#calModeSeg button").forEach(b => b.classList.toggle("active", b.dataset.m === m));
   renderCalendar();
 }
+function renderDispSettings() {
+  const box = document.getElementById("dispDims"); box.innerHTML = "";
+  availableDims().forEach(d => {
+    const lab = document.createElement("label"); lab.className = "disp-opt";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = displaySettings.dims.includes(d.key);
+    cb.onchange = () => {
+      if (cb.checked) { if (!displaySettings.dims.includes(d.key)) displaySettings.dims.push(d.key); }
+      else displaySettings.dims = displaySettings.dims.filter(k => k !== d.key);
+      saveDisplay(); render();
+    };
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + d.label)); box.appendChild(lab);
+  });
+  document.querySelectorAll("#dispStyle button").forEach(b => b.classList.toggle("active", (b.dataset.s === "badge") === displaySettings.badge));
+}
+function openDisp() { renderDispSettings(); document.getElementById("dispOverlay").classList.add("show"); }
 function calNav(dir) {
   if (calMode === "month") calRef = new Date(calRef.getFullYear(), calRef.getMonth()+dir, 1);
   else if (calMode === "week") calRef = addDays(calRef, 7*dir);
   else calRef = addDays(calRef, dir);
   renderCalendar();
 }
+const BAR_H = 22, WEEK_HEAD_H = 22;
 function eventsFor(date) {
   const k = ymd(date);
   return visibleCards().filter(c => {
@@ -607,15 +690,45 @@ function eventsFor(date) {
     return k >= s && k <= e;
   });
 }
+function weekEvents(ws, we) {
+  const wsK = ymd(ws), weK = ymd(we);
+  return visibleCards().filter(c => {
+    if (!c.due && !c.end) return false;
+    const a = c.due || c.end, b = c.end || c.due; const s = a < b ? a : b, e = a < b ? b : a;
+    return !(e < wsK || s > weK);
+  }).sort((x, y) => { const xs = x.due || x.end, ys = y.due || y.end; return xs < ys ? -1 : xs > ys ? 1 : 0; });
+}
+function packLanes(evs, ws) {
+  const lanes = []; const placed = [];
+  evs.forEach(c => {
+    const a = c.due || c.end, b = c.end || c.due; const S = a < b ? a : b, E = a < b ? b : a;
+    let s = Math.round((parseYmd(S) - ws) / 86400000), e = Math.round((parseYmd(E) - ws) / 86400000);
+    s = Math.max(0, s); e = Math.min(6, e); if (e < s) e = s;
+    let lane = 0;
+    while (lanes[lane] && lanes[lane].some(o => !(e < o.s || s > o.e))) lane++;
+    (lanes[lane] = lanes[lane] || []).push({ s, e });
+    placed.push({ c, s, e, lane });
+  });
+  return placed;
+}
+function evContent(c) {
+  const badges = dimBadges(c);
+  return `<span class="bt">${esc(c.title)}</span>` + (badges ? ` <span class="bardims">${badges}</span>` : "");
+}
+function evTitle(c) { return c.title + " — " + c.brand + " · " + c.channel + (c.owner ? " · " + c.owner : "") + (c.due || c.end ? " · " + fmtRange(c.due, c.end) : ""); }
 function evEl(c) {
-  const e = document.createElement("div"); e.className = "ev";
-  e.style.background = colorFor(c); e.textContent = c.title;
-  const span = (c.due && c.end && c.due !== c.end) ? " · " + fmtRange(c.due, c.end) : "";
-  e.title = c.brand + " · " + c.channel + (c.owner ? " · " + c.owner : "") + span;
-  e.draggable = true;
+  const e = document.createElement("div"); e.className = "ev"; e.style.background = colorFor(c);
+  e.innerHTML = evContent(c); e.title = evTitle(c); e.draggable = true;
   e.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); });
   e.addEventListener("click", ev => { ev.stopPropagation(); openModal(c); });
   return e;
+}
+function barEl(c) {
+  const el = document.createElement("div"); el.className = "ev-bar"; el.style.background = colorFor(c);
+  el.innerHTML = evContent(c); el.title = evTitle(c); el.draggable = true;
+  el.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); });
+  el.addEventListener("click", ev => { ev.stopPropagation(); openModal(c); });
+  return el;
 }
 function attachDrop(cell, date) {
   cell.addEventListener("dragover", e => { e.preventDefault(); cell.classList.add("drag-over"); });
@@ -630,20 +743,39 @@ function attachDrop(cell, date) {
     } else { patchDue(id, newDue); }
   });
 }
-function dayCell(date, inMonth, todayKey) {
-  const cell = document.createElement("div");
-  cell.className = "day-cell" + (inMonth ? "" : " other") + (ymd(date) === todayKey ? " today" : "");
-  const head = document.createElement("div"); head.className = "day-head";
-  const num = document.createElement("span"); num.className = "daynum"; num.textContent = date.getDate();
-  const plus = document.createElement("span"); plus.className = "add-day"; plus.textContent = "＋"; plus.title = "Add deliverable";
-  plus.onclick = ev => { ev.stopPropagation(); openModal(null, { due: ymd(date) }); };
-  head.appendChild(num); head.appendChild(plus); cell.appendChild(head);
-  eventsFor(date).forEach(c => cell.appendChild(evEl(c)));
-  attachDrop(cell, date); return cell;
+function weekRow(weekStart, monthIdx, todayKey, mode) {
+  const wk = document.createElement("div"); wk.className = "cal-week" + (mode === "week" ? " tall" : "");
+  const daysWrap = document.createElement("div"); daysWrap.className = "week-days";
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(weekStart, i);
+    const cell = document.createElement("div");
+    cell.className = "wday" + (mode === "month" && date.getMonth() !== monthIdx ? " other" : "") + (ymd(date) === todayKey ? " today" : "");
+    const head = document.createElement("div"); head.className = "day-head";
+    const num = document.createElement("span"); num.className = "daynum";
+    num.textContent = mode === "week" ? DOW[date.getDay()] + " " + date.getDate() : date.getDate();
+    const plus = document.createElement("span"); plus.className = "add-day"; plus.textContent = "＋"; plus.title = "Add deliverable";
+    plus.onclick = ev => { ev.stopPropagation(); openModal(null, { due: ymd(date) }); };
+    head.appendChild(num); head.appendChild(plus); cell.appendChild(head);
+    attachDrop(cell, date); daysWrap.appendChild(cell);
+  }
+  wk.appendChild(daysWrap);
+  const placed = packLanes(weekEvents(weekStart, addDays(weekStart, 6)), weekStart);
+  const bars = document.createElement("div"); bars.className = "bars-layer";
+  placed.forEach(p => {
+    const bar = barEl(p.c);
+    bar.style.left = `calc(${(p.s / 7 * 100).toFixed(4)}% + 3px)`;
+    bar.style.width = `calc(${((p.e - p.s + 1) / 7 * 100).toFixed(4)}% - 6px)`;
+    bar.style.top = (WEEK_HEAD_H + p.lane * BAR_H) + "px";
+    bars.appendChild(bar);
+  });
+  wk.appendChild(bars);
+  const laneCount = placed.reduce((mx, p) => Math.max(mx, p.lane + 1), 0);
+  wk.style.minHeight = Math.max(mode === "week" ? 380 : 96, WEEK_HEAD_H + laneCount * BAR_H + 8) + "px";
+  return wk;
 }
 function renderTray() {
   const tray = document.getElementById("calTray"); tray.innerHTML = "<h3>Unscheduled</h3>";
-  const un = visibleCards().filter(c => !c.due);
+  const un = visibleCards().filter(c => !c.due && !c.end);
   if (un.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Nothing unscheduled"; tray.appendChild(e); return; }
   un.forEach(c => { const e = evEl(c); e.style.whiteSpace = "normal"; tray.appendChild(e); });
 }
@@ -654,28 +786,21 @@ function renderCalendar() {
     const y = calRef.getFullYear(), m = calRef.getMonth();
     label.textContent = MONTHS[m] + " " + y;
     const first = new Date(y, m, 1); const gridStart = startOfWeek(first);
-    const daysInMonth = new Date(y, m+1, 0).getDate(); const weeks = Math.ceil((first.getDay() + daysInMonth) / 7);
-    const month = document.createElement("div"); month.className = "month";
-    DOW.forEach(d => { const h = document.createElement("div"); h.className = "dow"; h.textContent = d; month.appendChild(h); });
-    for (let i = 0; i < weeks*7; i++) { const date = addDays(gridStart, i); month.appendChild(dayCell(date, date.getMonth() === m, todayKey)); }
-    grid.appendChild(month);
+    const daysInMonth = new Date(y, m + 1, 0).getDate(); const weeks = Math.ceil((first.getDay() + daysInMonth) / 7);
+    const wrap = document.createElement("div"); wrap.className = "month-bars";
+    const dowRow = document.createElement("div"); dowRow.className = "dow-row";
+    DOW.forEach(d => { const h = document.createElement("div"); h.className = "dow"; h.textContent = d; dowRow.appendChild(h); });
+    wrap.appendChild(dowRow);
+    for (let w = 0; w < weeks; w++) wrap.appendChild(weekRow(addDays(gridStart, w * 7), m, todayKey, "month"));
+    grid.appendChild(wrap);
   } else if (calMode === "week") {
     const start = startOfWeek(calRef); const end = addDays(start, 6);
     label.textContent = (start.getMonth() === end.getMonth())
       ? MONTHS[start.getMonth()] + " " + start.getDate() + " – " + end.getDate() + ", " + end.getFullYear()
       : MONTHS[start.getMonth()] + " " + start.getDate() + " – " + MONTHS[end.getMonth()] + " " + end.getDate() + ", " + end.getFullYear();
-    const week = document.createElement("div"); week.className = "week";
-    for (let i = 0; i < 7; i++) {
-      const date = addDays(start, i);
-      const col = document.createElement("div"); col.className = "day-cell week-col" + (ymd(date) === todayKey ? " today" : "");
-      const head = document.createElement("div"); head.className = "day-head";
-      const lbl = document.createElement("span"); lbl.className = "daynum"; lbl.textContent = DOW[date.getDay()] + " " + date.getDate();
-      const plus = document.createElement("span"); plus.className = "add-day"; plus.textContent = "＋";
-      plus.onclick = ev => { ev.stopPropagation(); openModal(null, { due: ymd(date) }); };
-      head.appendChild(lbl); head.appendChild(plus); col.appendChild(head);
-      eventsFor(date).forEach(c => col.appendChild(evEl(c))); attachDrop(col, date); week.appendChild(col);
-    }
-    grid.appendChild(week);
+    const wrap = document.createElement("div"); wrap.className = "month-bars";
+    wrap.appendChild(weekRow(start, start.getMonth(), todayKey, "week"));
+    grid.appendChild(wrap);
   } else {
     const date = new Date(calRef.getFullYear(), calRef.getMonth(), calRef.getDate());
     label.textContent = DOW[date.getDay()] + ", " + MONTHS[date.getMonth()] + " " + date.getDate() + ", " + date.getFullYear();
@@ -762,7 +887,10 @@ function openModal(card, prefill) {
   modalOwners = new Set((card && card.owner ? card.owner.split(",") : []).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
   document.getElementById("f_due").value = card ? (card.due||"") : (prefill && prefill.due ? prefill.due : "");
-  document.getElementById("f_end").value = card ? (card.end||"") : "";
+  const hasEnd = !!(card && card.end);
+  document.getElementById("f_end").value = hasEnd ? card.end : "";
+  document.getElementById("f_endWrap").style.display = hasEnd ? "" : "none";
+  document.getElementById("f_addEnd").style.display = hasEnd ? "none" : "";
   renderFieldInputs(card ? (card.fields || {}) : {});
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
@@ -779,8 +907,9 @@ function saveModal() {
   if (!title) { document.getElementById("f_title").focus(); return; }
   const fields = {};
   document.querySelectorAll("#f_fields input").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
+  const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
-    owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: document.getElementById("f_end").value,
+    owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: document.getElementById("f_notes").value.trim(), fields };
   if (id) updateCard(id, d); else createCard(d);
   closeModal();
@@ -944,6 +1073,12 @@ async function init() {
   document.getElementById("verBtn").onclick = () => document.getElementById("verOverlay").classList.add("show");
   document.getElementById("verClose").onclick = () => document.getElementById("verOverlay").classList.remove("show");
   document.getElementById("verOverlay").onclick = e => { if (e.target.id === "verOverlay") e.currentTarget.classList.remove("show"); };
+  document.getElementById("calSettingsBtn").onclick = openDisp;
+  document.getElementById("dispClose").onclick = () => document.getElementById("dispOverlay").classList.remove("show");
+  document.getElementById("dispOverlay").onclick = e => { if (e.target.id === "dispOverlay") e.currentTarget.classList.remove("show"); };
+  document.querySelectorAll("#dispStyle button").forEach(b => b.onclick = () => { displaySettings.badge = b.dataset.s === "badge"; saveDisplay(); renderDispSettings(); render(); });
+  document.getElementById("f_addEnd").onclick = () => { const w = document.getElementById("f_endWrap"); w.style.display = ""; document.getElementById("f_addEnd").style.display = "none"; const due = document.getElementById("f_due").value; const end = document.getElementById("f_end"); if (!end.value && due) end.value = due; end.focus(); };
+  document.getElementById("f_clearEnd").onclick = () => { document.getElementById("f_end").value = ""; document.getElementById("f_endWrap").style.display = "none"; document.getElementById("f_addEnd").style.display = ""; };
 
   document.getElementById("manageBtn").onclick = openManage;
   document.getElementById("manageClose").onclick = closeManage;
@@ -974,7 +1109,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") saveModal();
   });
 }
