@@ -137,6 +137,21 @@
   #changelogList .cl { font-size: 13px; color: var(--text); padding: 8px 11px; background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 8px; }
   #changelogList .cl.new { border-color: var(--accent); }
+  .swatch { width: 28px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+  .row-left { display: inline-flex; align-items: center; gap: 9px; }
+  .opt { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .cardfields { margin-top: 6px; font-size: 11px; color: var(--muted); }
+  #grid { display: none; flex: 1; flex-direction: column; padding: 14px 20px; overflow: hidden; }
+  .grid-wrap { flex: 1; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  #gridTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #gridTable th { position: sticky; top: 0; background: var(--panel); text-align: left; padding: 9px 12px;
+    border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap;
+    text-transform: uppercase; letter-spacing: .3px; user-select: none; }
+  #gridTable th:hover { color: var(--text); }
+  #gridTable td { padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+  #gridTable tbody tr { cursor: pointer; }
+  #gridTable tbody tr:hover { background: var(--panel-2); }
+  .gdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 </style>
@@ -146,10 +161,11 @@
   <div class="brand-title">Smarter<span>Paw</span> · Channel Planner</div>
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
-  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button></div>
+  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button></div>
   <div class="filters" id="brandFilters"></div>
   <div class="filters">
     <select id="channelFilter"><option value="">All channels</option></select>
+    <select id="colorBy" title="Color cards by"></select>
     <input class="search" id="search" placeholder="Search…" />
   </div>
   <div class="toolbar">
@@ -176,6 +192,8 @@
   </div>
 </div>
 
+<div id="grid"><div class="grid-wrap"><table id="gridTable"></table></div></div>
+
 <!-- Add / Edit deliverable -->
 <div class="overlay" id="overlay">
   <div class="modal">
@@ -190,9 +208,11 @@
     </div>
     <div class="field"><label>Owners</label><div class="owner-chips" id="f_owners"></div></div>
     <div class="row2">
-      <div class="field"><label>Due date</label><input id="f_due" type="date" /></div>
-      <div class="field"><label>Status</label><select id="f_status"></select></div>
+      <div class="field"><label>Start / due date</label><input id="f_due" type="date" /></div>
+      <div class="field"><label>End date <span class="opt">(optional — spans the calendar)</span></label><input id="f_end" type="date" /></div>
     </div>
+    <div class="field"><label>Status</label><select id="f_status"></select></div>
+    <div id="f_fields"></div>
     <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Brief, links, copy direction…"></textarea></div>
     <div class="modal-actions">
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
@@ -208,6 +228,10 @@
   <div class="modal">
     <h2>Manage board</h2>
     <div class="manage-sec">
+      <span class="seclabel">Brand colors</span>
+      <div class="manage-list" id="manageBrands"></div>
+    </div>
+    <div class="manage-sec">
       <span class="seclabel">Board lanes (drag order with ↑ ↓)</span>
       <div class="manage-list" id="manageStatuses"></div>
       <div class="add-row"><input id="mAddStatus" placeholder="New lane…" /><button class="primary" id="mAddStatusBtn">Add</button></div>
@@ -221,6 +245,11 @@
       <span class="seclabel">People</span>
       <div class="manage-list" id="managePeople"></div>
       <div class="add-row"><input id="mAddPerson" placeholder="New person…" /><button class="primary" id="mAddPersonBtn">Add</button></div>
+    </div>
+    <div class="manage-sec">
+      <span class="seclabel">Custom fields</span>
+      <div class="manage-list" id="manageFields"></div>
+      <div class="add-row"><input id="mAddField" placeholder="New field (e.g. Format, Budget)…" /><button class="primary" id="mAddFieldBtn">Add</button></div>
     </div>
     <div class="modal-actions"><div class="spacer"></div><button id="manageClose">Done</button></div>
     <div class="hint">Removing an item won't change cards that already use it — they keep the name.</div>
@@ -256,13 +285,14 @@
 <script>
 "use strict";
 const BRANDS = [{ name: "Meowi" }, { name: "Doggi" }, { name: "Kitty" }];
-const BRAND_HEX = { Meowi: "#6d5dfc", Doggi: "#f5a524", Kitty: "#ec4899" };
+const DEFAULT_BRAND_HEX = { Meowi: "#6d5dfc", Doggi: "#f5a524", Kitty: "#ec4899" };
 const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / Landing"];
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.3";
+const VERSION = "1.4";
 const CHANGELOG = [
+  "v1.4 — End dates (multi-day spans on calendar), color-by switcher + custom colors, custom fields, Grid view",
   "v1.3 — Custom Kanban lanes, add channels from the dropdown, version history",
   "v1.2 — Calendar view (month / week / day) with drag-to-reschedule + unscheduled tray",
   "v1.1 — Manageable channels & people, multiple owners per deliverable",
@@ -270,10 +300,21 @@ const CHANGELOG = [
 ];
 
 const DEFAULT_STATUSES = ["Backlog", "In Progress", "Review", "Scheduled", "Live"];
-const STATUS_COLORS = { "Backlog": "var(--backlog)", "In Progress": "var(--progress)",
-  "Review": "var(--review)", "Scheduled": "var(--scheduled)", "Live": "var(--live)" };
+const STATUS_COLORS = { "Backlog": "#6b7280", "In Progress": "#3b82f6",
+  "Review": "#a855f7", "Scheduled": "#f59e0b", "Live": "#22c55e" };
 const PALETTE = ["#6b7280","#3b82f6","#a855f7","#f59e0b","#22c55e","#ec4899","#06b6d4","#84cc16","#f43f5e","#14b8a6"];
-function statusColor(name, idx) { return STATUS_COLORS[name] || PALETTE[idx % PALETTE.length]; }
+const COLOR_DIMS = [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "status", label: "Lane" }];
+function colorOf(list, name, fallbackMap) {
+  const item = list.find(x => x.name === name);
+  if (item && item.color) return item.color;
+  if (fallbackMap && fallbackMap[name]) return fallbackMap[name];
+  const idx = list.findIndex(x => x.name === name);
+  return PALETTE[(idx < 0 ? 0 : idx) % PALETTE.length];
+}
+function brandColor(n) { return colorOf(brandsList, n, DEFAULT_BRAND_HEX); }
+function channelColorOf(n) { return colorOf(channelsList, n, null); }
+function statusColor(name) { return colorOf(statusList, name, STATUS_COLORS); }
+function colorFor(c) { return colorBy === "channel" ? channelColorOf(c.channel) : colorBy === "status" ? statusColor(c.status) : brandColor(c.brand); }
 const STORE_KEY = "smarterpaw-planner-v1";
 const LIST_KEY = "smarterpaw-planner-lists-v1";
 
@@ -282,14 +323,18 @@ const ONLINE = !!(CFG.url && CFG.anonKey && window.supabase);
 const db = ONLINE ? window.supabase.createClient(CFG.url, CFG.anonKey) : null;
 
 let cards = [];
-let channelsList = [];   // [{id?, name}]
+let channelsList = [];   // [{id?, name, color?}]
 let peopleList = [];     // [{id?, name}]
-let statusList = [];     // [{id?, name}] — the Kanban lanes, in order
+let statusList = [];     // [{id?, name, color?}] — the Kanban lanes, in order
+let brandsList = [];     // [{id?, name, color}]
+let fieldsList = [];     // [{id?, name}] — custom field definitions
+let colorBy = localStorage.getItem("planner-colorby") || "brand";
 let activeBrands = new Set(BRANDS.map(b => b.name));
 let channelFilter = "", searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
 let view = "board", calMode = "month", calRef = new Date();
+let gridSort = { key: "due", dir: 1 };
 let _idc = Date.now();
 function uid() { return "c" + (_idc++).toString(36); }
 function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 3500); }
@@ -302,11 +347,12 @@ async function refetch() {
   const { data, error } = await db.from("deliverables").select("*").order("created_at", { ascending: true });
   if (error) { toast("Load failed: " + error.message); return; }
   cards = data.map(r => ({ id: r.id, title: r.title, brand: r.brand, channel: r.channel,
-    owner: r.owner || "", due: r.due || "", status: r.status, notes: r.notes || "" }));
+    owner: r.owner || "", due: r.due || "", end: r.end_date || "", status: r.status, notes: r.notes || "",
+    fields: r.fields || {} }));
   render();
 }
 function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
-  due: d.due || null, status: d.status, notes: d.notes || "" }; }
+  due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {} }; }
 async function createCard(d) {
   if (!ONLINE) { cards.push(Object.assign({ id: uid() }, d)); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").insert(dbObj(d));
@@ -327,6 +373,11 @@ async function patchDue(id, due) {
   const { error } = await db.from("deliverables").update({ due: due || null }).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
 }
+async function patchDates(id, due, end) {
+  if (!ONLINE) { const c = cards.find(c => c.id === id); if (c) { c.due = due; c.end = end || ""; } saveLocal(); render(); return; }
+  const { error } = await db.from("deliverables").update({ due: due || null, end_date: end || null }).eq("id", id);
+  if (error) toast("Update failed: " + error.message); else refetch();
+}
 async function removeCard(id) {
   if (!ONLINE) { cards = cards.filter(c => c.id !== id); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").delete().eq("id", id);
@@ -343,27 +394,41 @@ function sampleData() {
 }
 
 /* ---------- channels & people lists ---------- */
-function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList, statuses: statusList })); }
+function defaultBrands() { return BRANDS.map(b => ({ name: b.name, color: DEFAULT_BRAND_HEX[b.name] })); }
+function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList, statuses: statusList, brands: brandsList, fields: fieldsList })); }
 async function loadLists() {
   if (!ONLINE) {
     const raw = JSON.parse(localStorage.getItem(LIST_KEY) || "null");
-    if (raw && raw.channels) { channelsList = raw.channels; peopleList = raw.people || []; statusList = raw.statuses || DEFAULT_STATUSES.map(n => ({ name: n })); }
-    else { channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n })); statusList = DEFAULT_STATUSES.map(n => ({ name: n })); saveListsLocal(); }
+    if (raw && raw.channels) {
+      channelsList = raw.channels; peopleList = raw.people || []; statusList = raw.statuses || DEFAULT_STATUSES.map(n => ({ name: n }));
+      brandsList = raw.brands || defaultBrands(); fieldsList = raw.fields || [];
+    } else {
+      channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
+      statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = []; saveListsLocal();
+    }
     return;
   }
   const { data, error } = await db.from("lists").select("*").order("position", { ascending: true });
   if (error) {
-    channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n })); statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
-    if (!_listsWarned) { _listsWarned = true; toast("Lists not saved yet — run the lists SQL (0002/0003) in Supabase."); }
+    channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
+    statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = [];
+    if (!_listsWarned) { _listsWarned = true; toast("Lists not saved yet — run the lists SQL (0002–0004) in Supabase."); }
     return;
   }
-  channelsList = data.filter(r => r.kind === "channel").map(r => ({ id: r.id, name: r.name }));
-  peopleList = data.filter(r => r.kind === "person").map(r => ({ id: r.id, name: r.name }));
-  statusList = data.filter(r => r.kind === "status").map(r => ({ id: r.id, name: r.name }));
+  const map = (k) => data.filter(r => r.kind === k).map(r => ({ id: r.id, name: r.name, color: r.color || undefined }));
+  channelsList = map("channel"); peopleList = map("person"); statusList = map("status");
+  brandsList = map("brand"); fieldsList = map("field");
   if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
   if (statusList.length === 0) statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
+  if (brandsList.length === 0) brandsList = defaultBrands();
 }
-function listFor(kind) { return kind === "channel" ? channelsList : kind === "person" ? peopleList : statusList; }
+function listFor(kind) { return { channel: channelsList, person: peopleList, status: statusList, brand: brandsList, field: fieldsList }[kind]; }
+async function setColor(item, color) {
+  item.color = color;
+  if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
+  const { error } = await db.from("lists").update({ color }).eq("id", item.id);
+  if (error) toast("Color save failed: " + error.message); else reloadListsAndUI();
+}
 async function reloadListsAndUI() { await loadLists(); afterListsChanged(); }
 function afterListsChanged() {
   buildChannelFilter(); buildChannelSelect(); buildStatusSelect();
@@ -412,7 +477,7 @@ function visibleCards() {
   return cards.filter(c => activeBrands.has(c.brand) && (!channelFilter || c.channel === channelFilter) &&
     (!q || (c.title + " " + (c.notes||"") + " " + (c.owner||"")).toLowerCase().includes(q)));
 }
-function render() { if (view === "calendar") renderCalendar(); else renderBoard(); }
+function render() { if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else renderBoard(); }
 function renderBoard() {
   const board = document.getElementById("board"); board.innerHTML = "";
   const vis = visibleCards();
@@ -440,14 +505,24 @@ function renderBoard() {
     board.appendChild(col);
   });
 }
+function fmtRange(due, end) {
+  if (!due && !end) return "";
+  if (due && end && end !== due) return fmtDue(due) + " → " + fmtDue(end);
+  return fmtDue(due || end);
+}
+function fieldBits(c) {
+  return fieldsList.map(f => c.fields && c.fields[f.name] ? esc(f.name) + ": " + esc(c.fields[f.name]) : "").filter(Boolean).join(" · ");
+}
 function cardEl(c) {
   const el = document.createElement("div"); el.className = "card";
-  el.style.borderLeftColor = BRAND_HEX[c.brand] || "var(--line)"; el.draggable = true;
+  el.style.borderLeftColor = colorFor(c); el.draggable = true;
   const over = isOverdue(c);
-  el.innerHTML = `<div class="tags"><span class="pill" style="background:${BRAND_HEX[c.brand]||'#555'}">${esc(c.brand)}</span>` +
+  const fb = fieldBits(c);
+  el.innerHTML = `<div class="tags"><span class="pill" style="background:${brandColor(c.brand)}">${esc(c.brand)}</span>` +
     `<span class="pill channel">${esc(c.channel)}</span></div><h3>${esc(c.title)}</h3>` +
     `<div class="meta">${c.owner ? `<span>👤 ${esc(c.owner)}</span>` : ""}` +
-    `${c.due ? `<span class="due ${over?'overdue':''}">📅 ${fmtDue(c.due)}${over?' · overdue':''}</span>` : ""}</div>` +
+    `${(c.due||c.end) ? `<span class="due ${over?'overdue':''}">📅 ${fmtRange(c.due,c.end)}${over?' · overdue':''}</span>` : ""}</div>` +
+    (fb ? `<div class="cardfields">${fb}</div>` : "") +
     (c.notes ? `<div class="notes">${esc(c.notes)}</div>` : "");
   el.addEventListener("click", () => openModal(c));
   el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); el.classList.add("dragging"); });
@@ -459,14 +534,59 @@ function cardEl(c) {
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+function parseYmd(s) { const p = s.split("-").map(Number); return new Date(p[0], p[1]-1, p[2]); }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
 function startOfWeek(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate()-x.getDay()); return x; }
 function setView(v) {
   view = v;
   document.getElementById("board").style.display = v === "board" ? "flex" : "none";
   document.getElementById("calendar").style.display = v === "calendar" ? "flex" : "none";
+  document.getElementById("grid").style.display = v === "grid" ? "flex" : "none";
   document.querySelectorAll("#viewToggle button").forEach(b => b.classList.toggle("active", b.dataset.v === v));
   render();
+}
+function buildColorBy() {
+  const s = document.getElementById("colorBy"); s.innerHTML = "";
+  COLOR_DIMS.forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = "Color: " + d.label; s.appendChild(o); });
+  s.value = colorBy;
+}
+function gridColumns() {
+  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "title", label: "Title" },
+    { key: "owner", label: "Owners" }, { key: "status", label: "Status" }, { key: "due", label: "Due" }, { key: "end", label: "End" }]
+    .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name }))).concat([{ key: "notes", label: "Notes" }]);
+}
+function gridValue(c, key) {
+  if (key.indexOf("field:") === 0) return (c.fields && c.fields[key.slice(6)]) || "";
+  return c[key] || "";
+}
+function renderGrid() {
+  const cols = gridColumns();
+  const rows = visibleCards().slice().sort((a, b) => {
+    const va = String(gridValue(a, gridSort.key)).toLowerCase(), vb = String(gridValue(b, gridSort.key)).toLowerCase();
+    return (va < vb ? -1 : va > vb ? 1 : 0) * gridSort.dir;
+  });
+  const table = document.getElementById("gridTable"); table.innerHTML = "";
+  const thead = document.createElement("thead"); const trh = document.createElement("tr");
+  cols.forEach(col => {
+    const th = document.createElement("th");
+    th.textContent = col.label + (gridSort.key === col.key ? (gridSort.dir > 0 ? " ▲" : " ▼") : "");
+    th.onclick = () => { if (gridSort.key === col.key) gridSort.dir *= -1; else { gridSort.key = col.key; gridSort.dir = 1; } renderGrid(); };
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh); table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  rows.forEach(c => {
+    const tr = document.createElement("tr"); tr.onclick = () => openModal(c);
+    cols.forEach(col => {
+      const td = document.createElement("td");
+      if (col.key === "brand") { const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = brandColor(c.brand); td.appendChild(dot); td.appendChild(document.createTextNode(c.brand)); }
+      else if (col.key === "due" || col.key === "end") td.textContent = gridValue(c, col.key) ? fmtDue(gridValue(c, col.key)) : "";
+      else td.textContent = gridValue(c, col.key);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
 }
 function setCalMode(m) {
   calMode = m;
@@ -479,11 +599,19 @@ function calNav(dir) {
   else calRef = addDays(calRef, dir);
   renderCalendar();
 }
-function eventsFor(date) { const k = ymd(date); return visibleCards().filter(c => c.due === k); }
+function eventsFor(date) {
+  const k = ymd(date);
+  return visibleCards().filter(c => {
+    if (!c.due && !c.end) return false;
+    const a = c.due || c.end, b = c.end || c.due; const s = a < b ? a : b, e = a < b ? b : a;
+    return k >= s && k <= e;
+  });
+}
 function evEl(c) {
   const e = document.createElement("div"); e.className = "ev";
-  e.style.background = BRAND_HEX[c.brand] || "#555"; e.textContent = c.title;
-  e.title = c.brand + " · " + c.channel + (c.owner ? " · " + c.owner : "");
+  e.style.background = colorFor(c); e.textContent = c.title;
+  const span = (c.due && c.end && c.due !== c.end) ? " · " + fmtRange(c.due, c.end) : "";
+  e.title = c.brand + " · " + c.channel + (c.owner ? " · " + c.owner : "") + span;
   e.draggable = true;
   e.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); });
   e.addEventListener("click", ev => { ev.stopPropagation(); openModal(c); });
@@ -493,7 +621,14 @@ function attachDrop(cell, date) {
   cell.addEventListener("dragover", e => { e.preventDefault(); cell.classList.add("drag-over"); });
   cell.addEventListener("dragleave", () => cell.classList.remove("drag-over"));
   cell.addEventListener("drop", e => { e.preventDefault(); cell.classList.remove("drag-over");
-    const id = e.dataTransfer.getData("text/plain"); if (id) patchDue(id, ymd(date)); });
+    const id = e.dataTransfer.getData("text/plain"); if (!id) return;
+    const card = cards.find(c => c.id === id); if (!card) return;
+    const newDue = ymd(date);
+    if (card.due && card.end && card.end !== card.due) {
+      const span = Math.round((parseYmd(card.end) - parseYmd(card.due)) / 86400000);
+      patchDates(id, newDue, ymd(addDays(date, span)));
+    } else { patchDue(id, newDue); }
+  });
 }
 function dayCell(date, inMonth, todayKey) {
   const cell = document.createElement("div");
@@ -560,7 +695,7 @@ function renderCalendar() {
 function buildBrandFilters() {
   const bf = document.getElementById("brandFilters"); bf.innerHTML = "";
   BRANDS.forEach(b => { const chip = document.createElement("span"); chip.className = "chip" + (activeBrands.has(b.name) ? "" : " off");
-    chip.innerHTML = `<span class="dot" style="background:${BRAND_HEX[b.name]}"></span>${b.name}`;
+    chip.innerHTML = `<span class="dot" style="background:${brandColor(b.name)}"></span>${esc(b.name)}`;
     chip.onclick = () => { if (activeBrands.has(b.name)) activeBrands.delete(b.name); else activeBrands.add(b.name);
       chip.classList.toggle("off", !activeBrands.has(b.name)); render(); };
     bf.appendChild(chip); });
@@ -603,6 +738,15 @@ function renderOwnerChips() {
     const ok = await addList("person", name); if (ok) { modalOwners.add(name); renderOwnerChips(); } };
   box.appendChild(add);
 }
+function renderFieldInputs(values) {
+  const box = document.getElementById("f_fields"); box.innerHTML = "";
+  fieldsList.forEach(f => {
+    const wrap = document.createElement("div"); wrap.className = "field";
+    const lab = document.createElement("label"); lab.textContent = f.name;
+    const inp = document.createElement("input"); inp.dataset.field = f.name; inp.value = (values && values[f.name]) || "";
+    wrap.appendChild(lab); wrap.appendChild(inp); box.appendChild(wrap);
+  });
+}
 
 /* ---------- modal ---------- */
 function openModal(card, prefill) {
@@ -618,6 +762,8 @@ function openModal(card, prefill) {
   modalOwners = new Set((card && card.owner ? card.owner.split(",") : []).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
   document.getElementById("f_due").value = card ? (card.due||"") : (prefill && prefill.due ? prefill.due : "");
+  document.getElementById("f_end").value = card ? (card.end||"") : "";
+  renderFieldInputs(card ? (card.fields || {}) : {});
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : (statusList[0] ? statusList[0].name : "Backlog");
@@ -631,38 +777,45 @@ function saveModal() {
   const id = document.getElementById("f_id").value;
   const title = document.getElementById("f_title").value.trim();
   if (!title) { document.getElementById("f_title").focus(); return; }
+  const fields = {};
+  document.querySelectorAll("#f_fields input").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
-    owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value,
-    status: document.getElementById("f_status").value, notes: document.getElementById("f_notes").value.trim() };
+    owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: document.getElementById("f_end").value,
+    status: document.getElementById("f_status").value, notes: document.getElementById("f_notes").value.trim(), fields };
   if (id) updateCard(id, d); else createCard(d);
   closeModal();
 }
 function deleteCard() { const id = document.getElementById("f_id").value; if (id && confirm("Delete this deliverable?")) { removeCard(id); closeModal(); } }
 
 /* ---------- manage panel ---------- */
+function fillManage(id, list, kind) {
+  const el = document.getElementById(id); el.innerHTML = "";
+  list.forEach((it, i) => el.appendChild(manageRow(kind, it, i)));
+}
 function renderManage() {
-  const ms = document.getElementById("manageStatuses"); ms.innerHTML = "";
-  statusList.forEach((s, i) => ms.appendChild(manageRow("status", s, i)));
-  const mc = document.getElementById("manageChannels"); mc.innerHTML = "";
-  channelsList.forEach(c => mc.appendChild(manageRow("channel", c)));
-  const mp = document.getElementById("managePeople"); mp.innerHTML = "";
-  peopleList.forEach(p => mp.appendChild(manageRow("person", p)));
+  fillManage("manageBrands", brandsList, "brand");
+  fillManage("manageStatuses", statusList, "status");
+  fillManage("manageChannels", channelsList, "channel");
+  fillManage("managePeople", peopleList, "person");
+  fillManage("manageFields", fieldsList, "field");
 }
 function manageRow(kind, item, idx) {
   const row = document.createElement("div"); row.className = "manage-row";
-  const span = document.createElement("span");
-  if (kind === "status") { const dot = document.createElement("span"); dot.className = "lane-dot";
-    dot.style.background = statusColor(item.name, idx); span.appendChild(dot); }
-  span.appendChild(document.createTextNode(item.name));
+  const left = document.createElement("span"); left.className = "row-left";
+  if (kind === "brand" || kind === "channel" || kind === "status") {
+    const eff = kind === "brand" ? brandColor(item.name) : kind === "channel" ? channelColorOf(item.name) : statusColor(item.name);
+    const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = eff; sw.title = "Color";
+    sw.onchange = () => setColor(item, sw.value); left.appendChild(sw);
+  }
+  left.appendChild(document.createTextNode(item.name));
   const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
   if (kind === "status") {
     const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
     const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
     ctrls.appendChild(up); ctrls.appendChild(dn);
   }
-  const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item);
-  ctrls.appendChild(btn);
-  row.appendChild(span); row.appendChild(ctrls); return row;
+  if (kind !== "brand") { const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item); ctrls.appendChild(btn); }
+  row.appendChild(left); row.appendChild(ctrls); return row;
 }
 function openManage() { manageOpen = true; renderManage(); document.getElementById("manageOverlay").classList.add("show"); }
 function closeManage() { manageOpen = false; document.getElementById("manageOverlay").classList.remove("show"); }
@@ -670,9 +823,12 @@ function closeManage() { manageOpen = false; document.getElementById("manageOver
 /* ---------- exports ---------- */
 function download(filename, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+function exportCols() { return ["Brand","Channel","Title","Owners","Status","Due","End"].concat(fieldsList.map(f => f.name)).concat(["Notes"]); }
+function exportRow(c) { return [c.brand, c.channel, c.title, c.owner||"", c.status, c.due||"", c.end||""]
+  .concat(fieldsList.map(f => (c.fields && c.fields[f.name]) || "")).concat([(c.notes||"").replace(/\n/g," ")]); }
 function exportCSV() {
-  const cols = ["Brand","Channel","Title","Owners","Due","Status","Notes"]; const rows = [cols];
-  cards.forEach(c => rows.push([c.brand, c.channel, c.title, c.owner||"", c.due||"", c.status, (c.notes||"").replace(/\n/g," ")]));
+  const rows = [exportCols()];
+  cards.forEach(c => rows.push(exportRow(c)));
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\r\n");
   download("smarterpaw-planner.csv", new Blob([csv], { type: "text/csv" }));
 }
@@ -717,11 +873,11 @@ function zipStore(filesObj){
   const out = new Uint8Array(total); let p = 0; all.forEach(c => { out.set(c, p); p += c.length; }); return out;
 }
 function exportXLSX(){
-  const cols = ["Brand","Channel","Title","Owners","Due","Status","Notes"]; const rows = [cols];
+  const rows = [exportCols()];
   const order = {}; statusList.forEach((s,i)=>order[s.name]=i);
   const ord = s => (s in order ? order[s] : 999);
   [...cards].sort((a,b)=> a.brand.localeCompare(b.brand) || (ord(a.status)-ord(b.status)) || a.channel.localeCompare(b.channel))
-    .forEach(c => rows.push([c.brand, c.channel, c.title, c.owner||"", c.due||"", c.status, (c.notes||"").replace(/\n/g," ")]));
+    .forEach(c => rows.push(exportRow(c)));
   download("smarterpaw-planner.xlsx", new Blob([buildXlsx(rows)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
@@ -748,7 +904,7 @@ function renderChangelog() {
 async function init() {
   fillStaticSelects();
   await loadLists();
-  buildBrandFilters(); buildChannelFilter(); buildChannelSelect(); buildStatusSelect();
+  buildBrandFilters(); buildChannelFilter(); buildChannelSelect(); buildStatusSelect(); buildColorBy();
   setSyncUI();
   document.getElementById("verBtn").textContent = "v" + VERSION;
   renderChangelog();
@@ -760,6 +916,7 @@ async function init() {
   }
 
   document.getElementById("channelFilter").onchange = e => { channelFilter = e.target.value; render(); };
+  document.getElementById("colorBy").onchange = e => { colorBy = e.target.value; localStorage.setItem("planner-colorby", colorBy); render(); };
   document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
 
   document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => setView(b.dataset.v));
@@ -794,12 +951,15 @@ async function init() {
   const addCh = () => { const i = document.getElementById("mAddChannel"); addList("channel", i.value).then(ok => { if (ok) i.value = ""; }); };
   const addPe = () => { const i = document.getElementById("mAddPerson"); addList("person", i.value).then(ok => { if (ok) i.value = ""; }); };
   const addSt = () => { const i = document.getElementById("mAddStatus"); addList("status", i.value).then(ok => { if (ok) i.value = ""; }); };
+  const addFl = () => { const i = document.getElementById("mAddField"); addList("field", i.value).then(ok => { if (ok) i.value = ""; }); };
   document.getElementById("mAddChannelBtn").onclick = addCh;
   document.getElementById("mAddPersonBtn").onclick = addPe;
   document.getElementById("mAddStatusBtn").onclick = addSt;
+  document.getElementById("mAddFieldBtn").onclick = addFl;
   document.getElementById("mAddChannel").addEventListener("keydown", e => { if (e.key === "Enter") addCh(); });
   document.getElementById("mAddPerson").addEventListener("keydown", e => { if (e.key === "Enter") addPe(); });
   document.getElementById("mAddStatus").addEventListener("keydown", e => { if (e.key === "Enter") addSt(); });
+  document.getElementById("mAddField").addEventListener("keydown", e => { if (e.key === "Enter") addFl(); });
 
   const menu = document.getElementById("menuOverlay");
   document.getElementById("menuBtn").onclick = () => menu.classList.add("show");
