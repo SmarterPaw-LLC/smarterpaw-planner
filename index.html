@@ -170,15 +170,21 @@
   .ev-bar:active { cursor: grabbing; }
   .bt { font-weight: 600; }
   .bardims { opacity: .92; }
-  .dchip { display: inline-block; font-size: 10px; line-height: 15px; padding: 0 5px; border-radius: 4px;
-    background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.3); margin-left: 4px; vertical-align: middle; }
-  .dchip.overdue { border-color: var(--danger); color: var(--danger); }
-  .dimrow { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; align-items: center; }
-  .dimrow .dchip { margin-left: 0; font-size: 11px; background: var(--panel); }
+  .dchip { display: inline-flex; align-items: center; font-size: 10px; line-height: 1; padding: 2px 8px; border-radius: 999px;
+    background: rgba(0,0,0,.30); border: 1px solid rgba(255,255,255,.6); color: #fff; margin-left: 6px; vertical-align: middle;
+    font-weight: 600; white-space: nowrap; }
+  .dchip.overdue { border-color: #fff; background: var(--danger); color: #fff; }
+  .dimrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+  .dimrow .dchip { margin-left: 0; font-size: 11px; padding: 3px 10px; }
   .dimrow.text { color: var(--muted); font-size: 12px; }
-  .disp-dims { display: flex; flex-direction: column; gap: 8px; }
-  .disp-opt { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+  .disp-dims { display: flex; flex-direction: column; gap: 10px; }
+  .disp-dims .disp-opt { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; margin: 0; color: var(--text); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .disp-dims .disp-opt input[type=checkbox] { width: 16px; height: 16px; margin: 0; flex: none; }
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 4px 0; }
+  #legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  #legend .lg-title { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
+  #legend .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
+  #legend .lg .dot { width: 11px; height: 11px; border-radius: 50%; }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 </style>
@@ -197,11 +203,14 @@
   </div>
   <div class="toolbar">
     <button class="primary" id="addBtn">+ Deliverable</button>
+    <button id="calSettingsBtn">⚙ Display</button>
     <button id="manageBtn">⚙ Manage</button>
     <button id="xlsxBtn">Export Excel</button>
     <button class="ghost" id="menuBtn">⋯</button>
   </div>
 </header>
+
+<div id="legend"></div>
 
 <div class="board" id="board"></div>
 
@@ -212,7 +221,6 @@
     <button id="calToday">Today</button>
     <button id="calNext" title="Next">›</button>
     <div class="cal-label" id="calLabel"></div>
-    <button id="calSettingsBtn" title="Display settings">⚙ Display</button>
   </div>
   <div class="cal-main">
     <div class="tray" id="calTray"></div>
@@ -335,8 +343,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.5";
+const VERSION = "1.6";
 const CHANGELOG = [
+  "v1.6 — Pill badges with borders, color legend at top, Display settings available in all views, rename lanes/channels/people/fields (cards update automatically)",
   "v1.5 — Continuous spanning bars on the calendar, display-settings gear (choose dimensions + badge/text style on events & cards), combined due/end date field",
   "v1.4 — End dates (multi-day spans on calendar), color-by switcher + custom colors, custom fields, Grid view",
   "v1.3 — Custom Kanban lanes, add channels from the dropdown, version history",
@@ -381,7 +390,7 @@ function dimBadges(c) {
     const d = dimInfo(c, k); if (!d.text) return "";
     if (!displaySettings.badge) return esc(d.text);
     const od = (k === "dates" && over) ? " overdue" : "";
-    const style = d.color ? ` style="background:${d.color};border-color:${d.color};color:#fff"` : "";
+    const style = d.color ? ` style="background:${d.color};border-color:rgba(255,255,255,.85);color:#fff"` : "";
     return `<span class="dchip${od}"${style}>${esc(d.text)}</span>`;
   }).filter(Boolean);
   return parts.join(displaySettings.badge ? "" : " · ");
@@ -541,6 +550,40 @@ async function moveStatus(item, dir) {
   await Promise.all(arr.map((s, k) => db.from("lists").update({ position: k + 1 }).eq("id", s.id)));
   await reloadListsAndUI();
 }
+function splitOwners(s) { return (s || "").split(",").map(x => x.trim()).filter(Boolean); }
+function cascadeRenameLocal(kind, old, neu) {
+  cards.forEach(c => {
+    if (kind === "status" && c.status === old) c.status = neu;
+    else if (kind === "channel" && c.channel === old) c.channel = neu;
+    else if (kind === "person") { const o = splitOwners(c.owner); if (o.includes(old)) c.owner = o.map(x => x === old ? neu : x).join(", "); }
+    else if (kind === "field" && c.fields && (old in c.fields)) { c.fields[neu] = c.fields[old]; delete c.fields[old]; }
+  });
+}
+async function cascadeRenameDB(kind, old, neu) {
+  if (kind === "status") { await db.from("deliverables").update({ status: neu }).eq("status", old); return; }
+  if (kind === "channel") { await db.from("deliverables").update({ channel: neu }).eq("channel", old); return; }
+  if (kind === "person") {
+    const affected = cards.filter(c => splitOwners(c.owner).includes(old));
+    await Promise.all(affected.map(c => db.from("deliverables").update({ owner: splitOwners(c.owner).map(x => x === old ? neu : x).join(", ") }).eq("id", c.id)));
+    return;
+  }
+  if (kind === "field") {
+    const affected = cards.filter(c => c.fields && (old in c.fields));
+    await Promise.all(affected.map(c => { const f = Object.assign({}, c.fields); f[neu] = f[old]; delete f[old]; return db.from("deliverables").update({ fields: f }).eq("id", c.id); }));
+    return;
+  }
+}
+async function renameList(kind, item, newName) {
+  newName = (newName || "").trim(); if (!newName || newName === item.name) return;
+  const list = listFor(kind);
+  if (list.some(x => x !== item && x.name.toLowerCase() === newName.toLowerCase())) { toast('"' + newName + '" already exists'); return; }
+  const old = item.name;
+  if (!ONLINE) { item.name = newName; cascadeRenameLocal(kind, old, newName); saveListsLocal(); saveLocal(); afterListsChanged(); return; }
+  const { error } = await db.from("lists").update({ name: newName }).eq("id", item.id);
+  if (error) { toast("Rename failed: " + error.message); return; }
+  await cascadeRenameDB(kind, old, newName);
+  await reloadListsAndUI(); await refetch();
+}
 
 /* ---------- render board ---------- */
 function isOverdue(c) { if (!c.due || c.status === "Live") return false; const t = new Date(); t.setHours(0,0,0,0); return new Date(c.due + "T00:00:00") < t; }
@@ -551,7 +594,7 @@ function visibleCards() {
   return cards.filter(c => activeBrands.has(c.brand) && (!channelFilter || c.channel === channelFilter) &&
     (!q || (c.title + " " + (c.notes||"") + " " + (c.owner||"")).toLowerCase().includes(q)));
 }
-function render() { if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else renderBoard(); }
+function render() { renderLegend(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else renderBoard(); }
 function renderBoard() {
   const board = document.getElementById("board"); board.innerHTML = "";
   const vis = visibleCards();
@@ -616,6 +659,14 @@ function buildColorBy() {
   const s = document.getElementById("colorBy"); s.innerHTML = "";
   COLOR_DIMS.forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = "Color: " + d.label; s.appendChild(o); });
   s.value = colorBy;
+}
+function renderLegend() {
+  const el = document.getElementById("legend"); if (!el) return;
+  const dim = COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0];
+  const items = colorBy === "channel" ? channelsList : colorBy === "status" ? statusList : brandsList;
+  const colorFn = colorBy === "channel" ? channelColorOf : colorBy === "status" ? statusColor : brandColor;
+  el.innerHTML = `<span class="lg-title">${esc(dim.label)} colors</span>` +
+    items.map(it => `<span class="lg"><span class="dot" style="background:${colorFn(it.name)}"></span>${esc(it.name)}</span>`).join("");
 }
 function gridColumns() {
   return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "title", label: "Title" },
@@ -943,7 +994,12 @@ function manageRow(kind, item, idx) {
     const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
     ctrls.appendChild(up); ctrls.appendChild(dn);
   }
-  if (kind !== "brand") { const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item); ctrls.appendChild(btn); }
+  if (kind !== "brand") {
+    const ed = document.createElement("button"); ed.textContent = "✎"; ed.className = "mv"; ed.title = "Rename";
+    ed.onclick = () => { const nn = prompt("Rename “" + item.name + "” to:", item.name); if (nn) renameList(kind, item, nn); };
+    ctrls.appendChild(ed);
+    const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item); ctrls.appendChild(btn);
+  }
   row.appendChild(left); row.appendChild(ctrls); return row;
 }
 function openManage() { manageOpen = true; renderManage(); document.getElementById("manageOverlay").classList.add("show"); }
