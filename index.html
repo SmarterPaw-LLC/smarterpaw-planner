@@ -185,8 +185,13 @@
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 4px 0; }
   #legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
   #legend .lg-title { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
-  #legend .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
+  #legend .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); cursor: pointer; user-select: none; }
   #legend .lg .dot { width: 11px; height: 11px; border-radius: 50%; }
+  #legend .lg.off { opacity: .3; }
+  #legend .lg.sel { font-weight: 700; }
+  #legend .lg.sel .dot { box-shadow: 0 0 0 2px var(--text); }
+  #legend .lg-clear { cursor: pointer; color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  #legend .lg-clear:hover { color: var(--text); border-color: var(--accent); }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 </style>
@@ -345,8 +350,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.8";
+const VERSION = "1.9";
 const CHANGELOG = [
+  "v1.9 — Click a color in the legend to filter the board/calendar/grid to those items",
   "v1.8 — Board and Calendar each have independent display settings (dimensions + badge/text)",
   "v1.7 — Plain-text display mode keeps its own formatting (overdue dates show red again)",
   "v1.6 — Pill badges with borders, color legend at top, Display settings available in all views, rename lanes/channels/people/fields (cards update automatically)",
@@ -431,6 +437,7 @@ let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
 let view = "board", calMode = "month", calRef = new Date();
 let gridSort = { key: "due", dir: 1 };
+let legendSel = new Set();
 let _idc = Date.now();
 function uid() { return "c" + (_idc++).toString(36); }
 function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 3500); }
@@ -603,9 +610,11 @@ async function renameList(kind, item, newName) {
 function isOverdue(c) { if (!c.due || c.status === "Live") return false; const t = new Date(); t.setHours(0,0,0,0); return new Date(c.due + "T00:00:00") < t; }
 function fmtDue(d) { if (!d) return ""; return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function esc(s) { return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : c.brand; }
 function visibleCards() {
   const q = searchText.trim().toLowerCase();
   return cards.filter(c => activeBrands.has(c.brand) && (!channelFilter || c.channel === channelFilter) &&
+    (legendSel.size === 0 || legendSel.has(legendVal(c))) &&
     (!q || (c.title + " " + (c.notes||"") + " " + (c.owner||"")).toLowerCase().includes(q)));
 }
 function render() { renderLegend(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else renderBoard(); }
@@ -677,11 +686,23 @@ function buildColorBy() {
 }
 function renderLegend() {
   const el = document.getElementById("legend"); if (!el) return;
+  el.innerHTML = "";
   const dim = COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0];
   const items = colorBy === "channel" ? channelsList : colorBy === "status" ? statusList : brandsList;
   const colorFn = colorBy === "channel" ? channelColorOf : colorBy === "status" ? statusColor : brandColor;
-  el.innerHTML = `<span class="lg-title">${esc(dim.label)} colors</span>` +
-    items.map(it => `<span class="lg"><span class="dot" style="background:${colorFn(it.name)}"></span>${esc(it.name)}</span>`).join("");
+  const title = document.createElement("span"); title.className = "lg-title"; title.textContent = dim.label + " — click to filter"; el.appendChild(title);
+  items.forEach(it => {
+    const lg = document.createElement("span");
+    lg.className = "lg" + (legendSel.has(it.name) ? " sel" : (legendSel.size ? " off" : ""));
+    lg.innerHTML = `<span class="dot" style="background:${colorFn(it.name)}"></span>${esc(it.name)}`;
+    lg.onclick = () => { if (legendSel.has(it.name)) legendSel.delete(it.name); else legendSel.add(it.name); render(); };
+    el.appendChild(lg);
+  });
+  if (legendSel.size) {
+    const clear = document.createElement("span"); clear.className = "lg-clear"; clear.textContent = "✕ clear filter";
+    clear.onclick = () => { legendSel.clear(); render(); };
+    el.appendChild(clear);
+  }
 }
 function gridColumns() {
   return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "title", label: "Title" },
@@ -1120,7 +1141,7 @@ async function init() {
   }
 
   document.getElementById("channelFilter").onchange = e => { channelFilter = e.target.value; render(); };
-  document.getElementById("colorBy").onchange = e => { colorBy = e.target.value; localStorage.setItem("planner-colorby", colorBy); render(); };
+  document.getElementById("colorBy").onchange = e => { colorBy = e.target.value; localStorage.setItem("planner-colorby", colorBy); legendSel.clear(); render(); };
   document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
 
   document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => setView(b.dataset.v));
