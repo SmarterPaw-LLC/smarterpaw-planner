@@ -133,6 +133,9 @@
   .mv:hover { border-color: var(--accent); }
   .mv:disabled { opacity: .25; cursor: default; border-color: transparent; }
   .lane-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+  .mv.comp { color: var(--muted); }
+  .mv.comp.on { color: var(--ok); border-color: var(--ok); font-weight: 700; }
+  .done-check { color: var(--ok); font-weight: 800; }
   #changelogList { display: flex; flex-direction: column; gap: 9px; }
   #changelogList .cl { font-size: 13px; color: var(--text); padding: 8px 11px; background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 8px; }
@@ -207,6 +210,7 @@
     <select id="channelFilter"><option value="">All channels</option></select>
     <select id="colorBy" title="Color cards by"></select>
     <input class="search" id="search" placeholder="Search…" />
+    <button id="filterBtn">⚲ Filter</button>
   </div>
   <div class="toolbar">
     <button class="primary" id="addBtn">+ Deliverable</button>
@@ -316,6 +320,16 @@
   </div>
 </div>
 
+<!-- Filter -->
+<div class="overlay" id="filterOverlay">
+  <div class="modal" style="width:420px">
+    <h2>Filter</h2>
+    <div id="filterBody"></div>
+    <div class="modal-actions"><button id="filterClear">Clear all</button><div class="spacer"></div><button id="filterClose">Done</button></div>
+    <div class="hint">Narrows Board, Calendar &amp; Grid. Brand, Channel and the color legend have their own controls.</div>
+  </div>
+</div>
+
 <!-- Display settings -->
 <div class="overlay" id="dispOverlay">
   <div class="modal" style="width:400px">
@@ -350,8 +364,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.9";
+const VERSION = "1.10";
 const CHANGELOG = [
+  "v1.10 — Mark a lane as 'Complete' (green ✓ on done cards & events); Filter panel to show/hide by owner, lane, or custom field",
   "v1.9 — Click a color in the legend to filter the board/calendar/grid to those items",
   "v1.8 — Board and Calendar each have independent display settings (dimensions + badge/text)",
   "v1.7 — Plain-text display mode keeps its own formatting (overdue dates show red again)",
@@ -438,6 +453,8 @@ let modalOwners = new Set();
 let view = "board", calMode = "month", calRef = new Date();
 let gridSort = { key: "due", dir: 1 };
 let legendSel = new Set();
+let completeLane = "";
+let filters = {};   // { owner:Set, status:Set, "field:Name":Set }
 let _idc = Date.now();
 function uid() { return "c" + (_idc++).toString(36); }
 function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 3500); }
@@ -498,13 +515,13 @@ function sampleData() {
 
 /* ---------- channels & people lists ---------- */
 function defaultBrands() { return BRANDS.map(b => ({ name: b.name, color: DEFAULT_BRAND_HEX[b.name] })); }
-function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList, statuses: statusList, brands: brandsList, fields: fieldsList })); }
+function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList, statuses: statusList, brands: brandsList, fields: fieldsList, completeLane: completeLane })); }
 async function loadLists() {
   if (!ONLINE) {
     const raw = JSON.parse(localStorage.getItem(LIST_KEY) || "null");
     if (raw && raw.channels) {
       channelsList = raw.channels; peopleList = raw.people || []; statusList = raw.statuses || DEFAULT_STATUSES.map(n => ({ name: n }));
-      brandsList = raw.brands || defaultBrands(); fieldsList = raw.fields || [];
+      brandsList = raw.brands || defaultBrands(); fieldsList = raw.fields || []; completeLane = raw.completeLane || "";
     } else {
       channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
       statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = []; saveListsLocal();
@@ -521,6 +538,7 @@ async function loadLists() {
   const map = (k) => data.filter(r => r.kind === k).map(r => ({ id: r.id, name: r.name, color: r.color || undefined }));
   channelsList = map("channel"); peopleList = map("person"); statusList = map("status");
   brandsList = map("brand"); fieldsList = map("field");
+  completeLane = (data.find(r => r.kind === "status" && r.is_complete) || {}).name || "";
   if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
   if (statusList.length === 0) statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
   if (brandsList.length === 0) brandsList = defaultBrands();
@@ -571,6 +589,14 @@ async function moveStatus(item, dir) {
   await Promise.all(arr.map((s, k) => db.from("lists").update({ position: k + 1 }).eq("id", s.id)));
   await reloadListsAndUI();
 }
+async function setComplete(item) {
+  const makeComplete = completeLane !== item.name;
+  if (!ONLINE) { completeLane = makeComplete ? item.name : ""; saveListsLocal(); afterListsChanged(); return; }
+  const r1 = await db.from("lists").update({ is_complete: false }).eq("kind", "status");
+  if (r1.error) { toast("Needs the v1.10 SQL (0005): " + r1.error.message); return; }
+  if (makeComplete) { const { error } = await db.from("lists").update({ is_complete: true }).eq("id", item.id); if (error) { toast("Failed: " + error.message); return; } }
+  await reloadListsAndUI();
+}
 function splitOwners(s) { return (s || "").split(",").map(x => x.trim()).filter(Boolean); }
 function cascadeRenameLocal(kind, old, neu) {
   cards.forEach(c => {
@@ -611,12 +637,56 @@ function isOverdue(c) { if (!c.due || c.status === "Live") return false; const t
 function fmtDue(d) { if (!d) return ""; return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function esc(s) { return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : c.brand; }
+function passesFilters(c) {
+  if (filters.owner && filters.owner.size && !splitOwners(c.owner).some(o => filters.owner.has(o))) return false;
+  if (filters.status && filters.status.size && !filters.status.has(c.status)) return false;
+  for (let i = 0; i < fieldsList.length; i++) {
+    const key = "field:" + fieldsList[i].name, set = filters[key];
+    if (set && set.size && !set.has((c.fields && c.fields[fieldsList[i].name]) || "")) return false;
+  }
+  return true;
+}
 function visibleCards() {
   const q = searchText.trim().toLowerCase();
   return cards.filter(c => activeBrands.has(c.brand) && (!channelFilter || c.channel === channelFilter) &&
-    (legendSel.size === 0 || legendSel.has(legendVal(c))) &&
+    (legendSel.size === 0 || legendSel.has(legendVal(c))) && passesFilters(c) &&
     (!q || (c.title + " " + (c.notes||"") + " " + (c.owner||"")).toLowerCase().includes(q)));
 }
+function filterValues(key) {
+  if (key === "owner") return peopleList.map(p => p.name);
+  if (key === "status") return statusList.map(s => s.name);
+  const name = key.slice(6);
+  return [...new Set(cards.map(c => c.fields && c.fields[name]).filter(Boolean))].sort();
+}
+function filterCount() { return Object.keys(filters).reduce((n, k) => n + (filters[k] ? filters[k].size : 0), 0); }
+function updateFilterBtn() {
+  const n = filterCount(); const b = document.getElementById("filterBtn");
+  b.textContent = "⚲ Filter" + (n ? " (" + n + ")" : ""); b.classList.toggle("primary", n > 0);
+}
+function renderFilters() {
+  const body = document.getElementById("filterBody"); body.innerHTML = "";
+  const sections = [{ key: "owner", label: "Owners" }, { key: "status", label: "Lane / status" }]
+    .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
+  sections.forEach(sec => {
+    const vals = filterValues(sec.key); if (!vals.length) return;
+    const wrap = document.createElement("div"); wrap.className = "manage-sec";
+    const lab = document.createElement("span"); lab.className = "seclabel"; lab.textContent = sec.label; wrap.appendChild(lab);
+    const list = document.createElement("div"); list.className = "disp-dims";
+    vals.forEach(v => {
+      const l = document.createElement("label"); l.className = "disp-opt";
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(filters[sec.key] && filters[sec.key].has(v));
+      cb.onchange = () => {
+        if (!filters[sec.key]) filters[sec.key] = new Set();
+        if (cb.checked) filters[sec.key].add(v); else { filters[sec.key].delete(v); if (!filters[sec.key].size) delete filters[sec.key]; }
+        updateFilterBtn(); render();
+      };
+      l.appendChild(cb); l.appendChild(document.createTextNode(" " + v)); list.appendChild(l);
+    });
+    wrap.appendChild(list); body.appendChild(wrap);
+  });
+  if (!body.children.length) { const e = document.createElement("div"); e.className = "hint"; e.textContent = "No owners, lanes, or custom-field values to filter yet."; body.appendChild(e); }
+}
+function openFilter() { renderFilters(); document.getElementById("filterOverlay").classList.add("show"); }
 function render() { renderLegend(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else renderBoard(); }
 function renderBoard() {
   const board = document.getElementById("board"); board.innerHTML = "";
@@ -654,7 +724,8 @@ function cardEl(c) {
   const el = document.createElement("div"); el.className = "card";
   el.style.borderLeftColor = colorFor(c); el.draggable = true;
   const badges = dimBadges(c);
-  el.innerHTML = `<h3>${esc(c.title)}</h3>` +
+  const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
+  el.innerHTML = `<h3>${done}${esc(c.title)}</h3>` +
     (badges ? `<div class="dimrow${curDisp().badge ? "" : " text"}">${badges}</div>` : "") +
     (c.notes ? `<div class="notes">${esc(c.notes)}</div>` : "");
   el.addEventListener("click", () => openModal(c));
@@ -804,7 +875,8 @@ function packLanes(evs, ws) {
 }
 function evContent(c) {
   const badges = dimBadges(c);
-  return `<span class="bt">${esc(c.title)}</span>` + (badges ? ` <span class="bardims">${badges}</span>` : "");
+  const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
+  return `<span class="bt">${done}${esc(c.title)}</span>` + (badges ? ` <span class="bardims">${badges}</span>` : "");
 }
 function evTitle(c) { return c.title + " — " + c.brand + " · " + c.channel + (c.owner ? " · " + c.owner : "") + (c.due || c.end ? " · " + fmtRange(c.due, c.end) : ""); }
 function evEl(c) {
@@ -1030,6 +1102,9 @@ function manageRow(kind, item, idx) {
   left.appendChild(document.createTextNode(item.name));
   const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
   if (kind === "status") {
+    const comp = document.createElement("button"); comp.textContent = "✓ Complete"; comp.className = "mv comp" + (completeLane === item.name ? " on" : "");
+    comp.title = completeLane === item.name ? "This is the Complete lane — click to unset" : "Mark this as the Complete lane";
+    comp.onclick = () => setComplete(item); ctrls.appendChild(comp);
     const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
     const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
     ctrls.appendChild(up); ctrls.appendChild(dn);
@@ -1173,6 +1248,11 @@ async function init() {
   document.getElementById("dispClose").onclick = () => document.getElementById("dispOverlay").classList.remove("show");
   document.getElementById("dispOverlay").onclick = e => { if (e.target.id === "dispOverlay") e.currentTarget.classList.remove("show"); };
   document.querySelectorAll("#dispStyle button").forEach(b => b.onclick = () => { curDisp().badge = b.dataset.s === "badge"; saveDisplay(); renderDispSettings(); render(); });
+  document.getElementById("filterBtn").onclick = openFilter;
+  document.getElementById("filterClose").onclick = () => document.getElementById("filterOverlay").classList.remove("show");
+  document.getElementById("filterOverlay").onclick = e => { if (e.target.id === "filterOverlay") e.currentTarget.classList.remove("show"); };
+  document.getElementById("filterClear").onclick = () => { filters = {}; updateFilterBtn(); renderFilters(); render(); };
+  updateFilterBtn();
   document.getElementById("f_addEnd").onclick = () => { const w = document.getElementById("f_endWrap"); w.style.display = ""; document.getElementById("f_addEnd").style.display = "none"; const due = document.getElementById("f_due").value; const end = document.getElementById("f_end"); if (!end.value && due) end.value = due; end.focus(); };
   document.getElementById("f_clearEnd").onclick = () => { document.getElementById("f_end").value = ""; document.getElementById("f_endWrap").style.display = "none"; document.getElementById("f_addEnd").style.display = ""; };
 
@@ -1205,7 +1285,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") saveModal();
   });
 }
