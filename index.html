@@ -170,6 +170,8 @@
   .wday.today .daynum { background: var(--accent); color: #fff; border-radius: 999px; }
   .wday.drag-over { background: rgba(109,93,252,.14); }
   .bars-layer { position: absolute; inset: 0; pointer-events: none; }
+  /* While dragging an event, let drops fall through bars to the day cell underneath, anywhere in the calendar. */
+  .cal-dragging .ev-bar, .cal-dragging .ev { pointer-events: none; }
   .ev-bar { position: absolute; height: 19px; line-height: 19px; border-radius: 5px; color: #fff; font-size: 11px;
     padding: 0 7px; overflow: hidden; cursor: grab; pointer-events: auto; box-sizing: border-box;
     display: flex; align-items: center; gap: 5px; }
@@ -373,8 +375,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.17";
+const VERSION = "1.18";
 const CHANGELOG = [
+  "v1.18 — Drag an item anywhere on the calendar to reschedule it — drops now work even over other events (multi-day items keep their length)",
   "v1.17 — Calendar bars always show the brand chip (long titles truncate to fit), and the green ✓ is a crisp badge that no longer clips",
   "v1.16 — Multi-day items sort to the top of each calendar week (longest first), and stay in the same row across weeks",
   "v1.15 — Click any day on the calendar to add a deliverable for that date",
@@ -905,14 +908,16 @@ function evTitle(c) { return c.title + " — " + c.brand + " · " + c.channel + 
 function evEl(c) {
   const e = document.createElement("div"); e.className = "ev"; e.style.background = colorFor(c);
   e.innerHTML = evContent(c); e.title = evTitle(c); e.draggable = true;
-  e.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); });
+  e.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); document.body.classList.add("cal-dragging"); });
+  e.addEventListener("dragend", () => document.body.classList.remove("cal-dragging"));
   e.addEventListener("click", ev => { ev.stopPropagation(); openModal(c); });
   return e;
 }
 function barEl(c) {
   const el = document.createElement("div"); el.className = "ev-bar"; el.style.background = colorFor(c);
   el.innerHTML = evContent(c); el.title = evTitle(c); el.draggable = true;
-  el.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); });
+  el.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); document.body.classList.add("cal-dragging"); });
+  el.addEventListener("dragend", () => document.body.classList.remove("cal-dragging"));
   el.addEventListener("click", ev => { ev.stopPropagation(); openModal(c); });
   return el;
 }
