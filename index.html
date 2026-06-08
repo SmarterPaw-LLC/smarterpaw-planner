@@ -861,7 +861,12 @@ function weekEvents(ws, we) {
     if (!c.due && !c.end) return false;
     const a = c.due || c.end, b = c.end || c.due; const s = a < b ? a : b, e = a < b ? b : a;
     return !(e < wsK || s > weK);
-  }).sort((x, y) => { const xs = x.due || x.end, ys = y.due || y.end; return xs < ys ? -1 : xs > ys ? 1 : 0; });
+  }).sort((x, y) => {
+    // Multi-day spans first (longest at the very top), then single-day items, each by start date.
+    const len = c => { const a = c.due || c.end, b = c.end || c.due; const s = a < b ? a : b, e = a < b ? b : a; return parseYmd(e) - parseYmd(s); };
+    const dl = len(y) - len(x); if (dl !== 0) return dl;
+    const xs = x.due || x.end, ys = y.due || y.end; return xs < ys ? -1 : xs > ys ? 1 : 0;
+  });
 }
 function packLanes(evs, ws) {
   const lanes = []; const placed = [];
