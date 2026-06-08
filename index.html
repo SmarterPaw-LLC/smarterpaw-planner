@@ -171,11 +171,16 @@
   .wday.drag-over { background: rgba(109,93,252,.14); }
   .bars-layer { position: absolute; inset: 0; pointer-events: none; }
   .ev-bar { position: absolute; height: 19px; line-height: 19px; border-radius: 5px; color: #fff; font-size: 11px;
-    padding: 0 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; pointer-events: auto;
-    box-sizing: border-box; }
+    padding: 0 7px; overflow: hidden; cursor: grab; pointer-events: auto; box-sizing: border-box;
+    display: flex; align-items: center; gap: 5px; }
   .ev-bar:active { cursor: grabbing; }
   .bt { font-weight: 600; }
   .bardims { opacity: .92; }
+  /* In calendar bars: brand chip is always shown; title truncates and secondary chips clip before it. */
+  .ev-bar .bt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev-bar .barbrand { flex: 0 0 auto; display: inline-flex; align-items: center; }
+  .ev-bar .bardims { flex: 0 100 auto; min-width: 0; overflow: hidden; display: inline-flex; align-items: center; white-space: nowrap; }
+  .ev-bar .barbrand .dchip, .ev-bar .bardims .dchip:first-child { margin-left: 0; }
   .dchip { display: inline-flex; align-items: center; font-size: 10px; line-height: 1; padding: 2px 8px; border-radius: 999px;
     background: rgba(0,0,0,.30); border: 1px solid rgba(255,255,255,.6); color: #fff; margin-left: 6px; vertical-align: middle;
     font-weight: 600; white-space: nowrap; }
@@ -412,17 +417,18 @@ function dimInfo(c, key) {
   if (key.indexOf("field:") === 0) { const n = key.slice(6); return { text: (c.fields && c.fields[n]) || "", color: null }; }
   return { text: "", color: null };
 }
-function dimBadges(c) {
+function dimChipHtml(c, k) {
   const ds = curDisp(); const over = isOverdue(c);
-  const parts = ds.dims.map(k => {
-    const d = dimInfo(c, k); if (!d.text) return "";
-    const od = (k === "dates" && over) ? " overdue" : "";
-    if (!ds.badge) {
-      return `<span class="dtext${od}">${esc(d.text)}</span>`;
-    }
-    const style = d.color ? ` style="background:${d.color};border-color:rgba(255,255,255,.85);color:#fff"` : "";
-    return `<span class="dchip${od}"${style}>${esc(d.text)}</span>`;
-  }).filter(Boolean);
+  const d = dimInfo(c, k); if (!d.text) return "";
+  const od = (k === "dates" && over) ? " overdue" : "";
+  if (!ds.badge) return `<span class="dtext${od}">${esc(d.text)}</span>`;
+  const style = d.color ? ` style="background:${d.color};border-color:rgba(255,255,255,.85);color:#fff"` : "";
+  return `<span class="dchip${od}"${style}>${esc(d.text)}</span>`;
+}
+function dimBadges(c, exclude) {
+  const ds = curDisp();
+  const keys = exclude && exclude.length ? ds.dims.filter(k => !exclude.includes(k)) : ds.dims;
+  const parts = keys.map(k => dimChipHtml(c, k)).filter(Boolean);
   return ds.badge ? parts.join("") : parts.join('<span class="dsep"> · </span>');
 }
 const STORE_KEY = "smarterpaw-planner-v1";
@@ -882,9 +888,13 @@ function packLanes(evs, ws) {
   return placed;
 }
 function evContent(c) {
-  const badges = dimBadges(c);
+  const ds = curDisp();
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
-  return `<span class="bt">${done}${esc(c.title)}</span>` + (badges ? ` <span class="bardims">${badges}</span>` : "");
+  const brand = ds.dims.includes("brand") ? dimChipHtml(c, "brand") : "";
+  const rest = dimBadges(c, ["brand"]);
+  return `<span class="bt">${done}${esc(c.title)}</span>`
+    + (brand ? ` <span class="barbrand">${brand}</span>` : "")
+    + (rest ? ` <span class="bardims">${rest}</span>` : "");
 }
 function evTitle(c) { return c.title + " — " + c.brand + " · " + c.channel + (c.owner ? " · " + c.owner : "") + (c.due || c.end ? " · " + fmtRange(c.due, c.end) : ""); }
 function evEl(c) {
