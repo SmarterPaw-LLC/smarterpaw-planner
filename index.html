@@ -177,6 +177,7 @@
   .bt { font-weight: 600; }
   .bardims { opacity: .92; }
   /* In calendar bars: brand chip is always shown; title truncates and secondary chips clip before it. */
+  .ev-bar .done-check { flex: none; }
   .ev-bar .bt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ev-bar .barbrand { flex: 0 0 auto; display: inline-flex; align-items: center; }
   .ev-bar .bardims { flex: 0 100 auto; min-width: 0; overflow: hidden; display: inline-flex; align-items: center; white-space: nowrap; }
@@ -372,8 +373,12 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.10";
+const VERSION = "1.17";
 const CHANGELOG = [
+  "v1.17 — Calendar bars always show the brand chip (long titles truncate to fit), and the green ✓ is a crisp badge that no longer clips",
+  "v1.16 — Multi-day items sort to the top of each calendar week (longest first), and stay in the same row across weeks",
+  "v1.15 — Click any day on the calendar to add a deliverable for that date",
+  "v1.14 — Bigger, clearer green ✓ badge on completed cards & events",
   "v1.10 — Mark a lane as 'Complete' (green ✓ on done cards & events); Filter panel to show/hide by owner, lane, or custom field",
   "v1.9 — Click a color in the legend to filter the board/calendar/grid to those items",
   "v1.8 — Board and Calendar each have independent display settings (dimensions + badge/text)",
@@ -892,7 +897,7 @@ function evContent(c) {
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
   const brand = ds.dims.includes("brand") ? dimChipHtml(c, "brand") : "";
   const rest = dimBadges(c, ["brand"]);
-  return `<span class="bt">${done}${esc(c.title)}</span>`
+  return `${done}<span class="bt">${esc(c.title)}</span>`
     + (brand ? ` <span class="barbrand">${brand}</span>` : "")
     + (rest ? ` <span class="bardims">${rest}</span>` : "");
 }
