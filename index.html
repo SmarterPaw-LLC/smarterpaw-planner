@@ -116,7 +116,7 @@
   .daynum { font-size: 12px; font-weight: 600; padding: 1px 6px; }
   .day-cell.today .daynum { background: var(--accent); color: #fff; border-radius: 999px; }
   .add-day { font-size: 13px; color: var(--muted); cursor: pointer; opacity: 0; transition: .1s; padding: 0 4px; }
-  .day-cell:hover .add-day { opacity: .7; }
+  .day-cell:hover .add-day, .wday:hover .add-day { opacity: .7; }
   .add-day:hover { opacity: 1; color: var(--text); }
   .day-cell.drag-over { background: rgba(109,93,252,.14); }
   .week { display: grid; grid-template-columns: repeat(7, 1fr); min-height: 100%; }
@@ -163,7 +163,8 @@
   .cal-week { position: relative; }
   .cal-week.tall { min-height: 480px; }
   .week-days { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(7, 1fr); }
-  .wday { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 3px 5px; overflow: hidden; }
+  .wday { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 3px 5px; overflow: hidden; cursor: pointer; }
+  .wday:hover { background: rgba(255,255,255,.035); }
   .wday.other { background: rgba(255,255,255,.015); }
   .wday.other .daynum { opacity: .35; }
   .wday.today .daynum { background: var(--accent); color: #fff; border-radius: 999px; }
@@ -921,6 +922,8 @@ function weekRow(weekStart, monthIdx, todayKey, mode) {
     const plus = document.createElement("span"); plus.className = "add-day"; plus.textContent = "＋"; plus.title = "Add deliverable";
     plus.onclick = ev => { ev.stopPropagation(); openModal(null, { due: ymd(date) }); };
     head.appendChild(num); head.appendChild(plus); cell.appendChild(head);
+    cell.title = "Click to add a deliverable on " + ymd(date);
+    cell.addEventListener("click", () => openModal(null, { due: ymd(date) }));
     attachDrop(cell, date); daysWrap.appendChild(cell);
   }
   wk.appendChild(daysWrap);
