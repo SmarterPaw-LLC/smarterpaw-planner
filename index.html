@@ -92,6 +92,8 @@
   .manage-row button { padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
   .manage-row button:hover { border-color: var(--danger); }
   .add-row { display: flex; gap: 8px; margin-top: 9px; } .add-row input { flex: 1; }
+  .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
+  .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--danger);
     color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 80; display: none; max-width: 90vw; }
   /* calendar */
@@ -330,7 +332,8 @@
     </div>
     <div class="manage-sec">
       <span class="seclabel">Promotions</span>
-      <div class="manage-list" id="managePromos"></div>
+      <input id="mPromoSearch" class="sec-search" placeholder="Filter promotions…" autocomplete="off" />
+      <div class="manage-list scroll-cap" id="managePromos"></div>
       <div class="hint">Add a promotion by typing it on a deliverable. Colors are assigned automatically by name.</div>
     </div>
     <div class="modal-actions"><div class="spacer"></div><button id="manageClose">Done</button></div>
@@ -395,8 +398,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.23";
+const VERSION = "1.24";
 const CHANGELOG = [
+  "v1.24 — Manage panel has a search box to find promotions quickly, and long lists in the Manage & Filter panels now scroll instead of running off the screen",
   "v1.23 — Active filters now show as removable pills under the toolbar (search, channel, color, owners, lanes, promotions, fields) with a one-click “Clear all”",
   "v1.22 — Promotion top-stripe now sits behind the bar's chips/text instead of overlapping them",
   "v1.21 — Promotion is now a dropdown of existing promotions with an “＋ Add new” option, instead of a free-text box",
@@ -722,7 +726,7 @@ function renderFilters() {
     const vals = filterValues(sec.key); if (!vals.length) return;
     const wrap = document.createElement("div"); wrap.className = "manage-sec";
     const lab = document.createElement("span"); lab.className = "seclabel"; lab.textContent = sec.label; wrap.appendChild(lab);
-    const list = document.createElement("div"); list.className = "disp-dims";
+    const list = document.createElement("div"); list.className = "disp-dims scroll-cap";
     vals.forEach(v => {
       const l = document.createElement("label"); l.className = "disp-opt";
       const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(filters[sec.key] && filters[sec.key].has(v));
@@ -1217,8 +1221,12 @@ function renderManage() {
 }
 function fillManagePromos() {
   const el = document.getElementById("managePromos"); el.innerHTML = "";
-  const promos = allPromos();
-  if (!promos.length) { const e = document.createElement("div"); e.className = "none"; e.textContent = "No promotions yet."; el.appendChild(e); return; }
+  const searchEl = document.getElementById("mPromoSearch");
+  const q = (searchEl && searchEl.value || "").trim().toLowerCase();
+  const all = allPromos();
+  if (!all.length) { const e = document.createElement("div"); e.className = "none"; e.textContent = "No promotions yet."; el.appendChild(e); return; }
+  const promos = q ? all.filter(p => p.toLowerCase().includes(q)) : all;
+  if (!promos.length) { const e = document.createElement("div"); e.className = "none"; e.textContent = 'No promotions match “' + q + '”.'; el.appendChild(e); return; }
   promos.forEach(name => {
     const row = document.createElement("div"); row.className = "manage-row";
     const left = document.createElement("span"); left.className = "row-left";
@@ -1280,7 +1288,12 @@ function manageRow(kind, item, idx) {
   }
   row.appendChild(left); row.appendChild(ctrls); return row;
 }
-function openManage() { manageOpen = true; renderManage(); document.getElementById("manageOverlay").classList.add("show"); }
+function openManage() {
+  manageOpen = true;
+  const ps = document.getElementById("mPromoSearch"); if (ps) { ps.value = ""; ps.oninput = fillManagePromos; }
+  renderManage();
+  document.getElementById("manageOverlay").classList.add("show");
+}
 function closeManage() { manageOpen = false; document.getElementById("manageOverlay").classList.remove("show"); }
 
 /* ---------- exports ---------- */
