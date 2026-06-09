@@ -277,8 +277,7 @@
     </div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
     <div class="field"><label>Promotion</label>
-      <input id="f_promo" list="promoList" placeholder="e.g. Prime Day, Summer Sale…" autocomplete="off" />
-      <datalist id="promoList"></datalist>
+      <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
     </div>
     <div id="f_fields"></div>
     <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Brief, links, copy direction…"></textarea></div>
@@ -386,8 +385,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.20";
+const VERSION = "1.21";
 const CHANGELOG = [
+  "v1.21 — Promotion is now a dropdown of existing promotions with an “＋ Add new” option, instead of a free-text box",
   "v1.20 — New 'Promotion' tag: add it on any deliverable, filter by it, show it as a column/chip, and items in the same promotion share a colored stripe across the top of their calendar bars",
   "v1.19 — Drag any item on the calendar to reschedule it; drops register even when released over another event (multi-day items keep their length)",
   "v1.17 — Calendar bars always show the brand chip (long titles truncate to fit), and the green ✓ is a crisp badge that no longer clips",
@@ -1060,6 +1060,26 @@ function buildStatusSelect() {
   statusList.forEach(s => { const o = document.createElement("option"); o.value = s.name; o.textContent = s.name; ss.appendChild(o); });
   if (statusList.some(s => s.name === cur)) ss.value = cur;
 }
+function buildPromoSelect(selected) {
+  const s = document.getElementById("f_promo"); s.innerHTML = "";
+  const none = document.createElement("option"); none.value = ""; none.textContent = "— none —"; s.appendChild(none);
+  const promos = allPromos();
+  if (selected && !promos.includes(selected)) promos.push(selected);
+  promos.sort((a, b) => a.localeCompare(b)).forEach(p => { const o = document.createElement("option"); o.value = p; o.textContent = p; s.appendChild(o); });
+  const add = document.createElement("option"); add.value = "__add_promo__"; add.textContent = "＋ Add new promotion…"; s.appendChild(add);
+  s.value = selected || "";
+}
+function addPromoPrompt() {
+  const s = document.getElementById("f_promo");
+  const name = (prompt("New promotion name:") || "").trim();
+  if (!name) { if (s.value === "__add_promo__") s.value = ""; return; }
+  if (![...s.options].some(o => o.value === name)) {
+    const o = document.createElement("option"); o.value = name; o.textContent = name;
+    const addOpt = [...s.options].find(x => x.value === "__add_promo__");
+    s.insertBefore(o, addOpt);
+  }
+  s.value = name;
+}
 function fillStaticSelects() {
   const sb = document.getElementById("f_brand"); sb.innerHTML = "";
   BRANDS.forEach(b => { const o = document.createElement("option"); o.value = b.name; o.textContent = b.name; sb.appendChild(o); });
@@ -1110,10 +1130,7 @@ function openModal(card, prefill) {
   document.getElementById("f_endWrap").style.display = hasEnd ? "" : "none";
   document.getElementById("f_addEnd").style.display = hasEnd ? "none" : "";
   renderFieldInputs(card ? (card.fields || {}) : {});
-  const promoInput = document.getElementById("f_promo");
-  promoInput.value = card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : "");
-  const dl = document.getElementById("promoList"); dl.innerHTML = "";
-  allPromos().forEach(p => { const o = document.createElement("option"); o.value = p; dl.appendChild(o); });
+  buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : (statusList[0] ? statusList[0].name : "Backlog");
@@ -1130,7 +1147,7 @@ function saveModal() {
   const fields = {};
   document.querySelectorAll("#f_fields input").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
   const promo = document.getElementById("f_promo").value.trim();
-  if (promo) fields[PROMO_KEY] = promo;
+  if (promo && promo !== "__add_promo__") fields[PROMO_KEY] = promo;
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
@@ -1341,6 +1358,8 @@ async function init() {
     if (name) { const ok = await addList("channel", name); e.target.value = ok ? name : (channelsList[0] || {}).name || ""; }
     else e.target.value = (channelsList[0] || {}).name || "";
   });
+  document.getElementById("f_promoAdd").onclick = () => addPromoPrompt();
+  document.getElementById("f_promo").addEventListener("change", e => { if (e.target.value === "__add_promo__") addPromoPrompt(); });
   document.getElementById("xlsxBtn").onclick = exportXLSX;
   document.getElementById("verBtn").onclick = () => document.getElementById("verOverlay").classList.add("show");
   document.getElementById("verClose").onclick = () => document.getElementById("verOverlay").classList.remove("show");
