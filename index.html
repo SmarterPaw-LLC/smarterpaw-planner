@@ -209,6 +209,14 @@
   #legend .lg.sel .dot { box-shadow: 0 0 0 2px var(--text); }
   #legend .lg-clear { cursor: pointer; color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
   #legend .lg-clear:hover { color: var(--text); border-color: var(--accent); }
+  #activeFilters { display: none; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 20px; border-bottom: 1px solid var(--line); background: rgba(109,93,252,.07); }
+  #activeFilters .af-label { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
+  #activeFilters .af-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: 999px; padding: 3px 5px 3px 11px; }
+  #activeFilters .af-pill b { font-weight: 700; }
+  #activeFilters .af-pill .x { cursor: pointer; width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 11px; line-height: 1; color: var(--muted); }
+  #activeFilters .af-pill .x:hover { background: var(--danger); color: #fff; }
+  #activeFilters .af-clear { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--danger); border: 1px solid var(--danger); border-radius: 999px; padding: 4px 13px; background: transparent; }
+  #activeFilters .af-clear:hover { background: var(--danger); color: #fff; }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 </style>
@@ -236,6 +244,7 @@
 </header>
 
 <div id="legend"></div>
+<div id="activeFilters"></div>
 
 <div class="board" id="board"></div>
 
@@ -386,8 +395,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.22";
+const VERSION = "1.23";
 const CHANGELOG = [
+  "v1.23 — Active filters now show as removable pills under the toolbar (search, channel, color, owners, lanes, promotions, fields) with a one-click “Clear all”",
   "v1.22 — Promotion top-stripe now sits behind the bar's chips/text instead of overlapping them",
   "v1.21 — Promotion is now a dropdown of existing promotions with an “＋ Add new” option, instead of a free-text box",
   "v1.20 — New 'Promotion' tag: add it on any deliverable, filter by it, show it as a column/chip, and items in the same promotion share a colored stripe across the top of their calendar bars",
@@ -728,7 +738,40 @@ function renderFilters() {
   if (!body.children.length) { const e = document.createElement("div"); e.className = "hint"; e.textContent = "No owners, lanes, or custom-field values to filter yet."; body.appendChild(e); }
 }
 function openFilter() { renderFilters(); document.getElementById("filterOverlay").classList.add("show"); }
-function render() { renderLegend(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else renderBoard(); }
+function filterKeyLabel(key) {
+  if (key === "owner") return "Owner"; if (key === "status") return "Lane"; if (key === "promotion") return "Promotion";
+  if (key.indexOf("field:") === 0) return key.slice(6); return key;
+}
+function renderActiveFilters() {
+  const bar = document.getElementById("activeFilters"); if (!bar) return;
+  bar.innerHTML = "";
+  const pills = [];
+  if (searchText.trim()) pills.push({ k: "Search", v: '“' + searchText.trim() + '”', remove: () => { searchText = ""; const s = document.getElementById("search"); if (s) s.value = ""; } });
+  if (channelFilter) pills.push({ k: "Channel", v: channelFilter, remove: () => { channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = ""; } });
+  const dimLabel = (COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0]).label;
+  legendSel.forEach(v => pills.push({ k: dimLabel, v, remove: () => legendSel.delete(v) }));
+  Object.keys(filters).forEach(key => { const set = filters[key]; if (!set) return; set.forEach(v => pills.push({ k: filterKeyLabel(key), v: v || "(blank)", remove: () => { set.delete(v); if (!set.size) delete filters[key]; } })); });
+
+  if (!pills.length) { bar.style.display = "none"; return; }
+  bar.style.display = "flex";
+  const label = document.createElement("span"); label.className = "af-label"; label.textContent = "Filtering by"; bar.appendChild(label);
+  pills.forEach(p => {
+    const pill = document.createElement("span"); pill.className = "af-pill";
+    pill.innerHTML = `<span>${esc(p.k)}: <b>${esc(p.v)}</b></span>`;
+    const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "Remove this filter";
+    x.onclick = () => { p.remove(); updateFilterBtn(); render(); };
+    pill.appendChild(x); bar.appendChild(pill);
+  });
+  const clear = document.createElement("button"); clear.className = "af-clear"; clear.textContent = "✕ Clear all";
+  clear.onclick = () => {
+    searchText = ""; const s = document.getElementById("search"); if (s) s.value = "";
+    channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = "";
+    legendSel.clear(); filters = {};
+    updateFilterBtn(); render();
+  };
+  bar.appendChild(clear);
+}
+function render() { renderLegend(); renderActiveFilters(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else renderBoard(); }
 function renderBoard() {
   const board = document.getElementById("board"); board.innerHTML = "";
   const vis = visibleCards();
