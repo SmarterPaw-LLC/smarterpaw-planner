@@ -211,6 +211,7 @@
   #legend .lg.sel .dot { box-shadow: 0 0 0 2px var(--text); }
   #legend .lg-clear { cursor: pointer; color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
   #legend .lg-clear:hover { color: var(--text); border-color: var(--accent); }
+  #legend .promo-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   #activeFilters { display: none; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 20px; border-bottom: 1px solid var(--line); background: rgba(109,93,252,.07); }
   #activeFilters .af-label { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
   #activeFilters .af-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: 999px; padding: 3px 5px 3px 11px; }
@@ -398,8 +399,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.24";
+const VERSION = "1.25";
 const CHANGELOG = [
+  "v1.25 — Promotions color legend on the right of the channel-legend row (promotions dated within ±30 days); click a promotion to filter, same as channels",
   "v1.24 — Manage panel has a search box to find promotions quickly, and long lists in the Manage & Filter panels now scroll instead of running off the screen",
   "v1.23 — Active filters now show as removable pills under the toolbar (search, channel, color, owners, lanes, promotions, fields) with a one-click “Clear all”",
   "v1.22 — Promotion top-stripe now sits behind the bar's chips/text instead of overlapping them",
@@ -435,6 +437,19 @@ function promoHash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 3
 function promoColor(name) { return name ? PROMO_PALETTE[promoHash(name) % PROMO_PALETTE.length] : ""; }
 function cardPromo(c) { return (c.fields && c.fields[PROMO_KEY]) || ""; }
 function allPromos() { return [...new Set(cards.map(cardPromo).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
+// Promotions with at least one dated card inside ±`days` of today (for the legend).
+function promosInWindow(days) {
+  days = days || 30;
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const start = ymd(addDays(now, -days)), end = ymd(addDays(now, days));
+  const set = new Set();
+  cards.forEach(c => {
+    const p = cardPromo(c); if (!p || (!c.due && !c.end)) return;
+    const a = c.due || c.end, b = c.end || c.due; const s = a < b ? a : b, e = a < b ? b : a;
+    if (!(e < start || s > end)) set.add(p);
+  });
+  return set;
+}
 function colorOf(list, name, fallbackMap) {
   const item = list.find(x => x.name === name);
   if (item && item.color) return item.color;
@@ -861,6 +876,32 @@ function renderLegend() {
     const clear = document.createElement("span"); clear.className = "lg-clear"; clear.textContent = "✕ clear filter";
     clear.onclick = () => { legendSel.clear(); render(); };
     el.appendChild(clear);
+  }
+  // Promotion color legend (right side) — promotions active within ±30 days; click to filter.
+  const promoSel = filters.promotion || new Set();
+  const winSet = promosInWindow(30); promoSel.forEach(p => winSet.add(p));
+  const promoNames = [...winSet].sort((a, b) => a.localeCompare(b));
+  if (promoNames.length) {
+    const grp = document.createElement("span"); grp.className = "promo-legend";
+    const t = document.createElement("span"); t.className = "lg-title"; t.textContent = "Promotions"; t.title = "Promotions with dates within ±30 days — click to filter"; grp.appendChild(t);
+    promoNames.forEach(name => {
+      const lg = document.createElement("span");
+      lg.className = "lg" + (promoSel.has(name) ? " sel" : (promoSel.size ? " off" : ""));
+      lg.innerHTML = `<span class="dot" style="background:${promoColor(name)}"></span>${esc(name)}`;
+      lg.onclick = () => {
+        if (!filters.promotion) filters.promotion = new Set();
+        if (filters.promotion.has(name)) { filters.promotion.delete(name); if (!filters.promotion.size) delete filters.promotion; }
+        else filters.promotion.add(name);
+        updateFilterBtn(); render();
+      };
+      grp.appendChild(lg);
+    });
+    if (promoSel.size) {
+      const clear = document.createElement("span"); clear.className = "lg-clear"; clear.textContent = "✕ clear";
+      clear.onclick = () => { delete filters.promotion; updateFilterBtn(); render(); };
+      grp.appendChild(clear);
+    }
+    el.appendChild(grp);
   }
 }
 function gridColumns() {
