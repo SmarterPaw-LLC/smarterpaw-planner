@@ -172,8 +172,9 @@
   .bars-layer { position: absolute; inset: 0; pointer-events: none; }
   /* While dragging an event, let drops fall through bars to the day cell underneath, anywhere in the calendar. */
   .cal-dragging .ev-bar, .cal-dragging .ev { pointer-events: none; }
-  /* Promotion: a thin colored stripe across the top groups items of the same promotion. */
-  .ev-bar.has-promo::before, .ev.has-promo::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--promo); pointer-events: none; }
+  /* Promotion: a thin colored stripe across the top groups items of the same promotion.
+     Drawn as an inset shadow so it sits BELOW the bar's chips/text (and follows the rounded corners). */
+  .ev-bar.has-promo, .ev.has-promo { box-shadow: inset 0 3px 0 0 var(--promo); }
   .ev-bar { position: absolute; height: 19px; line-height: 19px; border-radius: 5px; color: #fff; font-size: 11px;
     padding: 0 7px; overflow: hidden; cursor: grab; pointer-events: auto; box-sizing: border-box;
     display: flex; align-items: center; gap: 5px; }
@@ -385,8 +386,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.21";
+const VERSION = "1.22";
 const CHANGELOG = [
+  "v1.22 — Promotion top-stripe now sits behind the bar's chips/text instead of overlapping them",
   "v1.21 — Promotion is now a dropdown of existing promotions with an “＋ Add new” option, instead of a free-text box",
   "v1.20 — New 'Promotion' tag: add it on any deliverable, filter by it, show it as a column/chip, and items in the same promotion share a colored stripe across the top of their calendar bars",
   "v1.19 — Drag any item on the calendar to reschedule it; drops register even when released over another event (multi-day items keep their length)",
