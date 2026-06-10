@@ -130,16 +130,21 @@
   .ver { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--panel-2);
     color: var(--muted); border: 1px solid var(--line); }
   .ver:hover { color: var(--text); border-color: var(--accent); }
-  .row-ctrls { display: inline-flex; gap: 4px; align-items: center; }
+  .row-ctrls { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .mv { padding: 2px 8px; color: var(--text); border-color: transparent; background: transparent; font-weight: 700; }
   .mv:hover { border-color: var(--accent); }
   .mv:disabled { opacity: .25; cursor: default; border-color: transparent; }
   .lane-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
   .mv.comp { color: var(--muted); }
   .mv.comp.on { color: var(--ok); border-color: var(--ok); font-weight: 700; }
+  .mv.sched.on { color: #f59e0b; border-color: #f59e0b; font-weight: 700; }
   .done-check { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
     border-radius: 50%; background: var(--ok); color: #fff; font-size: 9px; font-weight: 900; line-height: 1;
     vertical-align: middle; box-shadow: 0 0 0 1.5px rgba(255,255,255,.9); position: relative; top: -1px; }
+  .sched-check { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
+    border-radius: 50%; background: #f59e0b; line-height: 1; vertical-align: middle;
+    box-shadow: 0 0 0 1.5px rgba(255,255,255,.9); position: relative; top: -1px; }
+  .sched-check svg { display: block; }
   #changelogList { display: flex; flex-direction: column; gap: 9px; }
   #changelogList .cl { font-size: 13px; color: var(--text); padding: 8px 11px; background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 8px; }
@@ -184,7 +189,7 @@
   .bt { font-weight: 600; }
   .bardims { opacity: .92; }
   /* In calendar bars: brand chip is always shown; title truncates and secondary chips clip before it. */
-  .ev-bar .done-check { flex: none; }
+  .ev-bar .done-check, .ev-bar .sched-check { flex: none; }
   .ev-bar .bt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ev-bar .barbrand { flex: 0 0 auto; display: inline-flex; align-items: center; }
   .ev-bar .bardims { flex: 0 100 auto; min-width: 0; overflow: hidden; display: inline-flex; align-items: center; white-space: nowrap; }
@@ -399,8 +404,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.26";
+const VERSION = "1.27";
 const CHANGELOG = [
+  "v1.27 — Mark a lane as “Scheduled” (Manage panel) to give its cards & calendar events a clock badge, just like the green ✓ for the Complete lane. Defaults to a lane named “Scheduled”.",
   "v1.26 — Promotions legend now follows the calendar period you're viewing (so navigating to an empty month shows no promotions); on Board/Grid it stays ±30 days from today",
   "v1.25 — Promotions color legend on the right of the channel-legend row (promotions dated within ±30 days); click a promotion to filter, same as channels",
   "v1.24 — Manage panel has a search box to find promotions quickly, and long lists in the Manage & Filter panels now scroll instead of running off the screen",
@@ -535,6 +541,21 @@ let view = "board", calMode = "month", calRef = new Date();
 let gridSort = { key: "due", dir: 1 };
 let legendSel = new Set();
 let completeLane = "";
+// The "Scheduled" lane gets a clock badge (parallel to the green ✓ complete lane). Stored locally (no SQL);
+// null = never set, so we auto-detect a lane literally named "Scheduled" as the default.
+let scheduledLane = localStorage.getItem("planner-scheduled-lane");
+function effScheduledLane() {
+  if (scheduledLane !== null) return scheduledLane;
+  const s = statusList.find(x => /^scheduled$/i.test(x.name));
+  return s ? s.name : "";
+}
+function setScheduled(item) {
+  scheduledLane = (effScheduledLane() === item.name) ? "" : item.name;
+  localStorage.setItem("planner-scheduled-lane", scheduledLane);
+  afterListsChanged();
+}
+const SCHED_ICON = '<svg viewBox="0 0 16 16" width="8" height="8" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8V4.6M8 8h3"/></svg>';
+function schedBadge(c) { const sl = effScheduledLane(); return (sl && c.status === sl) ? '<span class="sched-check" title="Scheduled">' + SCHED_ICON + '</span> ' : ''; }
 let filters = {};   // { owner:Set, status:Set, "field:Name":Set }
 let _idc = Date.now();
 function uid() { return "c" + (_idc++).toString(36); }
@@ -841,7 +862,7 @@ function cardEl(c) {
   el.style.borderLeftColor = colorFor(c); el.draggable = true;
   const badges = dimBadges(c);
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
-  el.innerHTML = `<h3>${done}${esc(c.title)}</h3>` +
+  el.innerHTML = `<h3>${done}${schedBadge(c)}${esc(c.title)}</h3>` +
     (badges ? `<div class="dimrow${curDisp().badge ? "" : " text"}">${badges}</div>` : "") +
     (c.notes ? `<div class="notes">${esc(c.notes)}</div>` : "");
   el.addEventListener("click", () => openModal(c));
@@ -1028,7 +1049,7 @@ function evContent(c) {
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
   const brand = ds.dims.includes("brand") ? dimChipHtml(c, "brand") : "";
   const rest = dimBadges(c, ["brand"]);
-  return `${done}<span class="bt">${esc(c.title)}</span>`
+  return `${done}${schedBadge(c)}<span class="bt">${esc(c.title)}</span>`
     + (brand ? ` <span class="barbrand">${brand}</span>` : "")
     + (rest ? ` <span class="bardims">${rest}</span>` : "");
 }
@@ -1331,6 +1352,9 @@ function manageRow(kind, item, idx) {
     const comp = document.createElement("button"); comp.textContent = "✓ Complete"; comp.className = "mv comp" + (completeLane === item.name ? " on" : "");
     comp.title = completeLane === item.name ? "This is the Complete lane — click to unset" : "Mark this as the Complete lane";
     comp.onclick = () => setComplete(item); ctrls.appendChild(comp);
+    const sch = document.createElement("button"); sch.textContent = "🕒 Scheduled"; sch.className = "mv sched" + (effScheduledLane() === item.name ? " on" : "");
+    sch.title = effScheduledLane() === item.name ? "This is the Scheduled lane — click to unset" : "Mark this as the Scheduled lane (clock badge)";
+    sch.onclick = () => setScheduled(item); ctrls.appendChild(sch);
     const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
     const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
     ctrls.appendChild(up); ctrls.appendChild(dn);
