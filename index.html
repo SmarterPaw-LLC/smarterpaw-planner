@@ -294,6 +294,9 @@
   /* Promotion: a thin colored stripe across the top groups items of the same promotion.
      Drawn as an inset shadow so it sits BELOW the bar's chips/text (and follows the rounded corners). */
   .ev-bar.has-promo, .ev.has-promo, .card.has-promo, .list-task.has-promo { box-shadow: inset 0 3px 0 0 var(--promo); }
+  /* High priority: a red ring around the card / calendar item. */
+  .card.prio-high, .list-task.prio-high, .ev-bar.prio-high, .ev.prio-high { box-shadow: 0 0 0 2px var(--danger); }
+  .card.prio-high.has-promo, .list-task.prio-high.has-promo, .ev-bar.prio-high.has-promo, .ev.prio-high.has-promo { box-shadow: inset 0 3px 0 0 var(--promo), 0 0 0 2px var(--danger); }
   .ev-bar { position: absolute; height: 19px; line-height: 19px; border-radius: 5px; color: #fff; font-size: 11px;
     padding: 0 7px; overflow: hidden; cursor: grab; pointer-events: auto; box-sizing: border-box;
     display: flex; align-items: center; gap: 5px; }
@@ -456,6 +459,7 @@
     </div>
     <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
+    <div class="field"><label>Priority</label><select id="f_priority"></select></div>
     <div class="field"><label>Promotion</label>
       <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
     </div>
@@ -617,8 +621,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.53";
+const VERSION = "1.54";
 const CHANGELOG = [
+  "v1.54 — New built-in Priority dimension (High / Medium / Low / No Priority), usable everywhere: Color by, Split by, filters, and display chips. High-priority items get a red ring on Board, List, and Calendar. Also: deleting a custom field now clears its value from every deliverable that used it (the confirm tells you how many).",
   "v1.53 — Custom fields moved to a dedicated editor (Manage → Edit custom fields…): rename inline, pick a type, and add/remove dropdown options as individual chips (fixes options not saving). New field types: Number, Date, and Multi-select (pick several options per deliverable).",
   "v1.52 — Brightened the date-picker calendar icon so it’s visible on the dark theme (it was nearly invisible before).",
   "v1.51 — Fixed “Sprints tracked” for undated tasks: setting/changing the manual sprint week now records into the tracker (it previously only tracked sprints from a due-date range). The tracker also updates live as you change the date or sprint in the editor. Scheduled-lane badge is now a 🕒 clock emoji.",
@@ -675,7 +680,7 @@ const DEFAULT_STATUSES = ["Backlog", "In Progress", "Review", "Scheduled", "Live
 const STATUS_COLORS = { "Backlog": "#6b7280", "In Progress": "#3b82f6",
   "Review": "#a855f7", "Scheduled": "#f59e0b", "Live": "#22c55e" };
 const PALETTE = ["#6b7280","#3b82f6","#a855f7","#f59e0b","#22c55e","#ec4899","#06b6d4","#84cc16","#f43f5e","#14b8a6"];
-const COLOR_DIMS = [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "status", label: "Lane" }];
+const COLOR_DIMS = [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "status", label: "Lane" }, { key: "priority", label: "Priority" }];
 // Promotion: a per-card tag stored in the fields blob (no schema change). Color is auto-derived from the name so it's identical for everyone.
 const PROMO_KEY = "__promotion";
 const PROMO_PALETTE = ["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e","#10b981","#06b6d4","#3b82f6","#6366f1","#a855f7","#ec4899"];
@@ -683,6 +688,16 @@ function promoHash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 3
 function promoColor(name) { return name ? PROMO_PALETTE[promoHash(name) % PROMO_PALETTE.length] : ""; }
 function cardPromo(c) { return (c.fields && c.fields[PROMO_KEY]) || ""; }
 function allPromos() { return [...new Set(cards.map(cardPromo).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
+// Priority: a built-in dimension (fixed options + colors) stored per card in the fields blob (no schema change).
+const PRIORITY_KEY = "__priority";
+const PRIORITIES = [
+  { name: "High", color: "#ef4444" },
+  { name: "Medium", color: "#f59e0b" },
+  { name: "Low", color: "#3b82f6" },
+  { name: "No Priority", color: "#6b7280" },
+];
+function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
+function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
 const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory";
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
@@ -810,10 +825,10 @@ function colorOf(list, name, fallbackMap) {
 function brandColor(n) { return colorOf(brandsList, n, DEFAULT_BRAND_HEX); }
 function channelColorOf(n) { return colorOf(channelsList, n, null); }
 function statusColor(name) { return colorOf(statusList, name, STATUS_COLORS); }
-function colorFor(c) { return colorBy === "channel" ? channelColorOf(c.channel) : colorBy === "status" ? statusColor(c.status) : brandColor(c.brand); }
+function colorFor(c) { return colorBy === "channel" ? channelColorOf(c.channel) : colorBy === "status" ? statusColor(c.status) : colorBy === "priority" ? priorityColor(cardPriority(c)) : brandColor(c.brand); }
 function availableDims() {
   return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owners", label: "Owners" },
-    { key: "status", label: "Lane / status" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }, { key: "dates", label: "Dates" }]
+    { key: "status", label: "Lane / status" }, { key: "priority", label: "Priority" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }, { key: "dates", label: "Dates" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
 }
 function dimInfo(c, key) {
@@ -821,6 +836,7 @@ function dimInfo(c, key) {
   if (key === "channel") return { text: c.channel, color: channelColorOf(c.channel) };
   if (key === "owners") return { text: c.owner, color: null };
   if (key === "status") return { text: c.status, color: statusColor(c.status) };
+  if (key === "priority") { const p = cardPriority(c); return { text: p, color: priorityColor(p) }; }
   if (key === "promotion") { const p = cardPromo(c); return { text: p, color: promoColor(p) }; }
   if (key === "sprint") return { text: fmtSprint(cardSprint(c)), color: null };
   if (key === "dates") return { text: fmtRange(c.due, c.end), color: null };
@@ -905,7 +921,7 @@ let filters = {};   // quick sprint filter from the List header: { sprint: Set }
 let filterRules = [];      // advanced Filter panel: [{ field, op:'is'|'isnot'|'empty'|'notempty', values:[] }]
 let filterMatch = "all";   // "all" (AND) | "any" (OR)
 function ruleFields() {
-  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
+  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "priority", label: "Priority" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
 }
 function ruleFieldLabel(key) { const f = ruleFields().find(x => x.key === key); return f ? f.label : key; }
@@ -914,6 +930,7 @@ function ruleCardValues(c, field) {
   if (field === "brand") return c.brand ? [c.brand] : [];
   if (field === "channel") return c.channel ? [c.channel] : [];
   if (field === "status") return c.status ? [c.status] : [];
+  if (field === "priority") return [cardPriority(c)];
   if (field === "promotion") { const p = cardPromo(c); return p ? [p] : []; }
   if (field === "sprint") { const s = cardSprint(c); return s ? [s] : []; }
   if (field.indexOf("field:") === 0) { const n = field.slice(6); const v = (c.fields && c.fields[n]) || ""; if (!v) return []; const def = fieldByName(n); return (def && def.type === "multi") ? splitMulti(v) : [v]; }
@@ -924,6 +941,7 @@ function ruleFieldValues(field) {
   if (field === "brand") return brandsList.map(b => b.name);
   if (field === "channel") return channelsList.map(c => c.name);
   if (field === "status") return statusList.map(s => s.name);
+  if (field === "priority") return PRIORITIES.map(p => p.name);
   if (field === "promotion") return allPromos();
   if (field === "sprint") return allSprints();
   if (field.indexOf("field:") === 0) { const n = field.slice(6); const def = fieldByName(n);
@@ -1088,18 +1106,27 @@ async function addList(kind, name) {
 }
 async function removeList(kind, item) {
   if (kind === "status" && statusList.length <= 1) { toast("Keep at least one lane."); return; }
-  const extra = kind === "status" ? " Cards keep that status in a leftover column until you move them." : " Cards already using it keep the name.";
+  const usingCount = kind === "field" ? cards.filter(c => c.fields && (item.name in c.fields)).length : 0;
+  const extra = kind === "status" ? " Cards keep that status in a leftover column until you move them."
+    : kind === "field" ? (usingCount ? " Its value will be cleared from " + usingCount + " deliverable" + (usingCount === 1 ? "" : "s") + "." : "")
+    : " Cards already using it keep the name.";
   if (!confirm('Remove "' + item.name + '"?' + extra)) return;
   if (!ONLINE) {
     if (kind === "channel") channelsList = channelsList.filter(x => x.name !== item.name);
     else if (kind === "person") peopleList = peopleList.filter(x => x.name !== item.name);
-    else if (kind === "field") fieldsList = fieldsList.filter(x => x.name !== item.name);
+    else if (kind === "field") { fieldsList = fieldsList.filter(x => x.name !== item.name); cards.forEach(c => { if (c.fields && (item.name in c.fields)) delete c.fields[item.name]; }); saveLocal(); }
     else if (kind === "brand") brandsList = brandsList.filter(x => x.name !== item.name);
     else statusList = statusList.filter(x => x.name !== item.name);
     saveListsLocal(); afterListsChanged(); return;
   }
+  if (kind === "field") {   // clear the field's value out of every card that used it
+    const affected = cards.filter(c => c.fields && (item.name in c.fields));
+    await Promise.all(affected.map(c => { const f = Object.assign({}, c.fields); delete f[item.name]; return db.from("deliverables").update({ fields: f }).eq("id", c.id); }));
+  }
   const { error } = await db.from("lists").delete().eq("id", item.id);
-  if (error) toast("Remove failed: " + error.message); else reloadListsAndUI();
+  if (error) { toast("Remove failed: " + error.message); return; }
+  if (kind === "field") await refetch();
+  reloadListsAndUI();
 }
 async function moveStatus(item, dir) {
   const arr = [...statusList]; const i = arr.findIndex(s => s.name === item.name); const j = i + dir;
@@ -1190,7 +1217,7 @@ function renderNotes(raw) {
 }
 // HTML to load into the editor (sanitized; legacy plain text → line breaks).
 function notesToEditor(raw) { return raw ? (looksLikeHtml(raw) ? sanitizeNotes(raw) : esc(raw).replace(/\n/g, "<br>")) : ""; }
-function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : c.brand; }
+function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : colorBy === "priority" ? cardPriority(c) : c.brand; }
 function passesFilters(c) {
   if (filters.sprint && filters.sprint.size && !filters.sprint.has(cardSprint(c))) return false;       // List header quick sprint filter
   if (filters.promotion && filters.promotion.size && !filters.promotion.has(cardPromo(c))) return false; // Promotions legend quick filter
@@ -1300,7 +1327,7 @@ function render() {
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
 let listSplit = "";             // dimension key to split the List view into columns ("" = single grouped list); never "sprint"
 function splitDims() {
-  return [{ key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "promotion", label: "Promotion" }]
+  return [{ key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "priority", label: "Priority" }, { key: "promotion", label: "Promotion" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
 }
 function splitVals(c, key) {
@@ -1308,6 +1335,7 @@ function splitVals(c, key) {
   if (key === "status") return [c.status || ""];
   if (key === "brand") return [c.brand || ""];
   if (key === "channel") return [c.channel || ""];
+  if (key === "priority") return [cardPriority(c)];
   if (key === "promotion") return [cardPromo(c)];
   if (key.indexOf("field:") === 0) return [(c.fields && c.fields[key.slice(6)]) || ""];
   return [""];
@@ -1318,6 +1346,7 @@ function orderedSplitValues(key, groups) {
   else if (key === "status") order = statusList.map(s => s.name);
   else if (key === "brand") order = brandsList.map(b => b.name);
   else if (key === "channel") order = channelsList.map(c => c.name);
+  else if (key === "priority") order = PRIORITIES.map(p => p.name);
   else if (key === "promotion") order = allPromos();
   const result = [], seen = new Set();
   order.forEach(v => { if (groups.has(v)) { result.push(v); seen.add(v); } });
@@ -1515,8 +1544,8 @@ function renderLegend() {
   const el = document.getElementById("legend"); if (!el) return;
   el.innerHTML = "";
   const dim = COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0];
-  const items = colorBy === "channel" ? channelsList : colorBy === "status" ? statusList : brandsList;
-  const colorFn = colorBy === "channel" ? channelColorOf : colorBy === "status" ? statusColor : brandColor;
+  const items = colorBy === "channel" ? channelsList : colorBy === "status" ? statusList : colorBy === "priority" ? PRIORITIES : brandsList;
+  const colorFn = colorBy === "channel" ? channelColorOf : colorBy === "status" ? statusColor : colorBy === "priority" ? priorityColor : brandColor;
   const title = document.createElement("span"); title.className = "lg-title"; title.textContent = dim.label + " — click to filter"; el.appendChild(title);
   items.forEach(it => {
     const lg = document.createElement("span");
@@ -1676,7 +1705,8 @@ function evContent(c) {
     + (rest ? ` <span class="bardims">${rest}</span>` : "");
 }
 function evTitle(c) { const p = cardPromo(c); return c.title + " — " + c.brand + " · " + c.channel + (c.owner ? " · " + c.owner : "") + (p ? " · ◆ " + p : "") + (c.due || c.end ? " · " + fmtRange(c.due, c.end) : ""); }
-function applyPromo(el, c) { const p = cardPromo(c); if (p) { el.style.setProperty("--promo", promoColor(p)); el.classList.add("has-promo"); } }
+function applyPromo(el, c) { const p = cardPromo(c); if (p) { el.style.setProperty("--promo", promoColor(p)); el.classList.add("has-promo"); }
+  if (cardPriority(c) === "High") el.classList.add("prio-high"); }
 function evEl(c) {
   const e = document.createElement("div"); e.className = "ev"; e.style.background = colorFor(c);
   e.innerHTML = evContent(c); e.title = evTitle(c); e.draggable = true; applyPromo(e, c);
@@ -1850,6 +1880,11 @@ function buildStatusSelect() {
   statusList.forEach(s => { const o = document.createElement("option"); o.value = s.name; o.textContent = s.name; ss.appendChild(o); });
   if (statusList.some(s => s.name === cur)) ss.value = cur;
 }
+function buildPrioritySelect(selected) {
+  const s = document.getElementById("f_priority"); s.innerHTML = "";
+  PRIORITIES.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; s.appendChild(o); });
+  s.value = selected || "No Priority";
+}
 function buildPromoSelect(selected) {
   const s = document.getElementById("f_promo"); s.innerHTML = "";
   const none = document.createElement("option"); none.value = ""; none.textContent = "— none —"; s.appendChild(none);
@@ -1964,6 +1999,7 @@ function openModal(card, prefill) {
   document.getElementById("f_addEnd").style.display = hasEnd ? "none" : "";
   renderFieldInputs(card ? (card.fields || {}) : {});
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
+  buildPrioritySelect(card ? cardPriority(card) : (prefill && prefill.priority ? prefill.priority : "No Priority"));
   const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
   updateSprintField();   // also renders the Sprints-tracked preview
@@ -1986,6 +2022,8 @@ function saveModal() {
   document.querySelectorAll("#f_fields [data-field]").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
   const promo = document.getElementById("f_promo").value.trim();
   if (promo && promo !== "__add_promo__") fields[PROMO_KEY] = promo;
+  const priority = document.getElementById("f_priority").value;
+  if (priority && priority !== "No Priority") fields[PRIORITY_KEY] = priority;   // default isn't stored
   const sprintDate = document.getElementById("f_sprint").value;
   const sprint = sprintDate ? isoWeek(sprintDate) : "";   // date input → ISO week
   const dueVal = document.getElementById("f_due").value;
