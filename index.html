@@ -124,7 +124,8 @@
   .list-sec-head { display: flex; align-items: center; gap: 9px; padding: 2px 2px 4px; border-bottom: 1px solid var(--line); }
   .list-sec-head .ls-name { font-weight: 700; font-size: 13px; }
   .list-sec-head .ls-count { font-size: 11px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
-  .list-task { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+  .list-task { background: var(--panel); border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 9px 12px; }
+  .sprint-hist { font-size: 11px; color: var(--scheduled); border: 1px solid var(--scheduled); border-radius: 999px; padding: 1px 8px; font-weight: 600; cursor: help; white-space: nowrap; }
   .lt-top { display: flex; align-items: flex-start; gap: 8px; }
   .lt-chev { flex: none; padding: 0; width: 20px; height: 22px; color: var(--muted); border: none; background: transparent; font-size: 12px; cursor: pointer; }
   .lt-chev.ghost-chev { opacity: .35; }
@@ -155,6 +156,8 @@
   #calendar { display: none; flex: 1; flex-direction: column; padding: 14px 20px; overflow: hidden; }
   .cal-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
   .cal-label { font-weight: 700; font-size: 15px; margin-left: 6px; }
+  .tray-toggle { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .tray-toggle:hover { color: var(--text); }
   .cal-main { flex: 1; display: flex; gap: 14px; overflow: hidden; }
   .tray { width: 230px; min-width: 230px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
     padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
@@ -345,6 +348,7 @@
     <button id="calToday">Today</button>
     <button id="calNext" title="Next">›</button>
     <div class="cal-label" id="calLabel"></div>
+    <button id="trayToggle" class="tray-toggle"></button>
   </div>
   <div class="cal-main">
     <div class="tray" id="calTray"></div>
@@ -493,8 +497,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.37";
+const VERSION = "1.38";
 const CHANGELOG = [
+  "v1.38 — List items now use the Color: brand/channel/status setting (left stripe); a “⟳ N sprints” badge tracks how many sprints a task has carried across (hover for the list); and you can hide the calendar’s Unscheduled panel to give the grid full width.",
   "v1.37 — List view: opens to the current week’s sprint by default, and “Split by” any dimension (owner, status, brand, channel, promotion, field) into columns across the page. Filter panel’s Sprint section now shows just the ±2-week window with a “＋ Add sprint” week picker.",
   "v1.36 — Mobile-friendly layout: header controls stack, the board swipes one column at a time, the calendar scrolls with legible days, and modals fit the screen",
   "v1.35 — Your current view + filters are saved in the page URL, so you can bookmark or share a filtered view (e.g. “Wk 27 backlog for Doggi”) and it reopens exactly as you left it",
@@ -544,7 +549,7 @@ function promoColor(name) { return name ? PROMO_PALETTE[promoHash(name) % PROMO_
 function cardPromo(c) { return (c.fields && c.fields[PROMO_KEY]) || ""; }
 function allPromos() { return [...new Set(cards.map(cardPromo).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory";
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
   if (!ymdStr) return "";
@@ -558,10 +563,15 @@ function isoWeek(ymdStr) {
 }
 // Sprint is auto-derived from the deliverable's date (the first week a date range falls into).
 // Undated items fall back to a manually-set sprint (fields.__sprint).
-function cardSprint(c) {
-  const a = c.due || c.end, b = c.end || c.due;
-  if (a) return isoWeek(a < b ? a : b);
-  return (c.fields && c.fields[SPRINT_KEY]) || "";
+function derivedSprintFor(due, end) { const a = due || end, b = end || due; return a ? isoWeek(a < b ? a : b) : ""; }
+function cardSprint(c) { return derivedSprintFor(c.due, c.end) || ((c.fields && c.fields[SPRINT_KEY]) || ""); }
+// Record of distinct sprints a task has been assigned to over time (carryover tracking).
+function cardSprintHistory(c) { return (c.fields && Array.isArray(c.fields[SPRINTHIST_KEY])) ? c.fields[SPRINTHIST_KEY] : []; }
+function nextSprintHistory(c, newSprint) {
+  if (!newSprint) return null;
+  const hist = cardSprintHistory(c);
+  if (hist.includes(newSprint)) return null;   // already counted this sprint
+  return [...hist, newSprint];
 }
 function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_KEY])) ? c.fields[SUBTASKS_KEY] : []; }
 function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
@@ -672,6 +682,7 @@ let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
 let modalSubs = [];   // working copy of the open card's subtasks
 let view = "board", calMode = "month", calRef = new Date();
+let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
 let gridSort = { key: "due", dir: 1 };
 let legendSel = new Set();
 let completeLane = "";
@@ -710,11 +721,17 @@ async function refetch() {
 function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
   due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {} }; }
 async function createCard(d) {
+  const sp = derivedSprintFor(d.due, d.end);
+  if (sp) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = [sp]; }
   if (!ONLINE) { cards.push(Object.assign({ id: uid() }, d)); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").insert(dbObj(d));
   if (error) toast("Save failed: " + error.message); else refetch();
 }
 async function updateCard(id, d) {
+  const existing = cards.find(c => c.id === id);
+  const nh = nextSprintHistory(existing, derivedSprintFor(d.due, d.end));
+  const hist = nh || cardSprintHistory(existing);   // append if the sprint changed, else preserve the record
+  if (hist.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = hist; }
   if (!ONLINE) { Object.assign(cards.find(c => c.id === id), d); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").update(dbObj(d)).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
@@ -725,13 +742,21 @@ async function patchStatus(id, status) {
   if (error) toast("Update failed: " + error.message); else refetch();
 }
 async function patchDue(id, due) {
-  if (!ONLINE) { const c = cards.find(c => c.id === id); if (c) c.due = due; saveLocal(); render(); return; }
-  const { error } = await db.from("deliverables").update({ due: due || null }).eq("id", id);
+  const c = cards.find(c => c.id === id);
+  const nh = nextSprintHistory(c, derivedSprintFor(due, c && c.end));
+  if (nh && c) { c.fields = c.fields || {}; c.fields[SPRINTHIST_KEY] = nh; }
+  if (!ONLINE) { if (c) c.due = due; saveLocal(); render(); return; }
+  const upd = { due: due || null }; if (nh && c) upd.fields = c.fields;
+  const { error } = await db.from("deliverables").update(upd).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
 }
 async function patchDates(id, due, end) {
-  if (!ONLINE) { const c = cards.find(c => c.id === id); if (c) { c.due = due; c.end = end || ""; } saveLocal(); render(); return; }
-  const { error } = await db.from("deliverables").update({ due: due || null, end_date: end || null }).eq("id", id);
+  const c = cards.find(c => c.id === id);
+  const nh = nextSprintHistory(c, derivedSprintFor(due, end));
+  if (nh && c) { c.fields = c.fields || {}; c.fields[SPRINTHIST_KEY] = nh; }
+  if (!ONLINE) { if (c) { c.due = due; c.end = end || ""; } saveLocal(); render(); return; }
+  const upd = { due: due || null, end_date: end || null }; if (nh && c) upd.fields = c.fields;
+  const { error } = await db.from("deliverables").update(upd).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
 }
 async function removeCard(id) {
@@ -1062,6 +1087,7 @@ function renderList() {
 function listTaskEl(c) {
   const subs = cardSubtasks(c); const prog = subProgress(c); const exp = listExpanded.has(c.id);
   const wrap = document.createElement("div"); wrap.className = "list-task";
+  wrap.style.borderLeftColor = colorFor(c);   // respects the Color: brand/channel/status setting
   const top = document.createElement("div"); top.className = "lt-top";
   const chev = document.createElement("button"); chev.className = "lt-chev"; chev.textContent = exp ? "▾" : "▸";
   chev.title = exp ? "Hide subtasks" : "Show / add subtasks";
@@ -1075,8 +1101,10 @@ function listTaskEl(c) {
   main.appendChild(title);
   const meta = document.createElement("div"); meta.className = "lt-meta";
   const sub = [c.channel, c.owner, cardPromo(c), fmtRange(c.due, c.end)].filter(Boolean).map(esc).join(" · ");
+  const hist = cardSprintHistory(c);
+  const histChip = hist.length >= 2 ? `<span class="sprint-hist" title="In ${hist.length} sprints: ${esc(hist.map(fmtSprint).join(", "))}">⟳ ${hist.length} sprints</span>` : "";
   meta.innerHTML = `<span class="dchip" style="background:${statusColor(c.status)};border-color:rgba(255,255,255,.85);color:#fff">${esc(c.status)}</span>`
-    + (sub ? `<span class="lt-sub">${sub}</span>` : "");
+    + histChip + (sub ? `<span class="lt-sub">${sub}</span>` : "");
   main.appendChild(meta);
   if (subs.length) {
     const pr = document.createElement("div"); pr.className = "lt-prog";
@@ -1404,7 +1432,12 @@ function weekRow(weekStart, monthIdx, todayKey, mode) {
   return wk;
 }
 function renderTray() {
-  const tray = document.getElementById("calTray"); tray.innerHTML = "<h3>Unscheduled</h3>";
+  const tray = document.getElementById("calTray");
+  const btn = document.getElementById("trayToggle");
+  if (btn) btn.textContent = showTray ? "⏴ Hide unscheduled" : "⏵ Show unscheduled";
+  tray.style.display = showTray ? "" : "none";
+  if (!showTray) return;
+  tray.innerHTML = "<h3>Unscheduled</h3>";
   const un = visibleCards().filter(c => !c.due && !c.end);
   if (un.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Nothing unscheduled"; tray.appendChild(e); return; }
   un.forEach(c => { const e = evEl(c); e.style.whiteSpace = "normal"; tray.appendChild(e); });
@@ -1852,6 +1885,7 @@ async function init() {
   document.getElementById("calPrev").onclick = () => calNav(-1);
   document.getElementById("calNext").onclick = () => calNav(1);
   document.getElementById("calToday").onclick = () => { calRef = new Date(); render(); };
+  document.getElementById("trayToggle").onclick = () => { showTray = !showTray; localStorage.setItem("planner-tray", showTray ? "1" : "0"); renderCalendar(); };
 
   document.getElementById("addBtn").onclick = () => openModal(null);
   document.getElementById("saveBtn").onclick = saveModal;
