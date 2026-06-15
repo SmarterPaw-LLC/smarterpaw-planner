@@ -621,8 +621,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.54";
+const VERSION = "1.55";
 const CHANGELOG = [
+  "v1.55 — List view no longer jumps to the top when you expand a task or add a subtask — your scroll position is kept.",
   "v1.54 — New built-in Priority dimension (High / Medium / Low / No Priority), usable everywhere: Color by, Split by, filters, and display chips. High-priority items get a red ring on Board, List, and Calendar. Also: deleting a custom field now clears its value from every deliverable that used it (the confirm tells you how many).",
   "v1.53 — Custom fields moved to a dedicated editor (Manage → Edit custom fields…): rename inline, pick a type, and add/remove dropdown options as individual chips (fixes options not saving). New field types: Number, Date, and Multi-select (pick several options per deliverable).",
   "v1.52 — Brightened the date-picker calendar icon so it’s visible on the dark theme (it was nearly invisible before).",
@@ -1355,7 +1356,10 @@ function orderedSplitValues(key, groups) {
   return result;
 }
 function renderList() {
-  const root = document.getElementById("list"); root.innerHTML = "";
+  const root = document.getElementById("list");
+  const prevBody = root.querySelector(".list-body");          // preserve scroll across the rebuild (e.g. expanding a task)
+  const prevScroll = prevBody ? prevBody.scrollTop : 0;
+  root.innerHTML = "";
   // header: add-task (opens the deliverable modal) + sprint filter
   const head = document.createElement("div"); head.className = "list-head";
   const ab = document.createElement("button"); ab.className = "primary"; ab.textContent = "+ Add task";
@@ -1380,6 +1384,8 @@ function renderList() {
   noBtn.onclick = () => { if (!filters.sprint) filters.sprint = new Set(); if (noSprintSel) { filters.sprint.delete(""); if (!filters.sprint.size) delete filters.sprint; } else filters.sprint.add(""); updateFilterBtn(); render(); };
   right.appendChild(noBtn); head.appendChild(right); root.appendChild(head);
   const body = document.createElement("div"); body.className = "list-body" + (listSplit ? " split" : ""); root.appendChild(body);
+  // restore the prior scroll synchronously once content is appended (works even when the tab is backgrounded, unlike rAF)
+  const keepScroll = () => { if (prevScroll) body.scrollTop = prevScroll; };
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
   if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; body.appendChild(e); return; }
@@ -1401,6 +1407,7 @@ function renderList() {
       cols.appendChild(col);
     });
     body.appendChild(cols);
+    keepScroll();
     return;
   }
   const groups = {}; items.forEach(c => { const s = cardSprint(c); (groups[s] = groups[s] || []).push(c); });
@@ -1413,6 +1420,7 @@ function renderList() {
     groups[sk].forEach(c => sec.appendChild(listTaskEl(c)));
     body.appendChild(sec);
   });
+  keepScroll();
 }
 function listTaskEl(c) {
   const subs = cardSubtasks(c); const prog = subProgress(c); const exp = listExpanded.has(c.id);
