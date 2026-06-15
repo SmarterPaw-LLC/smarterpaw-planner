@@ -144,10 +144,28 @@
   .rule-chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; user-select: none; }
   .rule-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   .sprint-readonly { display: block; padding: 8px 11px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); }
-  .field-cfg { margin-bottom: 6px; }
-  .field-cfg .field-type { padding: 3px 7px; font-size: 12px; }
-  .field-options { margin-top: 5px; }
-  .field-options input { width: 100%; font-size: 12px; padding: 6px 9px; }
+  /* Dedicated custom-fields editor */
+  .fields-editor { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+  .fe-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel-2); }
+  .fe-top { display: flex; gap: 8px; align-items: center; }
+  .fe-name { flex: 1; min-width: 0; font-weight: 600; }
+  .fe-type { width: 168px; flex: none; }
+  .fe-del { flex: none; color: var(--danger); background: transparent; border-color: transparent; padding: 7px 9px; }
+  .fe-del:hover { border-color: var(--danger); }
+  .fe-opts { margin-top: 11px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .fe-opts-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-bottom: 7px; }
+  .fe-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+  .fe-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 5px 4px 12px; font-size: 13px; }
+  .fe-chip button { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 3px; font-size: 13px; line-height: 1; }
+  .fe-chip button:hover { color: var(--danger); }
+  .fe-optadd { display: flex; gap: 6px; }
+  .fe-optadd input { flex: 1; font-size: 13px; }
+  .fe-optadd button { flex: none; }
+  .fe-none { color: var(--muted); font-size: 12px; font-style: italic; }
+  /* Multi-select picker inside the deliverable modal */
+  .multi-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+  .mp-chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+  .mp-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   .sprint-track { display: flex; flex-wrap: wrap; gap: 6px; }
   .track-chip { font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 3px 10px; }
   .list-sprint-sel { padding: 7px 9px; }
@@ -490,8 +508,8 @@
     </div>
     <div class="manage-sec">
       <span class="seclabel">Custom fields</span>
-      <div class="manage-list" id="manageFields"></div>
-      <div class="add-row"><input id="mAddField" placeholder="New field (e.g. Format, Budget)…" /><button class="primary" id="mAddFieldBtn">Add</button></div>
+      <div class="hint" id="fieldsSummary" style="margin-bottom:8px"></div>
+      <button id="openFieldsBtn" style="width:100%">✎ Edit custom fields…</button>
     </div>
     <div class="manage-sec">
       <span class="seclabel">Promotions</span>
@@ -501,6 +519,18 @@
     </div>
     <div class="modal-actions"><div class="spacer"></div><button id="manageClose">Done</button></div>
     <div class="hint">Removing an item won't change cards that already use it — they keep the name.</div>
+  </div>
+</div>
+
+<!-- Custom fields editor -->
+<div class="overlay" id="fieldsOverlay">
+  <div class="modal" style="width:560px">
+    <button class="modal-x" id="fieldsX" title="Close">✕</button>
+    <h2>Custom fields</h2>
+    <div class="hint">Fields show on every deliverable and as a column in Grid/List. <b>Dropdown</b> picks one option; <b>Multi-select</b> picks several.</div>
+    <div id="fieldsEditor" class="fields-editor"></div>
+    <div class="add-row"><input id="fAddField" placeholder="New field name (e.g. Priority, Budget)…" autocomplete="off" /><button class="primary" id="fAddFieldBtn">Add field</button></div>
+    <div class="modal-actions"><div class="spacer"></div><button id="fieldsDone">Done</button></div>
   </div>
 </div>
 
@@ -587,8 +617,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.52";
+const VERSION = "1.53";
 const CHANGELOG = [
+  "v1.53 — Custom fields moved to a dedicated editor (Manage → Edit custom fields…): rename inline, pick a type, and add/remove dropdown options as individual chips (fixes options not saving). New field types: Number, Date, and Multi-select (pick several options per deliverable).",
   "v1.52 — Brightened the date-picker calendar icon so it’s visible on the dark theme (it was nearly invisible before).",
   "v1.51 — Fixed “Sprints tracked” for undated tasks: setting/changing the manual sprint week now records into the tracker (it previously only tracked sprints from a due-date range). The tracker also updates live as you change the date or sprint in the editor. Scheduled-lane badge is now a 🕒 clock emoji.",
   "v1.50 — Custom fields can now be a Text or Dropdown type (set the dropdown options in the Manage panel); the deliverable form shows a real dropdown. Scheduled-lane badge is now a 📅 emoji instead of the unclear clock.",
@@ -822,7 +853,18 @@ let channelsList = [];   // [{id?, name, color?}]
 let peopleList = [];     // [{id?, name}]
 let statusList = [];     // [{id?, name, color?}] — the Kanban lanes, in order
 let brandsList = [];     // [{id?, name, color}]
-let fieldsList = [];     // [{id?, name}] — custom field definitions
+let fieldsList = [];     // [{id?, name, type, options}] — custom field definitions
+const FIELD_TYPES = [    // selectable types for a custom field
+  { v: "text",   label: "Text" },
+  { v: "number", label: "Number" },
+  { v: "date",   label: "Date" },
+  { v: "select", label: "Dropdown (pick one)" },
+  { v: "multi",  label: "Multi-select" },
+];
+const FIELD_TYPE_VALS = FIELD_TYPES.map(t => t.v);
+function fieldHasOptions(f) { return f.type === "select" || f.type === "multi"; }
+function fieldByName(n) { return fieldsList.find(f => f.name === n); }
+function splitMulti(v) { return (v || "").split(",").map(s => s.trim()).filter(Boolean); }
 let colorBy = localStorage.getItem("planner-colorby") || "brand";
 const DISP_DEFAULT = { dims: ["brand", "channel", "owners", "dates"], badge: true };
 function loadDisplay() {
@@ -874,7 +916,7 @@ function ruleCardValues(c, field) {
   if (field === "status") return c.status ? [c.status] : [];
   if (field === "promotion") { const p = cardPromo(c); return p ? [p] : []; }
   if (field === "sprint") { const s = cardSprint(c); return s ? [s] : []; }
-  if (field.indexOf("field:") === 0) { const v = (c.fields && c.fields[field.slice(6)]) || ""; return v ? [v] : []; }
+  if (field.indexOf("field:") === 0) { const n = field.slice(6); const v = (c.fields && c.fields[n]) || ""; if (!v) return []; const def = fieldByName(n); return (def && def.type === "multi") ? splitMulti(v) : [v]; }
   return [];
 }
 function ruleFieldValues(field) {
@@ -884,7 +926,9 @@ function ruleFieldValues(field) {
   if (field === "status") return statusList.map(s => s.name);
   if (field === "promotion") return allPromos();
   if (field === "sprint") return allSprints();
-  if (field.indexOf("field:") === 0) { const n = field.slice(6); return [...new Set(cards.map(c => c.fields && c.fields[n]).filter(Boolean))].sort(); }
+  if (field.indexOf("field:") === 0) { const n = field.slice(6); const def = fieldByName(n);
+    if (def && fieldHasOptions(def)) { const set = new Set(def.options || []); cards.forEach(c => { const v = c.fields && c.fields[n]; if (v) (def.type === "multi" ? splitMulti(v) : [v]).forEach(x => set.add(x)); }); return [...set].sort(); }
+    return [...new Set(cards.map(c => c.fields && c.fields[n]).filter(Boolean))].sort(); }
   return [];
 }
 function ruleValueLabel(field, v) { return field === "sprint" ? fmtSprint(v) : v; }
@@ -1011,7 +1055,7 @@ async function loadLists() {
   channelsList = map("channel"); peopleList = map("person"); statusList = map("status");
   brandsList = map("brand");
   // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
-  fieldsList = data.filter(r => r.kind === "field").map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: cfg.type === "select" ? "select" : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  fieldsList = data.filter(r => r.kind === "field").map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
   completeLane = (data.find(r => r.kind === "status" && r.is_complete) || {}).name || "";
   if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
   if (statusList.length === 0) statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
@@ -1029,6 +1073,7 @@ function afterListsChanged() {
   buildChannelFilter(); buildChannelSelect(); buildStatusSelect();
   if (modalOpen) renderOwnerChips();
   if (manageOpen) renderManage();
+  if (document.getElementById("fieldsOverlay").classList.contains("show")) renderFieldsEditor();
   if (document.getElementById("dispOverlay").classList.contains("show")) renderDispSettings();
   render();
 }
@@ -1046,10 +1091,11 @@ async function removeList(kind, item) {
   const extra = kind === "status" ? " Cards keep that status in a leftover column until you move them." : " Cards already using it keep the name.";
   if (!confirm('Remove "' + item.name + '"?' + extra)) return;
   if (!ONLINE) {
-    const arr = listFor(kind);
-    if (kind === "channel") channelsList = arr.filter(x => x.name !== item.name);
-    else if (kind === "person") peopleList = arr.filter(x => x.name !== item.name);
-    else statusList = arr.filter(x => x.name !== item.name);
+    if (kind === "channel") channelsList = channelsList.filter(x => x.name !== item.name);
+    else if (kind === "person") peopleList = peopleList.filter(x => x.name !== item.name);
+    else if (kind === "field") fieldsList = fieldsList.filter(x => x.name !== item.name);
+    else if (kind === "brand") brandsList = brandsList.filter(x => x.name !== item.name);
+    else statusList = statusList.filter(x => x.name !== item.name);
     saveListsLocal(); afterListsChanged(); return;
   }
   const { error } = await db.from("lists").delete().eq("id", item.id);
@@ -1870,15 +1916,31 @@ function renderFieldInputs(values) {
     const wrap = document.createElement("div"); wrap.className = "field";
     const lab = document.createElement("label"); lab.textContent = f.name;
     const cur = (values && values[f.name]) || "";
-    let inp;
+    wrap.appendChild(lab);
     if (f.type === "select") {
-      inp = document.createElement("select"); inp.dataset.field = f.name;
+      const inp = document.createElement("select"); inp.dataset.field = f.name;
       const none = document.createElement("option"); none.value = ""; none.textContent = "— none —"; inp.appendChild(none);
       const opts = (f.options || []).slice(); if (cur && !opts.includes(cur)) opts.push(cur);   // keep a legacy value visible
       opts.forEach(o => { const op = document.createElement("option"); op.value = o; op.textContent = o; inp.appendChild(op); });
-      inp.value = cur;
-    } else { inp = document.createElement("input"); inp.dataset.field = f.name; inp.value = cur; }
-    wrap.appendChild(lab); wrap.appendChild(inp); box.appendChild(wrap);
+      inp.value = cur; wrap.appendChild(inp);
+    } else if (f.type === "multi") {
+      const sel = new Set(splitMulti(cur));
+      const hidden = document.createElement("input"); hidden.type = "hidden"; hidden.dataset.field = f.name; hidden.value = [...sel].join(", ");
+      const pick = document.createElement("div"); pick.className = "multi-pick";
+      const opts = (f.options || []).slice(); sel.forEach(s => { if (!opts.includes(s)) opts.push(s); });   // keep legacy values visible
+      if (!opts.length) { const e = document.createElement("span"); e.className = "fe-none"; e.textContent = "No options yet — add them in Manage → Custom fields."; pick.appendChild(e); }
+      opts.forEach(o => {
+        const ch = document.createElement("button"); ch.type = "button"; ch.className = "mp-chip" + (sel.has(o) ? " on" : ""); ch.textContent = o;
+        ch.onclick = () => { if (sel.has(o)) { sel.delete(o); ch.classList.remove("on"); } else { sel.add(o); ch.classList.add("on"); } hidden.value = [...sel].join(", "); };
+        pick.appendChild(ch);
+      });
+      wrap.appendChild(pick); wrap.appendChild(hidden);
+    } else {
+      const inp = document.createElement("input"); inp.dataset.field = f.name; inp.value = cur;
+      if (f.type === "number") inp.type = "number"; else if (f.type === "date") inp.type = "date";
+      wrap.appendChild(inp);
+    }
+    box.appendChild(wrap);
   });
 }
 
@@ -1952,8 +2014,14 @@ function renderManage() {
   fillManage("manageStatuses", statusList, "status");
   fillManage("manageChannels", channelsList, "channel");
   fillManage("managePeople", peopleList, "person");
-  fillManageFields();
+  updateFieldsSummary();
   fillManagePromos();
+}
+function updateFieldsSummary() {
+  const el = document.getElementById("fieldsSummary"); if (!el) return;
+  el.textContent = fieldsList.length
+    ? fieldsList.map(f => f.name).join(", ")
+    : "No custom fields yet.";
 }
 async function saveFieldConfig(f) {
   const cfg = JSON.stringify({ type: f.type, options: f.options || [] });
@@ -1961,26 +2029,55 @@ async function saveFieldConfig(f) {
   const { error } = await db.from("lists").update({ color: cfg }).eq("id", f.id);
   if (error) toast("Save failed: " + error.message); else { /* keep local; avoid full reload so the options input keeps focus */ }
 }
-function fillManageFields() {
-  const el = document.getElementById("manageFields"); el.innerHTML = "";
-  if (!fieldsList.length) { const e = document.createElement("div"); e.className = "none"; e.textContent = "No custom fields yet."; el.appendChild(e); return; }
-  fieldsList.forEach(f => {
-    const cont = document.createElement("div"); cont.className = "field-cfg";
-    const row = document.createElement("div"); row.className = "manage-row";
-    const left = document.createElement("span"); left.className = "row-left"; left.appendChild(document.createTextNode(f.name));
-    const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
-    const typeSel = document.createElement("select"); typeSel.className = "field-type"; typeSel.innerHTML = '<option value="text">Text</option><option value="select">Dropdown</option>'; typeSel.value = f.type || "text"; typeSel.title = "Field type";
-    const ed = document.createElement("button"); ed.className = "mv"; ed.textContent = "✎"; ed.title = "Rename"; ed.onclick = () => { const nn = prompt("Rename field “" + f.name + "” to:", f.name); if (nn) renameList("field", f, nn); };
-    const rm = document.createElement("button"); rm.textContent = "Remove"; rm.onclick = () => removeList("field", f);
-    ctrls.appendChild(typeSel); ctrls.appendChild(ed); ctrls.appendChild(rm);
-    row.appendChild(left); row.appendChild(ctrls); cont.appendChild(row);
-    const optWrap = document.createElement("div"); optWrap.className = "field-options"; optWrap.style.display = f.type === "select" ? "" : "none";
-    const optInp = document.createElement("input"); optInp.placeholder = "Dropdown options, comma-separated (e.g. High, Medium, Low)"; optInp.value = (f.options || []).join(", ");
-    optInp.onchange = () => { f.options = optInp.value.split(",").map(s => s.trim()).filter(Boolean); saveFieldConfig(f); };
-    optWrap.appendChild(optInp); cont.appendChild(optWrap);
-    typeSel.onchange = () => { f.type = typeSel.value; optWrap.style.display = f.type === "select" ? "" : "none"; saveFieldConfig(f); };
-    el.appendChild(cont);
-  });
+/* ---------- custom fields editor (dedicated panel) ---------- */
+function openFields() { renderFieldsEditor(); document.getElementById("fieldsOverlay").classList.add("show"); }
+function closeFields() { document.getElementById("fieldsOverlay").classList.remove("show"); }
+function renderFieldsEditor() {
+  const box = document.getElementById("fieldsEditor"); box.innerHTML = "";
+  if (!fieldsList.length) { const e = document.createElement("div"); e.className = "fe-none"; e.textContent = "No custom fields yet. Add one below."; box.appendChild(e); return; }
+  fieldsList.forEach(f => box.appendChild(fieldEditorCard(f)));
+}
+function fieldEditorCard(f) {
+  const card = document.createElement("div"); card.className = "fe-card";
+  const top = document.createElement("div"); top.className = "fe-top";
+  const name = document.createElement("input"); name.className = "fe-name"; name.value = f.name; name.title = "Field name";
+  name.onchange = () => { const nn = name.value.trim(); if (nn && nn !== f.name) renameList("field", f, nn); else name.value = f.name; };
+  const type = document.createElement("select"); type.className = "fe-type"; type.title = "Field type";
+  FIELD_TYPES.forEach(t => { const o = document.createElement("option"); o.value = t.v; o.textContent = t.label; type.appendChild(o); });
+  type.value = f.type || "text";
+  const del = document.createElement("button"); del.className = "fe-del"; del.textContent = "Remove"; del.onclick = () => removeList("field", f);
+  top.appendChild(name); top.appendChild(type); top.appendChild(del); card.appendChild(top);
+
+  const opts = document.createElement("div"); opts.className = "fe-opts"; opts.style.display = fieldHasOptions(f) ? "" : "none";
+  const lab = document.createElement("div"); lab.className = "fe-opts-lab"; lab.textContent = "Options";
+  const chips = document.createElement("div"); chips.className = "fe-chips";
+  const renderChips = () => {
+    chips.innerHTML = "";
+    if (!(f.options || []).length) { const e = document.createElement("span"); e.className = "fe-none"; e.textContent = "No options yet — add some below."; chips.appendChild(e); return; }
+    f.options.forEach(o => {
+      const ch = document.createElement("span"); ch.className = "fe-chip"; ch.appendChild(document.createTextNode(o));
+      const x = document.createElement("button"); x.textContent = "✕"; x.title = "Remove option";
+      x.onclick = () => { f.options = f.options.filter(v => v !== o); saveFieldConfig(f); renderChips(); };
+      ch.appendChild(x); chips.appendChild(ch);
+    });
+  };
+  renderChips();
+  const addRow = document.createElement("div"); addRow.className = "fe-optadd";
+  const ai = document.createElement("input"); ai.placeholder = "Add an option…"; ai.autocomplete = "off";
+  const ab = document.createElement("button"); ab.className = "primary"; ab.textContent = "Add";
+  const addOpt = () => {
+    const v = ai.value.trim(); if (!v) return;
+    f.options = f.options || [];
+    if (f.options.some(o => o.toLowerCase() === v.toLowerCase())) { toast('"' + v + '" already an option'); }
+    else { f.options.push(v); saveFieldConfig(f); renderChips(); }
+    ai.value = ""; ai.focus();
+  };
+  ab.onclick = addOpt; ai.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addOpt(); } });
+  addRow.appendChild(ai); addRow.appendChild(ab);
+  opts.appendChild(lab); opts.appendChild(chips); opts.appendChild(addRow); card.appendChild(opts);
+
+  type.onchange = () => { f.type = type.value; opts.style.display = fieldHasOptions(f) ? "" : "none"; saveFieldConfig(f); };
+  return card;
 }
 function fillManagePromos() {
   const el = document.getElementById("managePromos"); el.innerHTML = "";
@@ -2351,15 +2448,20 @@ async function init() {
   const addCh = () => { const i = document.getElementById("mAddChannel"); addList("channel", i.value).then(ok => { if (ok) i.value = ""; }); };
   const addPe = () => { const i = document.getElementById("mAddPerson"); addList("person", i.value).then(ok => { if (ok) i.value = ""; }); };
   const addSt = () => { const i = document.getElementById("mAddStatus"); addList("status", i.value).then(ok => { if (ok) i.value = ""; }); };
-  const addFl = () => { const i = document.getElementById("mAddField"); addList("field", i.value).then(ok => { if (ok) i.value = ""; }); };
+  const addFl = () => { const i = document.getElementById("fAddField"); addList("field", i.value).then(ok => { if (ok) { i.value = ""; i.focus(); } }); };
   document.getElementById("mAddChannelBtn").onclick = addCh;
   document.getElementById("mAddPersonBtn").onclick = addPe;
   document.getElementById("mAddStatusBtn").onclick = addSt;
-  document.getElementById("mAddFieldBtn").onclick = addFl;
   document.getElementById("mAddChannel").addEventListener("keydown", e => { if (e.key === "Enter") addCh(); });
   document.getElementById("mAddPerson").addEventListener("keydown", e => { if (e.key === "Enter") addPe(); });
   document.getElementById("mAddStatus").addEventListener("keydown", e => { if (e.key === "Enter") addSt(); });
-  document.getElementById("mAddField").addEventListener("keydown", e => { if (e.key === "Enter") addFl(); });
+  // Custom fields editor (dedicated panel)
+  document.getElementById("openFieldsBtn").onclick = openFields;
+  document.getElementById("fieldsDone").onclick = closeFields;
+  document.getElementById("fieldsX").onclick = closeFields;
+  document.getElementById("fieldsOverlay").onclick = e => { if (e.target.id === "fieldsOverlay") closeFields(); };
+  document.getElementById("fAddFieldBtn").onclick = addFl;
+  document.getElementById("fAddField").addEventListener("keydown", e => { if (e.key === "Enter") addFl(); });
 
   const menu = document.getElementById("menuOverlay");
   document.getElementById("menuBtn").onclick = () => menu.classList.add("show");
@@ -2374,7 +2476,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
