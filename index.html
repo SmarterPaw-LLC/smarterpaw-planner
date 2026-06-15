@@ -107,13 +107,16 @@
   .progress.full > i { background: var(--ok); }
   /* List / task view */
   #list { display: none; flex-direction: column; gap: 16px; padding: 16px 20px; overflow: auto; }
-  .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
   .list-head-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
   .list-sprint-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
   .list-sprint-wk { padding: 6px 9px; }
   .sprint-none { padding: 6px 11px; font-size: 12px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .sprint-none:hover { color: var(--text); border-color: var(--accent); }
   .sprint-none.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .sprint-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: 999px; padding: 4px 6px 4px 11px; }
+  .sprint-chip .x { cursor: pointer; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--muted); font-size: 11px; }
+  .sprint-chip .x:hover { background: var(--danger); color: #fff; }
   .list-sprint-sel { padding: 7px 9px; }
   .list-empty { padding: 30px; text-align: center; }
   .list-cols { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
@@ -122,7 +125,9 @@
   .list-col .list-task { background: var(--panel-2); padding: 8px 10px; }
   .list-sec { display: flex; flex-direction: column; gap: 7px; }
   .list-sec-head { display: flex; align-items: center; gap: 9px; padding: 2px 2px 4px; border-bottom: 1px solid var(--line); }
+  .list-sec-head .ls-head-main { display: flex; flex-direction: column; line-height: 1.25; }
   .list-sec-head .ls-name { font-weight: 700; font-size: 13px; }
+  .list-sec-head .ls-range { font-size: 11px; color: var(--muted); font-weight: 400; }
   .list-sec-head .ls-count { font-size: 11px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
   .list-task { background: var(--panel); border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 9px 12px; }
   .sprint-hist { font-size: 11px; color: var(--scheduled); border: 1px solid var(--scheduled); border-radius: 999px; padding: 1px 8px; font-weight: 600; cursor: help; white-space: nowrap; }
@@ -156,6 +161,7 @@
   #calendar { display: none; flex: 1; flex-direction: column; padding: 14px 20px; overflow: hidden; }
   .cal-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
   .cal-label { font-weight: 700; font-size: 15px; margin-left: 6px; }
+  #headerCollapse { display: none; font-size: 12px; color: var(--muted); }
   .tray-toggle { margin-left: auto; font-size: 12px; color: var(--muted); }
   .tray-toggle:hover { color: var(--text); }
   .cal-main { flex: 1; display: flex; gap: 14px; overflow: hidden; }
@@ -311,6 +317,11 @@
     /* Modals: roomier on small screens, stacked pairs */
     .modal { padding: 16px; max-width: 94vw; }
     .row2 { flex-direction: column; gap: 0; }
+    /* Collapse the whole controls area on mobile */
+    #headerCollapse { display: inline-flex; align-items: center; order: 4; }
+    body.hdr-collapsed header > .filters,
+    body.hdr-collapsed header > .toolbar,
+    body.hdr-collapsed #legend { display: none; }
   }
 </style>
 </head>
@@ -319,6 +330,7 @@
   <div class="brand-title">Smarter<span>Paw</span> · Channel Planner</div>
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
+  <button id="headerCollapse" title="Show/hide controls">⌃ Controls</button>
   <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button></div>
   <div class="filters" id="brandFilters"></div>
   <div class="filters">
@@ -497,8 +509,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.38";
+const VERSION = "1.39";
 const CHANGELOG = [
+  "v1.39 — Sprint headers/pills now show the week’s date range (e.g. “Jun 15 – Jun 21”); the List view lets you select multiple sprints (chips + add-week picker); spacing added under the add-task row; and on mobile a “Controls” button collapses the top area.",
   "v1.38 — List items now use the Color: brand/channel/status setting (left stripe); a “⟳ N sprints” badge tracks how many sprints a task has carried across (hover for the list); and you can hide the calendar’s Unscheduled panel to give the grid full width.",
   "v1.37 — List view: opens to the current week’s sprint by default, and “Split by” any dimension (owner, status, brand, channel, promotion, field) into columns across the page. Filter panel’s Sprint section now shows just the ±2-week window with a “＋ Add sprint” week picker.",
   "v1.36 — Mobile-friendly layout: header controls stack, the board swipes one column at a time, the calendar scrolls with legible days, and modals fit the screen",
@@ -560,6 +573,22 @@ function isoWeek(ymdStr) {
   const firstThu = new Date(Date.UTC(dt.getUTCFullYear(), 0, 4));
   const week = 1 + Math.round(((dt - firstThu) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
   return dt.getUTCFullYear() + "-W" + String(week).padStart(2, "0");
+}
+// Monday Date (UTC) that starts an ISO week string like "2026-W25".
+function isoWeekStart(weekStr) {
+  const m = /^(\d{4})-W(\d{2})$/.exec(weekStr || ""); if (!m) return null;
+  const year = +m[1], week = +m[2];
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const week1Mon = new Date(jan4); week1Mon.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
+  const mon = new Date(week1Mon); mon.setUTCDate(week1Mon.getUTCDate() + (week - 1) * 7);
+  return mon;
+}
+// "Jun 15 – Jun 21" for the days an ISO week covers.
+function sprintRange(weekStr) {
+  const mon = isoWeekStart(weekStr); if (!mon) return "";
+  const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+  const f = d => MONTHS[d.getUTCMonth()].slice(0, 3) + " " + d.getUTCDate();
+  return f(mon) + " – " + f(sun);
 }
 // Sprint is auto-derived from the deliverable's date (the first week a date range falls into).
 // Undated items fall back to a manually-set sprint (fields.__sprint).
@@ -980,7 +1009,7 @@ function renderActiveFilters() {
   if (channelFilter) pills.push({ k: "Channel", v: channelFilter, remove: () => { channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = ""; } });
   const dimLabel = (COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0]).label;
   legendSel.forEach(v => pills.push({ k: dimLabel, v, remove: () => legendSel.delete(v) }));
-  Object.keys(filters).forEach(key => { const set = filters[key]; if (!set) return; set.forEach(v => { const disp = key === "sprint" ? (v ? fmtSprint(v) : "No sprint") : (v || "(blank)"); pills.push({ k: filterKeyLabel(key), v: disp, remove: () => { set.delete(v); if (!set.size) delete filters[key]; } }); }); });
+  Object.keys(filters).forEach(key => { const set = filters[key]; if (!set) return; set.forEach(v => { const disp = key === "sprint" ? (v ? fmtSprint(v) + " · " + sprintRange(v) : "No sprint") : (v || "(blank)"); pills.push({ k: filterKeyLabel(key), v: disp, remove: () => { set.delete(v); if (!set.size) delete filters[key]; } }); }); });
 
   if (!pills.length) { bar.style.display = "none"; return; }
   bar.style.display = "flex";
@@ -1046,13 +1075,21 @@ function renderList() {
   splitSel.onchange = () => { listSplit = splitSel.value; render(); };
   right.appendChild(splitSel);
   const lab = document.createElement("span"); lab.className = "list-sprint-lab"; lab.textContent = "Sprint"; right.appendChild(lab);
-  const cur = (filters.sprint && filters.sprint.size === 1) ? [...filters.sprint][0] : null;   // null=all, ""=no sprint, ISO week=specific
-  const wk = document.createElement("input"); wk.type = "week"; wk.className = "list-sprint-wk"; wk.title = "Filter to a sprint week — clear to show all";
-  wk.value = (cur && cur !== "") ? cur : "";
-  wk.onchange = () => { if (wk.value) filters.sprint = new Set([wk.value]); else delete filters.sprint; updateFilterBtn(); render(); };
+  const selected = filters.sprint ? [...filters.sprint] : [];
+  const noSprintSel = selected.includes("");
+  // chips for each selected sprint week (removable)
+  selected.filter(Boolean).sort().forEach(s => {
+    const chip = document.createElement("span"); chip.className = "sprint-chip"; chip.title = sprintRange(s);
+    chip.innerHTML = `${esc(fmtSprint(s))} <span class="x">✕</span>`;
+    chip.querySelector(".x").onclick = () => { filters.sprint.delete(s); if (!filters.sprint.size) delete filters.sprint; updateFilterBtn(); render(); };
+    right.appendChild(chip);
+  });
+  // picker to ADD a sprint week (multi-select)
+  const wk = document.createElement("input"); wk.type = "week"; wk.className = "list-sprint-wk"; wk.title = "Add a sprint week to filter by";
+  wk.onchange = () => { if (!wk.value) return; if (!filters.sprint) filters.sprint = new Set(); filters.sprint.add(wk.value); updateFilterBtn(); render(); };
   right.appendChild(wk);
-  const noBtn = document.createElement("button"); noBtn.className = "sprint-none" + (cur === "" ? " on" : ""); noBtn.textContent = "No sprint"; noBtn.title = "Show only undated tasks";
-  noBtn.onclick = () => { if (cur === "") delete filters.sprint; else filters.sprint = new Set([""]); updateFilterBtn(); render(); };
+  const noBtn = document.createElement("button"); noBtn.className = "sprint-none" + (noSprintSel ? " on" : ""); noBtn.textContent = "No sprint"; noBtn.title = "Include undated tasks";
+  noBtn.onclick = () => { if (!filters.sprint) filters.sprint = new Set(); if (noSprintSel) { filters.sprint.delete(""); if (!filters.sprint.size) delete filters.sprint; } else filters.sprint.add(""); updateFilterBtn(); render(); };
   right.appendChild(noBtn); head.appendChild(right); root.appendChild(head);
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
@@ -1078,7 +1115,7 @@ function renderList() {
   ordered.forEach(sk => {
     const sec = document.createElement("div"); sec.className = "list-sec";
     const h = document.createElement("div"); h.className = "list-sec-head";
-    h.innerHTML = `<span class="ls-name">${sk ? esc(fmtSprint(sk)) : "No sprint"}</span><span class="ls-count">${groups[sk].length}</span>`;
+    h.innerHTML = `<span class="ls-head-main"><span class="ls-name">${sk ? esc(fmtSprint(sk)) : "No sprint"}</span>${sk ? `<span class="ls-range">${esc(sprintRange(sk))}</span>` : ""}</span><span class="ls-count">${groups[sk].length}</span>`;
     sec.appendChild(h);
     groups[sk].forEach(c => sec.appendChild(listTaskEl(c)));
     root.appendChild(sec);
@@ -1886,6 +1923,7 @@ async function init() {
   document.getElementById("calNext").onclick = () => calNav(1);
   document.getElementById("calToday").onclick = () => { calRef = new Date(); render(); };
   document.getElementById("trayToggle").onclick = () => { showTray = !showTray; localStorage.setItem("planner-tray", showTray ? "1" : "0"); renderCalendar(); };
+  document.getElementById("headerCollapse").onclick = () => { const c = document.body.classList.toggle("hdr-collapsed"); document.getElementById("headerCollapse").textContent = c ? "⌄ Controls" : "⌃ Controls"; };
 
   document.getElementById("addBtn").onclick = () => openModal(null);
   document.getElementById("saveBtn").onclick = saveModal;
