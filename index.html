@@ -116,6 +116,10 @@
   .sprint-none.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
   .list-sprint-sel { padding: 7px 9px; }
   .list-empty { padding: 30px; text-align: center; }
+  .list-cols { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
+  .list-col { flex: 1 1 0; min-width: 250px; display: flex; flex-direction: column; gap: 7px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  .list-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 13px; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
+  .list-col .list-task { background: var(--panel-2); padding: 8px 10px; }
   .list-sec { display: flex; flex-direction: column; gap: 7px; }
   .list-sec-head { display: flex; align-items: center; gap: 9px; padding: 2px 2px 4px; border-bottom: 1px solid var(--line); }
   .list-sec-head .ls-name { font-weight: 700; font-size: 13px; }
@@ -489,8 +493,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.36";
+const VERSION = "1.37";
 const CHANGELOG = [
+  "v1.37 — List view: opens to the current week’s sprint by default, and “Split by” any dimension (owner, status, brand, channel, promotion, field) into columns across the page. Filter panel’s Sprint section now shows just the ±2-week window with a “＋ Add sprint” week picker.",
   "v1.36 — Mobile-friendly layout: header controls stack, the board swipes one column at a time, the calendar scrolls with legible days, and modals fit the screen",
   "v1.35 — Your current view + filters are saved in the page URL, so you can bookmark or share a filtered view (e.g. “Wk 27 backlog for Doggi”) and it reopens exactly as you left it",
   "v1.34 — List view sprint filter is now a calendar week picker (like the modal); clear it for all sprints, or use the “No sprint” toggle for undated tasks",
@@ -903,7 +908,14 @@ function renderFilters() {
   const sections = [{ key: "owner", label: "Owners" }, { key: "status", label: "Lane / status" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
   sections.forEach(sec => {
-    const vals = filterValues(sec.key); if (!vals.length) return;
+    let vals;
+    if (sec.key === "sprint") {
+      // only the last 2 + next 2 weeks around today, plus any already-selected weeks outside that window
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const win = []; for (let d = -2; d <= 2; d++) win.push(isoWeek(ymd(addDays(today, d * 7))));
+      const sel = filters.sprint ? [...filters.sprint].filter(Boolean) : [];
+      vals = [...new Set([...win, ...sel])].sort();
+    } else { vals = filterValues(sec.key); if (!vals.length) return; }
     const wrap = document.createElement("div"); wrap.className = "manage-sec";
     const lab = document.createElement("span"); lab.className = "seclabel"; lab.textContent = sec.label; wrap.appendChild(lab);
     const list = document.createElement("div"); list.className = "disp-dims scroll-cap";
@@ -917,7 +929,16 @@ function renderFilters() {
       };
       l.appendChild(cb); l.appendChild(document.createTextNode(" " + (sec.key === "sprint" ? fmtSprint(v) : v))); list.appendChild(l);
     });
-    wrap.appendChild(list); body.appendChild(wrap);
+    wrap.appendChild(list);
+    if (sec.key === "sprint") {
+      const addRow = document.createElement("div"); addRow.className = "add-row";
+      const inp = document.createElement("input"); inp.type = "week"; inp.title = "Pick any other sprint week to filter by";
+      inp.onchange = () => { if (!inp.value) return; if (!filters.sprint) filters.sprint = new Set(); filters.sprint.add(inp.value); updateFilterBtn(); renderFilters(); render(); };
+      const l2 = document.createElement("label"); l2.className = "opt"; l2.style.alignSelf = "center"; l2.textContent = "＋ Add sprint";
+      addRow.appendChild(l2); addRow.appendChild(inp);
+      wrap.appendChild(addRow);
+    }
+    body.appendChild(wrap);
   });
   if (!body.children.length) { const e = document.createElement("div"); e.className = "hint"; e.textContent = "No owners, lanes, or custom-field values to filter yet."; body.appendChild(e); }
 }
@@ -957,6 +978,33 @@ function renderActiveFilters() {
 }
 function render() { writeUrl(); renderLegend(); renderActiveFilters(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else if (view === "list") renderList(); else renderBoard(); }
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
+let listSplit = "";             // dimension key to split the List view into columns ("" = single grouped list); never "sprint"
+function splitDims() {
+  return [{ key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "promotion", label: "Promotion" }]
+    .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
+}
+function splitVals(c, key) {
+  if (key === "owner") { const o = splitOwners(c.owner); return o.length ? o : [""]; }
+  if (key === "status") return [c.status || ""];
+  if (key === "brand") return [c.brand || ""];
+  if (key === "channel") return [c.channel || ""];
+  if (key === "promotion") return [cardPromo(c)];
+  if (key.indexOf("field:") === 0) return [(c.fields && c.fields[key.slice(6)]) || ""];
+  return [""];
+}
+function orderedSplitValues(key, groups) {
+  let order = [];
+  if (key === "owner") order = peopleList.map(p => p.name);
+  else if (key === "status") order = statusList.map(s => s.name);
+  else if (key === "brand") order = brandsList.map(b => b.name);
+  else if (key === "channel") order = channelsList.map(c => c.name);
+  else if (key === "promotion") order = allPromos();
+  const result = [], seen = new Set();
+  order.forEach(v => { if (groups.has(v)) { result.push(v); seen.add(v); } });
+  [...groups.keys()].filter(k => k !== "" && !seen.has(k)).sort().forEach(v => result.push(v));
+  if (groups.has("")) result.push("");   // "(None)" column last
+  return result;
+}
 function renderList() {
   const root = document.getElementById("list"); root.innerHTML = "";
   // header: add-task (opens the deliverable modal) + sprint filter
@@ -965,6 +1013,13 @@ function renderList() {
   ab.onclick = () => openModal(null, {});
   head.appendChild(ab);
   const right = document.createElement("div"); right.className = "list-head-right";
+  const splitLab = document.createElement("span"); splitLab.className = "list-sprint-lab"; splitLab.textContent = "Split by"; right.appendChild(splitLab);
+  const splitSel = document.createElement("select"); splitSel.className = "list-sprint-sel";
+  const sNone = document.createElement("option"); sNone.value = ""; sNone.textContent = "Nothing"; splitSel.appendChild(sNone);
+  splitDims().forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = d.label; splitSel.appendChild(o); });
+  splitSel.value = listSplit;
+  splitSel.onchange = () => { listSplit = splitSel.value; render(); };
+  right.appendChild(splitSel);
   const lab = document.createElement("span"); lab.className = "list-sprint-lab"; lab.textContent = "Sprint"; right.appendChild(lab);
   const cur = (filters.sprint && filters.sprint.size === 1) ? [...filters.sprint][0] : null;   // null=all, ""=no sprint, ISO week=specific
   const wk = document.createElement("input"); wk.type = "week"; wk.className = "list-sprint-wk"; wk.title = "Filter to a sprint week — clear to show all";
@@ -977,6 +1032,22 @@ function renderList() {
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
   if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; root.appendChild(e); return; }
+  // Split mode: columns by the chosen dimension, spanning the page.
+  if (listSplit) {
+    const cmap = new Map();
+    items.forEach(c => splitVals(c, listSplit).forEach(v => { const k = v || ""; if (!cmap.has(k)) cmap.set(k, []); cmap.get(k).push(c); }));
+    const cols = document.createElement("div"); cols.className = "list-cols";
+    orderedSplitValues(listSplit, cmap).forEach(val => {
+      const col = document.createElement("div"); col.className = "list-col";
+      const h = document.createElement("div"); h.className = "list-col-head";
+      h.innerHTML = `<span class="ls-name">${val ? esc(val) : "(None)"}</span><span class="ls-count">${cmap.get(val).length}</span>`;
+      col.appendChild(h);
+      cmap.get(val).forEach(c => col.appendChild(listTaskEl(c)));
+      cols.appendChild(col);
+    });
+    root.appendChild(cols);
+    return;
+  }
   const groups = {}; items.forEach(c => { const s = cardSprint(c); (groups[s] = groups[s] || []).push(c); });
   const ordered = Object.keys(groups).filter(k => k).sort().concat(groups[""] ? [""] : []);
   ordered.forEach(sk => {
@@ -1728,6 +1799,7 @@ function writeUrl() {
   if (brandsList.length && activeBrands.size && activeBrands.size < brandsList.length) [...activeBrands].forEach(b => p.append("brand", b));
   [...legendSel].forEach(v => p.append("legend", v));
   Object.keys(filters).forEach(k => { const s = filters[k]; if (s) [...s].forEach(v => p.append("flt_" + k, v)); });
+  if (view === "list" && listSplit) p.set("split", listSplit);
   if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); }
   const qs = p.toString();
   try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {}
@@ -1744,6 +1816,7 @@ function readUrl() {
   const fl = {};
   for (const [key, val] of p) { if (key.indexOf("flt_") === 0) { const fk = key.slice(4); (fl[fk] = fl[fk] || new Set()).add(val); } }
   if (Object.keys(fl).length) filters = fl;
+  const sp = p.get("split"); if (sp) listSplit = sp;
   const cm = p.get("calMode"); if (cm) calMode = cm;
   const cd = p.get("calDate"); if (cd) { const d = new Date(cd + "T00:00:00"); if (!isNaN(d.getTime())) calRef = d; }
 }
@@ -1770,7 +1843,11 @@ async function init() {
   document.getElementById("colorBy").onchange = e => { colorBy = e.target.value; localStorage.setItem("planner-colorby", colorBy); legendSel.clear(); render(); };
   document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
 
-  document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => setView(b.dataset.v));
+  document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => {
+    // Entering the List view with no sprint filter defaults to the current week's sprint.
+    if (b.dataset.v === "list" && view !== "list" && !filters.sprint) { filters.sprint = new Set([isoWeek(ymd(new Date()))]); updateFilterBtn(); }
+    setView(b.dataset.v);
+  });
   document.querySelectorAll("#calModeSeg button").forEach(b => b.onclick = () => setCalMode(b.dataset.m));
   document.getElementById("calPrev").onclick = () => calNav(-1);
   document.getElementById("calNext").onclick = () => calNav(1);
