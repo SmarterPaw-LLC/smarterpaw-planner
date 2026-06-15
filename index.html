@@ -141,6 +141,10 @@
   .rule-chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; user-select: none; }
   .rule-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   .sprint-readonly { display: block; padding: 8px 11px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); }
+  .field-cfg { margin-bottom: 6px; }
+  .field-cfg .field-type { padding: 3px 7px; font-size: 12px; }
+  .field-options { margin-top: 5px; }
+  .field-options input { width: 100%; font-size: 12px; padding: 6px 9px; }
   .sprint-track { display: flex; flex-wrap: wrap; gap: 6px; }
   .track-chip { font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 3px 10px; }
   .list-sprint-sel { padding: 7px 9px; }
@@ -231,10 +235,7 @@
   .done-check { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
     border-radius: 50%; background: var(--ok); color: #fff; font-size: 9px; font-weight: 900; line-height: 1;
     vertical-align: middle; box-shadow: 0 0 0 1.5px rgba(255,255,255,.9); position: relative; top: -1px; }
-  .sched-check { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
-    border-radius: 50%; background: #f59e0b; line-height: 1; vertical-align: middle;
-    box-shadow: 0 0 0 1.5px rgba(255,255,255,.9); position: relative; top: -1px; }
-  .sched-check svg { display: block; }
+  .sched-check { display: inline-block; font-size: 13px; line-height: 1; vertical-align: middle; position: relative; top: -1px; }
   #changelogList { display: flex; flex-direction: column; gap: 9px; }
   #changelogList .cl { font-size: 13px; color: var(--text); padding: 8px 11px; background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 8px; }
@@ -583,8 +584,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.49";
+const VERSION = "1.50";
 const CHANGELOG = [
+  "v1.50 — Custom fields can now be a Text or Dropdown type (set the dropdown options in the Manage panel); the deliverable form shows a real dropdown. Scheduled-lane badge is now a 📅 emoji instead of the unclear clock.",
   "v1.49 — Fixed: clicking a promotion in the legend now actually filters and shows in the “Filtering by” row (regression from the advanced-filter change). Saved views gain an “Update” action to overwrite a view with your current filters.",
   "v1.48 — Tidied the List header: dropped the redundant “Sprint” label and the duplicate sprint chips (selected sprints already show in the “Filtering by” row); the ＋ Sprint picker and No-sprint toggle remain.",
   "v1.47 — Sprint pickers now use a normal date picker (pick any day in the week) so they work in Safari and on iPhone, where the old week picker had no support.",
@@ -840,7 +842,7 @@ function setScheduled(item) {
   localStorage.setItem("planner-scheduled-lane", scheduledLane);
   afterListsChanged();
 }
-const SCHED_ICON = '<svg viewBox="0 0 16 16" width="8" height="8" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8V4.6M8 8h3"/></svg>';
+const SCHED_ICON = "📅";
 function schedBadge(c) { const sl = effScheduledLane(); return (sl && c.status === sl) ? '<span class="sched-check" title="Scheduled">' + SCHED_ICON + '</span> ' : ''; }
 let filters = {};   // quick sprint filter from the List header: { sprint: Set }
 let filterRules = [];      // advanced Filter panel: [{ field, op:'is'|'isnot'|'empty'|'notempty', values:[] }]
@@ -991,7 +993,9 @@ async function loadLists() {
   }
   const map = (k) => data.filter(r => r.kind === k).map(r => ({ id: r.id, name: r.name, color: r.color || undefined }));
   channelsList = map("channel"); peopleList = map("person"); statusList = map("status");
-  brandsList = map("brand"); fieldsList = map("field");
+  brandsList = map("brand");
+  // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
+  fieldsList = data.filter(r => r.kind === "field").map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: cfg.type === "select" ? "select" : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
   completeLane = (data.find(r => r.kind === "status" && r.is_complete) || {}).name || "";
   if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
   if (statusList.length === 0) statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
@@ -1834,7 +1838,15 @@ function renderFieldInputs(values) {
   fieldsList.forEach(f => {
     const wrap = document.createElement("div"); wrap.className = "field";
     const lab = document.createElement("label"); lab.textContent = f.name;
-    const inp = document.createElement("input"); inp.dataset.field = f.name; inp.value = (values && values[f.name]) || "";
+    const cur = (values && values[f.name]) || "";
+    let inp;
+    if (f.type === "select") {
+      inp = document.createElement("select"); inp.dataset.field = f.name;
+      const none = document.createElement("option"); none.value = ""; none.textContent = "— none —"; inp.appendChild(none);
+      const opts = (f.options || []).slice(); if (cur && !opts.includes(cur)) opts.push(cur);   // keep a legacy value visible
+      opts.forEach(o => { const op = document.createElement("option"); op.value = o; op.textContent = o; inp.appendChild(op); });
+      inp.value = cur;
+    } else { inp = document.createElement("input"); inp.dataset.field = f.name; inp.value = cur; }
     wrap.appendChild(lab); wrap.appendChild(inp); box.appendChild(wrap);
   });
 }
@@ -1881,7 +1893,7 @@ function saveModal() {
   const title = document.getElementById("f_title").value.trim();
   if (!title) { document.getElementById("f_title").focus(); return; }
   const fields = {};
-  document.querySelectorAll("#f_fields input").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
+  document.querySelectorAll("#f_fields [data-field]").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
   const promo = document.getElementById("f_promo").value.trim();
   if (promo && promo !== "__add_promo__") fields[PROMO_KEY] = promo;
   const sprintDate = document.getElementById("f_sprint").value;
@@ -1912,8 +1924,35 @@ function renderManage() {
   fillManage("manageStatuses", statusList, "status");
   fillManage("manageChannels", channelsList, "channel");
   fillManage("managePeople", peopleList, "person");
-  fillManage("manageFields", fieldsList, "field");
+  fillManageFields();
   fillManagePromos();
+}
+async function saveFieldConfig(f) {
+  const cfg = JSON.stringify({ type: f.type, options: f.options || [] });
+  if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
+  const { error } = await db.from("lists").update({ color: cfg }).eq("id", f.id);
+  if (error) toast("Save failed: " + error.message); else { /* keep local; avoid full reload so the options input keeps focus */ }
+}
+function fillManageFields() {
+  const el = document.getElementById("manageFields"); el.innerHTML = "";
+  if (!fieldsList.length) { const e = document.createElement("div"); e.className = "none"; e.textContent = "No custom fields yet."; el.appendChild(e); return; }
+  fieldsList.forEach(f => {
+    const cont = document.createElement("div"); cont.className = "field-cfg";
+    const row = document.createElement("div"); row.className = "manage-row";
+    const left = document.createElement("span"); left.className = "row-left"; left.appendChild(document.createTextNode(f.name));
+    const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
+    const typeSel = document.createElement("select"); typeSel.className = "field-type"; typeSel.innerHTML = '<option value="text">Text</option><option value="select">Dropdown</option>'; typeSel.value = f.type || "text"; typeSel.title = "Field type";
+    const ed = document.createElement("button"); ed.className = "mv"; ed.textContent = "✎"; ed.title = "Rename"; ed.onclick = () => { const nn = prompt("Rename field “" + f.name + "” to:", f.name); if (nn) renameList("field", f, nn); };
+    const rm = document.createElement("button"); rm.textContent = "Remove"; rm.onclick = () => removeList("field", f);
+    ctrls.appendChild(typeSel); ctrls.appendChild(ed); ctrls.appendChild(rm);
+    row.appendChild(left); row.appendChild(ctrls); cont.appendChild(row);
+    const optWrap = document.createElement("div"); optWrap.className = "field-options"; optWrap.style.display = f.type === "select" ? "" : "none";
+    const optInp = document.createElement("input"); optInp.placeholder = "Dropdown options, comma-separated (e.g. High, Medium, Low)"; optInp.value = (f.options || []).join(", ");
+    optInp.onchange = () => { f.options = optInp.value.split(",").map(s => s.trim()).filter(Boolean); saveFieldConfig(f); };
+    optWrap.appendChild(optInp); cont.appendChild(optWrap);
+    typeSel.onchange = () => { f.type = typeSel.value; optWrap.style.display = f.type === "select" ? "" : "none"; saveFieldConfig(f); };
+    el.appendChild(cont);
+  });
 }
 function fillManagePromos() {
   const el = document.getElementById("managePromos"); el.innerHTML = "";
