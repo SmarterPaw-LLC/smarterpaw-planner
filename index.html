@@ -77,8 +77,15 @@
   .seclabel { text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
   .field input, .field select, .field textarea { width: 100%; }
   .field textarea { resize: vertical; min-height: 64px; }
-  #f_notes { min-height: 150px; line-height: 1.5; }
-  .card .notes a { color: var(--accent); }
+  .rte-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .rte-btn { padding: 4px 10px; font-size: 13px; }
+  .rte { min-height: 150px; max-height: 320px; overflow-y: auto; padding: 9px 11px; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 8px; line-height: 1.5; }
+  .rte:focus { outline: none; border-color: var(--accent); }
+  .rte:empty::before { content: attr(data-ph); color: var(--muted); pointer-events: none; }
+  .rte a { color: var(--accent); }
+  .rte ul, .rte ol { margin: 4px 0; padding-left: 22px; }
+  .card .notes a, .rte a { color: var(--accent); }
   .row2 { display: flex; gap: 12px; } .row2 > .field { flex: 1; }
   .ch-wrap { display: flex; gap: 6px; }
   .ch-wrap select { flex: 1; }
@@ -422,7 +429,16 @@
       <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask…" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button></div>
     </div>
     <div id="f_fields"></div>
-    <div class="field"><label>Notes <span class="opt">— **bold**, *italic*, and links auto-link on the card</span></label><textarea id="f_notes" placeholder="Brief, links, copy direction…"></textarea></div>
+    <div class="field"><label>Notes</label>
+      <div class="rte-toolbar">
+        <button type="button" class="rte-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+        <button type="button" class="rte-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+        <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Bullet list">• List</button>
+        <button type="button" class="rte-btn" id="f_notesLink" title="Add / edit link">🔗 Link</button>
+        <button type="button" class="rte-btn" id="f_notesUnlink" title="Remove link">⌫ Link</button>
+      </div>
+      <div id="f_notes" class="rte" contenteditable="true" data-ph="Brief, links, copy direction…"></div>
+    </div>
     <div class="modal-actions">
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
       <div class="spacer"></div>
@@ -554,8 +570,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.44";
+const VERSION = "1.45";
 const CHANGELOG = [
+  "v1.45 — Notes is now a rich-text editor (Bold/Italic/Lists/Links) with clickable links on cards. The “⟳ N sprints” tracker now shows for any date-range item (badge + modal), not only after edits.",
   "v1.44 — Bigger Notes field with light formatting (**bold**, *italic*) and auto-linked URLs on cards. Mobile fixes: the view switcher and the List sprint controls no longer get cut off, and taller week bars show the title (chips hidden).",
   "v1.43 — Saved views: ★ Views lets you name and save the current view + filters. “Just me” views stay in your browser; “Everyone” views are shared app-wide (needs the views SQL run once).",
   "v1.42 — Sprint tracker: a date range now records every sprint week it spans (shown in the deliverable modal and the “⟳ N sprints” badge). In the List view’s split-by-dimension mode, drag a task between columns to change that value (owner, status, brand, channel, promotion, field).",
@@ -663,6 +680,12 @@ function mergeSprintHistory(c, due, end) {
   const merged = [...cardSprintHistory(c)]; let changed = false;
   weeks.forEach(w => { if (!merged.includes(w)) { merged.push(w); changed = true; } });
   return changed ? merged : null;
+}
+// All sprints a card touches: its recorded history ∪ the sprints its current date range spans (so it shows even before any edit).
+function cardSprints(c) {
+  const set = new Set(cardSprintHistory(c));
+  sprintsInRange(c.due, c.end).forEach(w => set.add(w));
+  return [...set].sort();
 }
 function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_KEY])) ? c.fields[SUBTASKS_KEY] : []; }
 function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
@@ -1012,15 +1035,40 @@ async function renameList(kind, item, newName) {
 function isOverdue(c) { if (!c.due || c.status === "Live") return false; const t = new Date(); t.setHours(0,0,0,0); return new Date(c.due + "T00:00:00") < t; }
 function fmtDue(d) { if (!d) return ""; return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function esc(s) { return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-// Render plain-text notes as safe rich text: **bold**, *italic*, auto-linked URLs, line breaks. (Escapes first — no raw HTML.)
-function renderNotes(text) {
-  let h = esc(text || "");
-  h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  h = h.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-  h = h.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]])/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
-  h = h.replace(/\b(www\.[^\s<]+[^\s<.,;:!?)\]])/g, '<a href="https://$1" target="_blank" rel="noopener noreferrer">$1</a>');
-  return h.replace(/\n/g, "<br>");
+// ── Notes rich text (WYSIWYG, stored as sanitized HTML) ──
+const NOTE_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A"]);
+function looksLikeHtml(s) { return /<(\/?)(b|i|u|a|p|div|br|ul|ol|li|strong|em)\b/i.test(s || ""); }
+// Strip everything except a safe tag/attr allowlist; force links to open safely.
+function sanitizeNotes(html) {
+  const tpl = document.createElement("template"); tpl.innerHTML = html || "";
+  tpl.content.querySelectorAll("*").forEach(el => {
+    if (!NOTE_TAGS.has(el.tagName)) { const p = el.parentNode; while (el.firstChild) p.insertBefore(el.firstChild, el); p.removeChild(el); return; }
+    [...el.attributes].forEach(a => { if (!(el.tagName === "A" && a.name.toLowerCase() === "href")) el.removeAttribute(a.name); });
+    if (el.tagName === "A") { const href = el.getAttribute("href") || ""; if (!/^(https?:|mailto:)/i.test(href)) el.removeAttribute("href"); else { el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener noreferrer"); } }
+  });
+  const d = document.createElement("div"); d.appendChild(tpl.content); return d.innerHTML;
 }
+// Turn bare URLs in text nodes into links (skips text already inside <a>).
+function linkifyInto(root) {
+  const re = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null); const hits = []; let n;
+  while (n = w.nextNode()) { if (!n.parentElement.closest("a") && /https?:\/\//.test(n.nodeValue)) hits.push(n); }
+  hits.forEach(t => {
+    const frag = document.createDocumentFragment();
+    t.nodeValue.split(re).forEach((p, i) => { if (i % 2 === 1) { const a = document.createElement("a"); a.href = p; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = p; frag.appendChild(a); } else if (p) frag.appendChild(document.createTextNode(p)); });
+    t.replaceWith(frag);
+  });
+}
+// HTML for displaying notes (cards): sanitize, linkify bare URLs; handles legacy plain-text notes too.
+function renderNotes(raw) {
+  if (!raw) return "";
+  const div = document.createElement("div");
+  div.innerHTML = looksLikeHtml(raw) ? sanitizeNotes(raw) : esc(raw).replace(/\n/g, "<br>");
+  linkifyInto(div);
+  return div.innerHTML;
+}
+// HTML to load into the editor (sanitized; legacy plain text → line breaks).
+function notesToEditor(raw) { return raw ? (looksLikeHtml(raw) ? sanitizeNotes(raw) : esc(raw).replace(/\n/g, "<br>")) : ""; }
 function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : c.brand; }
 function passesFilters(c) {
   if (filters.owner && filters.owner.size && !splitOwners(c.owner).some(o => filters.owner.has(o))) return false;
@@ -1244,8 +1292,8 @@ function listTaskEl(c) {
   main.appendChild(title);
   const meta = document.createElement("div"); meta.className = "lt-meta";
   const sub = [c.channel, c.owner, cardPromo(c), fmtRange(c.due, c.end)].filter(Boolean).map(esc).join(" · ");
-  const hist = cardSprintHistory(c);
-  const histChip = hist.length >= 2 ? `<span class="sprint-hist" title="In ${hist.length} sprints: ${esc(hist.map(fmtSprint).join(", "))}">⟳ ${hist.length} sprints</span>` : "";
+  const hist = cardSprints(c);
+  const histChip = hist.length >= 2 ? `<span class="sprint-hist" title="Spans ${hist.length} sprints: ${esc(hist.map(fmtSprint).join(", "))}">⟳ ${hist.length} sprints</span>` : "";
   meta.innerHTML = `<span class="dchip" style="background:${statusColor(c.status)};border-color:rgba(255,255,255,.85);color:#fff">${esc(c.status)}</span>`
     + histChip + (sub ? `<span class="lt-sub">${sub}</span>` : "");
   main.appendChild(meta);
@@ -1761,7 +1809,7 @@ function openModal(card, prefill) {
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
   document.getElementById("f_sprint").value = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   updateSprintField();
-  const track = card ? cardSprintHistory(card) : [];
+  const track = card ? cardSprints(card) : [];
   document.getElementById("f_sprintTrackWrap").style.display = track.length ? "" : "none";
   document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip" title="${esc(sprintRange(w))}">${esc(fmtSprint(w))}</span>`).join("");
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done })) : [];
@@ -1769,7 +1817,7 @@ function openModal(card, prefill) {
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : (statusList[0] ? statusList[0].name : "Backlog");
-  document.getElementById("f_notes").value = card ? (card.notes||"") : "";
+  document.getElementById("f_notes").innerHTML = card ? notesToEditor(card.notes) : "";
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
   document.getElementById("overlay").classList.add("show");
   if (!card) document.getElementById("f_title").focus();   // only auto-focus when creating; editing just opens the card
@@ -1790,9 +1838,11 @@ function saveModal() {
   const subs = modalSubs.map(s => ({ id: s.id, text: s.text.trim(), done: !!s.done })).filter(s => s.text);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
+  const notesEl = document.getElementById("f_notes");
+  const notes = notesEl.textContent.trim() ? sanitizeNotes(notesEl.innerHTML) : "";   // empty editor → no notes
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
-    status: document.getElementById("f_status").value, notes: document.getElementById("f_notes").value.trim(), fields };
+    status: document.getElementById("f_status").value, notes: notes, fields };
   if (id) updateCard(id, d); else createCard(d);
   closeModal();
 }
@@ -2120,6 +2170,20 @@ async function init() {
   });
   document.getElementById("f_promoAdd").onclick = () => addPromoPrompt();
   document.getElementById("f_promo").addEventListener("change", e => { if (e.target.value === "__add_promo__") addPromoPrompt(); });
+  document.querySelectorAll(".rte-toolbar [data-cmd]").forEach(b => {
+    b.addEventListener("mousedown", e => e.preventDefault());   // keep the editor's text selection
+    b.onclick = () => { document.getElementById("f_notes").focus(); document.execCommand(b.dataset.cmd, false, null); };
+  });
+  const notesEd = () => document.getElementById("f_notes");
+  document.getElementById("f_notesLink").addEventListener("mousedown", e => e.preventDefault());
+  document.getElementById("f_notesLink").onclick = () => {
+    notesEd().focus(); const url = (prompt("Link URL:", "https://") || "").trim();
+    if (!url || url === "https://") return;
+    document.execCommand("createLink", false, url);
+    notesEd().querySelectorAll("a[href]").forEach(a => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
+  };
+  document.getElementById("f_notesUnlink").addEventListener("mousedown", e => e.preventDefault());
+  document.getElementById("f_notesUnlink").onclick = () => { notesEd().focus(); document.execCommand("unlink", false, null); };
   document.getElementById("f_subAddBtn").onclick = addModalSub;
   document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addModalSub(); } });
   document.getElementById("xlsxBtn").onclick = exportXLSX;
@@ -2177,7 +2241,7 @@ async function init() {
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); }
-    if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") saveModal();
+    if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
 init();
