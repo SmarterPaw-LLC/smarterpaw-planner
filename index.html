@@ -430,7 +430,7 @@
       </div>
     </div>
     <div class="field"><label>Sprint week <span class="opt">— auto from date; for undated tasks pick any day in the week</span></label>
-      <input id="f_sprint" type="date" />
+      <input id="f_sprint" type="date" onchange="renderSprintTrack()" />
       <span id="f_sprintText" class="sprint-readonly" style="display:none"></span>
     </div>
     <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
@@ -584,8 +584,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.50";
+const VERSION = "1.51";
 const CHANGELOG = [
+  "v1.51 — Fixed “Sprints tracked” for undated tasks: setting/changing the manual sprint week now records into the tracker (it previously only tracked sprints from a due-date range). The tracker also updates live as you change the date or sprint in the editor. Scheduled-lane badge is now a 🕒 clock emoji.",
   "v1.50 — Custom fields can now be a Text or Dropdown type (set the dropdown options in the Manage panel); the deliverable form shows a real dropdown. Scheduled-lane badge is now a 📅 emoji instead of the unclear clock.",
   "v1.49 — Fixed: clicking a promotion in the legend now actually filters and shows in the “Filtering by” row (regression from the advanced-filter change). Saved views gain an “Update” action to overwrite a view with your current filters.",
   "v1.48 — Tidied the List header: dropped the redundant “Sprint” label and the duplicate sprint chips (selected sprints already show in the “Filtering by” row); the ＋ Sprint picker and No-sprint toggle remain.",
@@ -701,11 +702,21 @@ function mergeSprintHistory(c, due, end) {
   weeks.forEach(w => { if (!merged.includes(w)) { merged.push(w); changed = true; } });
   return changed ? merged : null;
 }
-// All sprints a card touches: its recorded history ∪ the sprints its current date range spans (so it shows even before any edit).
+// All sprints a card touches: its recorded history ∪ the sprints its current date range spans
+// (or, for an undated task, its manually-set sprint) — so it shows even before any edit.
 function cardSprints(c) {
   const set = new Set(cardSprintHistory(c));
-  sprintsInRange(c.due, c.end).forEach(w => set.add(w));
+  const weeks = sprintsInRange(c.due, c.end);
+  if (weeks.length) weeks.forEach(w => set.add(w));
+  else { const m = c.fields && c.fields[SPRINT_KEY]; if (m) set.add(m); }   // undated → manual sprint
   return [...set].sort();
+}
+// Sprints a saved card-data should contribute to the tracker: its date-range weeks, or (if undated) its manual sprint.
+function recordedSprints(d) {
+  const weeks = sprintsInRange(d.due, d.end);
+  if (weeks.length) return weeks;
+  const m = d.fields && d.fields[SPRINT_KEY];
+  return m ? [m] : [];
 }
 function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_KEY])) ? c.fields[SUBTASKS_KEY] : []; }
 function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
@@ -842,7 +853,7 @@ function setScheduled(item) {
   localStorage.setItem("planner-scheduled-lane", scheduledLane);
   afterListsChanged();
 }
-const SCHED_ICON = "📅";
+const SCHED_ICON = "🕒";
 function schedBadge(c) { const sl = effScheduledLane(); return (sl && c.status === sl) ? '<span class="sched-check" title="Scheduled">' + SCHED_ICON + '</span> ' : ''; }
 let filters = {};   // quick sprint filter from the List header: { sprint: Set }
 let filterRules = [];      // advanced Filter panel: [{ field, op:'is'|'isnot'|'empty'|'notempty', values:[] }]
@@ -901,7 +912,7 @@ async function refetch() {
 function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
   due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {} }; }
 async function createCard(d) {
-  const weeks = sprintsInRange(d.due, d.end);
+  const weeks = recordedSprints(d);
   if (weeks.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = weeks; }
   if (!ONLINE) { cards.push(Object.assign({ id: uid() }, d)); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").insert(dbObj(d));
@@ -909,7 +920,8 @@ async function createCard(d) {
 }
 async function updateCard(id, d) {
   const existing = cards.find(c => c.id === id);
-  const merged = mergeSprintHistory(existing, d.due, d.end) || cardSprintHistory(existing);   // add range's sprints, else preserve
+  const merged = [...cardSprintHistory(existing)];   // preserve prior sprints, then add this save's sprint(s)
+  recordedSprints(d).forEach(w => { if (!merged.includes(w)) merged.push(w); });
   if (merged.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = merged; }
   if (!ONLINE) { Object.assign(cards.find(c => c.id === id), d); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").update(dbObj(d)).eq("id", id);
@@ -1767,6 +1779,21 @@ function updateSprintField() {
     const w = isoWeek(a < b ? a : b);
     f.style.display = "none"; txt.style.display = ""; txt.textContent = fmtSprint(w) + " · " + sprintRange(w) + "  (from date)";
   } else { f.style.display = ""; txt.style.display = "none"; }
+  renderSprintTrack();
+}
+// Live "Sprints tracked" preview from the modal's current state: saved history ∪ the sprint(s) this edit would record.
+function renderSprintTrack() {
+  const id = document.getElementById("f_id").value;
+  const existing = id ? cards.find(c => c.id === id) : null;
+  const set = new Set(existing ? cardSprintHistory(existing) : []);
+  const due = document.getElementById("f_due").value;
+  const end = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
+  const weeks = sprintsInRange(due, end);
+  if (weeks.length) weeks.forEach(w => set.add(w));
+  else { const sd = document.getElementById("f_sprint").value; if (sd) set.add(isoWeek(sd)); }   // undated → manual sprint
+  const track = [...set].sort();
+  document.getElementById("f_sprintTrackWrap").style.display = track.length ? "" : "none";
+  document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip" title="${esc(sprintRange(w))}">${esc(fmtSprint(w))}</span>`).join("");
 }
 function buildStatusSelect() {
   const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
@@ -1873,10 +1900,7 @@ function openModal(card, prefill) {
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
   const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
-  updateSprintField();
-  const track = card ? cardSprints(card) : [];
-  document.getElementById("f_sprintTrackWrap").style.display = track.length ? "" : "none";
-  document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip" title="${esc(sprintRange(w))}">${esc(fmtSprint(w))}</span>`).join("");
+  updateSprintField();   // also renders the Sprints-tracked preview
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done })) : [];
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
