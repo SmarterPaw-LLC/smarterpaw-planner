@@ -396,6 +396,8 @@
     <select id="colorBy" title="Color cards by"></select>
     <input class="search" id="search" placeholder="Search…" />
     <button id="filterBtn">⚲ Filter</button>
+    <label class="list-sprint-wk-wrap" id="sprintPickWrap" title="Filter to a sprint — pick any day in the week"><span>＋ Sprint</span><input type="date" id="sprintWk" class="list-sprint-wk" /></label>
+    <button id="noSprintBtn" class="sprint-none" title="Include undated tasks">No sprint</button>
   </div>
   <div class="toolbar">
     <button class="primary" id="addBtn">+ Deliverable</button>
@@ -621,8 +623,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.55";
+const VERSION = "1.56";
 const CHANGELOG = [
+  "v1.56 — The ＋ Sprint picker and “No sprint” toggle now appear in the toolbar on Board, Grid, and Calendar too (List keeps its own in its header). Selected sprints show as removable chips in the “Filtering by” row on every view.",
   "v1.55 — List view no longer jumps to the top when you expand a task or add a subtask — your scroll position is kept.",
   "v1.54 — New built-in Priority dimension (High / Medium / Low / No Priority), usable everywhere: Color by, Split by, filters, and display chips. High-priority items get a red ring on Board, List, and Calendar. Also: deleting a custom field now clears its value from every deliverable that used it (the confirm tells you how many).",
   "v1.53 — Custom fields moved to a dedicated editor (Manage → Edit custom fields…): rename inline, pick a type, and add/remove dropdown options as individual chips (fixes options not saving). New field types: Number, Date, and Multi-select (pick several options per deliverable).",
@@ -1319,11 +1322,21 @@ function renderActiveFilters() {
   bar.appendChild(clear);
 }
 function render() {
-  writeUrl(); renderLegend(); renderActiveFilters();
+  writeUrl(); renderLegend(); renderActiveFilters(); renderSprintPicker();
   if (view === "calendar") renderCalendar();
   else if (view === "grid") renderGrid();
   else if (view === "list") renderList();
   else renderBoard();
+}
+// Toolbar sprint filter (＋ Sprint picker + No-sprint toggle). Shown on Board/Grid/Calendar;
+// the List view keeps its own copy in its header, so we hide this one there to avoid duplicates.
+function renderSprintPicker() {
+  const wrap = document.getElementById("sprintPickWrap"), noBtn = document.getElementById("noSprintBtn");
+  if (!wrap || !noBtn) return;
+  const show = view !== "list";
+  wrap.style.display = show ? "" : "none";
+  noBtn.style.display = show ? "" : "none";
+  noBtn.classList.toggle("on", filters.sprint ? filters.sprint.has("") : false);
 }
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
 let listSplit = "";             // dimension key to split the List view into columns ("" = single grouped list); never "sprint"
@@ -2414,6 +2427,8 @@ async function init() {
   document.getElementById("channelFilter").onchange = e => { channelFilter = e.target.value; render(); };
   document.getElementById("colorBy").onchange = e => { colorBy = e.target.value; localStorage.setItem("planner-colorby", colorBy); legendSel.clear(); render(); };
   document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
+  document.getElementById("sprintWk").onchange = e => { if (!e.target.value) return; if (!filters.sprint) filters.sprint = new Set(); filters.sprint.add(isoWeek(e.target.value)); e.target.value = ""; updateFilterBtn(); render(); };
+  document.getElementById("noSprintBtn").onclick = () => { const on = filters.sprint ? filters.sprint.has("") : false; if (!filters.sprint) filters.sprint = new Set(); if (on) { filters.sprint.delete(""); if (!filters.sprint.size) delete filters.sprint; } else filters.sprint.add(""); updateFilterBtn(); render(); };
 
   document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => {
     // Entering the List view with no sprint filter defaults to the current week's sprint.
