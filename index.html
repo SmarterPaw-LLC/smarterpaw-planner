@@ -34,6 +34,7 @@
   input, select, textarea { font: inherit; background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  input:disabled { opacity: .75; cursor: not-allowed; }
   .chip { border: 1px solid var(--line); background: var(--panel-2); padding: 5px 11px; border-radius: 999px;
     font-size: 12px; cursor: pointer; user-select: none; display: inline-flex; gap: 6px; align-items: center; }
   .chip .dot { width: 9px; height: 9px; border-radius: 50%; }
@@ -457,8 +458,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.30";
+const VERSION = "1.31";
 const CHANGELOG = [
+  "v1.31 — The modal now shows the auto-derived sprint week (read-only) when a deliverable has a date, updating live as you change the date; the field stays editable only for undated tasks",
   "v1.30 — New deliverables default to no channel (List items often have none); but if the view is filtered to a channel, a new deliverable auto-fills that channel",
   "v1.29 — Sprint is now auto-set from a deliverable's date (first week a date range falls into); expand any task in the List view to add subtasks inline (each saved instantly)",
   "v1.28 — New List view for sprint task planning: add tasks, give each subtasks (checkbox + progress bar), set a sprint week, and filter by sprint. Tasks are deliverables, so they also show on Board, Calendar & Grid.",
@@ -1371,6 +1373,15 @@ function defaultNewChannel() {
   if (colorBy === "channel" && legendSel.size === 1) return [...legendSel][0];
   return "";
 }
+// Reflect the auto-derived sprint in the modal: when a date is set, show it read-only; when undated, allow a manual entry.
+function updateSprintField() {
+  const due = document.getElementById("f_due").value;
+  const end = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
+  const f = document.getElementById("f_sprint");
+  const a = due || end, b = end || due;
+  if (a) { f.value = isoWeek(a < b ? a : b); f.disabled = true; f.title = "Auto-set from the date"; }
+  else { f.disabled = false; f.title = ""; }
+}
 function buildStatusSelect() {
   const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
   statusList.forEach(s => { const o = document.createElement("option"); o.value = s.name; o.textContent = s.name; ss.appendChild(o); });
@@ -1467,6 +1478,7 @@ function openModal(card, prefill) {
   renderFieldInputs(card ? (card.fields || {}) : {});
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
   document.getElementById("f_sprint").value = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
+  updateSprintField();
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done })) : [];
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
@@ -1487,7 +1499,9 @@ function saveModal() {
   const promo = document.getElementById("f_promo").value.trim();
   if (promo && promo !== "__add_promo__") fields[PROMO_KEY] = promo;
   const sprint = document.getElementById("f_sprint").value;
-  if (sprint) fields[SPRINT_KEY] = sprint;
+  const dueVal = document.getElementById("f_due").value;
+  const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
+  if (sprint && !(dueVal || endVal)) fields[SPRINT_KEY] = sprint;   // dated items derive their sprint, so don't store a stale manual one
   const subs = modalSubs.map(s => ({ id: s.id, text: s.text.trim(), done: !!s.done })).filter(s => s.text);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
@@ -1729,8 +1743,10 @@ async function init() {
   document.getElementById("filterOverlay").onclick = e => { if (e.target.id === "filterOverlay") e.currentTarget.classList.remove("show"); };
   document.getElementById("filterClear").onclick = () => { filters = {}; updateFilterBtn(); renderFilters(); render(); };
   updateFilterBtn();
-  document.getElementById("f_addEnd").onclick = () => { const w = document.getElementById("f_endWrap"); w.style.display = ""; document.getElementById("f_addEnd").style.display = "none"; const due = document.getElementById("f_due").value; const end = document.getElementById("f_end"); if (!end.value && due) end.value = due; end.focus(); };
-  document.getElementById("f_clearEnd").onclick = () => { document.getElementById("f_end").value = ""; document.getElementById("f_endWrap").style.display = "none"; document.getElementById("f_addEnd").style.display = ""; };
+  document.getElementById("f_addEnd").onclick = () => { const w = document.getElementById("f_endWrap"); w.style.display = ""; document.getElementById("f_addEnd").style.display = "none"; const due = document.getElementById("f_due").value; const end = document.getElementById("f_end"); if (!end.value && due) end.value = due; end.focus(); updateSprintField(); };
+  document.getElementById("f_clearEnd").onclick = () => { document.getElementById("f_end").value = ""; document.getElementById("f_endWrap").style.display = "none"; document.getElementById("f_addEnd").style.display = ""; updateSprintField(); };
+  document.getElementById("f_due").addEventListener("change", updateSprintField);
+  document.getElementById("f_end").addEventListener("change", updateSprintField);
 
   document.getElementById("manageBtn").onclick = openManage;
   document.getElementById("manageClose").onclick = closeManage;
