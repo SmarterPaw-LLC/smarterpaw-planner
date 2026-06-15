@@ -77,6 +77,8 @@
   .seclabel { text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
   .field input, .field select, .field textarea { width: 100%; }
   .field textarea { resize: vertical; min-height: 64px; }
+  #f_notes { min-height: 150px; line-height: 1.5; }
+  .card .notes a { color: var(--accent); }
   .row2 { display: flex; gap: 12px; } .row2 > .field { flex: 1; }
   .ch-wrap { display: flex; gap: 6px; }
   .ch-wrap select { flex: 1; }
@@ -264,6 +266,7 @@
   .ev-bar .bt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ev-bar.tall { align-items: flex-start; padding-top: 3px; line-height: 1.2; }
   .ev-bar.tall .bt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-overflow: clip; }
+  .ev-bar.tall .barbrand, .ev-bar.tall .bardims { display: none; }   /* give the title the full width (brand is already the bar color) */
   .ev-bar .barbrand { flex: 0 0 auto; display: inline-flex; align-items: center; }
   .ev-bar .bardims { flex: 0 100 auto; min-width: 0; overflow: hidden; display: inline-flex; align-items: center; white-space: nowrap; }
   .ev-bar .barbrand .dchip, .ev-bar .bardims .dchip:first-child { margin-left: 0; }
@@ -310,7 +313,7 @@
     header > .filters, header > .toolbar { width: 100%; }
     header > .filters .search { flex: 1; min-width: 0; }
     header > .toolbar { justify-content: flex-start; }
-    #viewToggle { flex: 1; }
+    #viewToggle { flex: 1 0 100%; }   /* view switcher gets its own full-width row so all 4 fit */
     #viewToggle button { flex: 1; }
     #legend { padding: 8px 12px; gap: 8px 12px; }
     #legend .promo-legend { margin-left: 0; width: 100%; }
@@ -319,7 +322,7 @@
     .board { padding: 12px; gap: 12px; }
     .col { width: 86vw; min-width: 86vw; }
     #grid, #list { padding: 12px; }
-    .list-head-right { margin-left: 0; }
+    .list-head-right { margin-left: 0; width: 100%; flex-wrap: wrap; }   /* sprint controls wrap instead of scrolling off-screen */
     /* Calendar: unscheduled tray on top, grid scrolls horizontally (days stay legible) */
     .cal-main { flex-direction: column; overflow: visible; }
     .tray { width: 100%; min-width: 0; max-height: 120px; }
@@ -419,7 +422,7 @@
       <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask…" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button></div>
     </div>
     <div id="f_fields"></div>
-    <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Brief, links, copy direction…"></textarea></div>
+    <div class="field"><label>Notes <span class="opt">— **bold**, *italic*, and links auto-link on the card</span></label><textarea id="f_notes" placeholder="Brief, links, copy direction…"></textarea></div>
     <div class="modal-actions">
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
       <div class="spacer"></div>
@@ -551,8 +554,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.43";
+const VERSION = "1.44";
 const CHANGELOG = [
+  "v1.44 — Bigger Notes field with light formatting (**bold**, *italic*) and auto-linked URLs on cards. Mobile fixes: the view switcher and the List sprint controls no longer get cut off, and taller week bars show the title (chips hidden).",
   "v1.43 — Saved views: ★ Views lets you name and save the current view + filters. “Just me” views stay in your browser; “Everyone” views are shared app-wide (needs the views SQL run once).",
   "v1.42 — Sprint tracker: a date range now records every sprint week it spans (shown in the deliverable modal and the “⟳ N sprints” badge). In the List view’s split-by-dimension mode, drag a task between columns to change that value (owner, status, brand, channel, promotion, field).",
   "v1.41 — Mobile polish: sprint chips are rounded rectangles; the List header stays put while the list scrolls; opening a task no longer jumps into editing the title; the modal has an X to close and fits the screen; and week-view bars are taller on mobile.",
@@ -1008,6 +1012,15 @@ async function renameList(kind, item, newName) {
 function isOverdue(c) { if (!c.due || c.status === "Live") return false; const t = new Date(); t.setHours(0,0,0,0); return new Date(c.due + "T00:00:00") < t; }
 function fmtDue(d) { if (!d) return ""; return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function esc(s) { return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+// Render plain-text notes as safe rich text: **bold**, *italic*, auto-linked URLs, line breaks. (Escapes first — no raw HTML.)
+function renderNotes(text) {
+  let h = esc(text || "");
+  h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  h = h.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  h = h.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]])/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  h = h.replace(/\b(www\.[^\s<]+[^\s<.,;:!?)\]])/g, '<a href="https://$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  return h.replace(/\n/g, "<br>");
+}
 function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : c.brand; }
 function passesFilters(c) {
   if (filters.owner && filters.owner.size && !splitOwners(c.owner).some(o => filters.owner.has(o))) return false;
@@ -1305,8 +1318,8 @@ function cardEl(c) {
   el.innerHTML = `<h3>${done}${schedBadge(c)}${esc(c.title)}</h3>` +
     (badges ? `<div class="dimrow${curDisp().badge ? "" : " text"}">${badges}</div>` : "") +
     progHtml +
-    (c.notes ? `<div class="notes">${esc(c.notes)}</div>` : "");
-  el.addEventListener("click", () => openModal(c));
+    (c.notes ? `<div class="notes">${renderNotes(c.notes)}</div>` : "");
+  el.addEventListener("click", e => { if (e.target.closest("a")) return; openModal(c); });   // let note links open without opening the card
   el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); el.classList.add("dragging"); });
   el.addEventListener("dragend", () => el.classList.remove("dragging"));
   return el;
