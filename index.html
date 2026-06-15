@@ -457,8 +457,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.29";
+const VERSION = "1.30";
 const CHANGELOG = [
+  "v1.30 — New deliverables default to no channel (List items often have none); but if the view is filtered to a channel, a new deliverable auto-fills that channel",
   "v1.29 — Sprint is now auto-set from a deliverable's date (first week a date range falls into); expand any task in the List view to add subtasks inline (each saved instantly)",
   "v1.28 — New List view for sprint task planning: add tasks, give each subtasks (checkbox + progress bar), set a sprint week, and filter by sprint. Tasks are deliverables, so they also show on Board, Calendar & Grid.",
   "v1.27 — Mark a lane as “Scheduled” (Manage panel) to give its cards & calendar events a clock badge, just like the green ✓ for the Complete lane. Defaults to a lane named “Scheduled”.",
@@ -1359,9 +1360,16 @@ function buildChannelFilter() {
 }
 function buildChannelSelect() {
   const s = document.getElementById("f_channel"); const cur = s.value; s.innerHTML = "";
+  const none = document.createElement("option"); none.value = ""; none.textContent = "— none —"; s.appendChild(none);
   channelsList.forEach(c => { const o = document.createElement("option"); o.value = c.name; o.textContent = c.name; s.appendChild(o); });
   const add = document.createElement("option"); add.value = "__add_channel__"; add.textContent = "＋ Add new channel…"; s.appendChild(add);
-  if (channelsList.some(c => c.name === cur)) s.value = cur;
+  if (cur === "" || channelsList.some(c => c.name === cur)) s.value = cur;
+}
+// New deliverables default to the channel the view is filtered to (top dropdown, or a single channel-legend selection), else none.
+function defaultNewChannel() {
+  if (channelFilter) return channelFilter;
+  if (colorBy === "channel" && legendSel.size === 1) return [...legendSel][0];
+  return "";
 }
 function buildStatusSelect() {
   const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
@@ -1448,7 +1456,7 @@ function openModal(card, prefill) {
   buildChannelSelect(); buildStatusSelect();
   const chSel = document.getElementById("f_channel");
   if (card && card.channel && !channelsList.some(c => c.name === card.channel)) { const o = document.createElement("option"); o.value = card.channel; o.textContent = card.channel; chSel.insertBefore(o, chSel.firstChild); }
-  chSel.value = card ? card.channel : (channelsList[0] ? channelsList[0].name : "");
+  chSel.value = card ? (card.channel || "") : defaultNewChannel();
   modalOwners = new Set((card && card.owner ? card.owner.split(",") : []).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
   document.getElementById("f_due").value = card ? (card.due||"") : (prefill && prefill.due ? prefill.due : "");
