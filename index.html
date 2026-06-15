@@ -122,12 +122,17 @@
   .sprint-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: 8px; padding: 5px 7px 5px 11px; white-space: nowrap; flex: none; }
   .sprint-chip .x { cursor: pointer; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--muted); font-size: 11px; }
   .sprint-chip .x:hover { background: var(--danger); color: #fff; }
+  .sprint-track { display: flex; flex-wrap: wrap; gap: 6px; }
+  .track-chip { font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 3px 10px; }
   .list-sprint-sel { padding: 7px 9px; }
   .list-empty { padding: 30px; text-align: center; }
   .list-cols { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
   .list-col { flex: 1 1 0; min-width: 250px; display: flex; flex-direction: column; gap: 7px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
   .list-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 13px; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
   .list-col .list-task { background: var(--panel-2); padding: 8px 10px; }
+  .list-col .list-task[draggable=true] { cursor: grab; }
+  .list-col.drag-over { background: rgba(109,93,252,.10); border-color: var(--accent); }
+  .list-task.dragging { opacity: .4; }
   .list-sec { display: flex; flex-direction: column; gap: 7px; }
   .list-sec-head { display: flex; align-items: center; gap: 9px; padding: 2px 2px 4px; border-bottom: 1px solid var(--line); }
   .list-sec-head .ls-head-main { display: flex; flex-direction: column; line-height: 1.25; }
@@ -403,6 +408,7 @@
       </div>
     </div>
     <div class="field"><label>Sprint week <span class="opt">— auto from date; set only for undated tasks</span></label><input id="f_sprint" type="week" /></div>
+    <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
     <div class="field"><label>Promotion</label>
       <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
@@ -518,8 +524,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.41";
+const VERSION = "1.42";
 const CHANGELOG = [
+  "v1.42 — Sprint tracker: a date range now records every sprint week it spans (shown in the deliverable modal and the “⟳ N sprints” badge). In the List view’s split-by-dimension mode, drag a task between columns to change that value (owner, status, brand, channel, promotion, field).",
   "v1.41 — Mobile polish: sprint chips are rounded rectangles; the List header stays put while the list scrolls; opening a task no longer jumps into editing the title; the modal has an X to close and fits the screen; and week-view bars are taller on mobile.",
   "v1.40 — Promotion color now also shows as a top stripe on Board cards and List items (matching the calendar). Calendar’s Unscheduled panel only shows undated items with no sprint, or whose set sprint falls within the dates you’re viewing.",
   "v1.39 — Sprint headers/pills now show the week’s date range (e.g. “Jun 15 – Jun 21”); the List view lets you select multiple sprints (chips + add-week picker); spacing added under the add-task row; and on mobile a “Controls” button collapses the top area.",
@@ -607,11 +614,23 @@ function derivedSprintFor(due, end) { const a = due || end, b = end || due; retu
 function cardSprint(c) { return derivedSprintFor(c.due, c.end) || ((c.fields && c.fields[SPRINT_KEY]) || ""); }
 // Record of distinct sprints a task has been assigned to over time (carryover tracking).
 function cardSprintHistory(c) { return (c.fields && Array.isArray(c.fields[SPRINTHIST_KEY])) ? c.fields[SPRINTHIST_KEY] : []; }
-function nextSprintHistory(c, newSprint) {
-  if (!newSprint) return null;
-  const hist = cardSprintHistory(c);
-  if (hist.includes(newSprint)) return null;   // already counted this sprint
-  return [...hist, newSprint];
+// Every ISO sprint week a date range covers (start week → end week).
+function sprintsInRange(due, end) {
+  const a = due || end, b = end || due; if (!a) return [];
+  const s = a < b ? a : b, e = a < b ? b : a;
+  const out = []; const seen = new Set();
+  let d = new Date(s + "T00:00:00"); const endD = new Date(e + "T00:00:00");
+  let guard = 0;
+  while (d <= endD && guard++ < 500) { const w = isoWeek(ymd(d)); if (!seen.has(w)) { seen.add(w); out.push(w); } d.setDate(d.getDate() + 7); }
+  const ew = isoWeek(e); if (!seen.has(ew)) out.push(ew);   // ensure the end week is included
+  return out;
+}
+// Merge a date range's sprints into the tracker; returns the new array if it grew, else null.
+function mergeSprintHistory(c, due, end) {
+  const weeks = sprintsInRange(due, end); if (!weeks.length) return null;
+  const merged = [...cardSprintHistory(c)]; let changed = false;
+  weeks.forEach(w => { if (!merged.includes(w)) { merged.push(w); changed = true; } });
+  return changed ? merged : null;
 }
 function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_KEY])) ? c.fields[SUBTASKS_KEY] : []; }
 function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
@@ -770,17 +789,16 @@ async function refetch() {
 function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
   due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {} }; }
 async function createCard(d) {
-  const sp = derivedSprintFor(d.due, d.end);
-  if (sp) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = [sp]; }
+  const weeks = sprintsInRange(d.due, d.end);
+  if (weeks.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = weeks; }
   if (!ONLINE) { cards.push(Object.assign({ id: uid() }, d)); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").insert(dbObj(d));
   if (error) toast("Save failed: " + error.message); else refetch();
 }
 async function updateCard(id, d) {
   const existing = cards.find(c => c.id === id);
-  const nh = nextSprintHistory(existing, derivedSprintFor(d.due, d.end));
-  const hist = nh || cardSprintHistory(existing);   // append if the sprint changed, else preserve the record
-  if (hist.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = hist; }
+  const merged = mergeSprintHistory(existing, d.due, d.end) || cardSprintHistory(existing);   // add range's sprints, else preserve
+  if (merged.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = merged; }
   if (!ONLINE) { Object.assign(cards.find(c => c.id === id), d); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").update(dbObj(d)).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
@@ -792,7 +810,7 @@ async function patchStatus(id, status) {
 }
 async function patchDue(id, due) {
   const c = cards.find(c => c.id === id);
-  const nh = nextSprintHistory(c, derivedSprintFor(due, c && c.end));
+  const nh = c ? mergeSprintHistory(c, due, c.end) : null;
   if (nh && c) { c.fields = c.fields || {}; c.fields[SPRINTHIST_KEY] = nh; }
   if (!ONLINE) { if (c) c.due = due; saveLocal(); render(); return; }
   const upd = { due: due || null }; if (nh && c) upd.fields = c.fields;
@@ -801,12 +819,28 @@ async function patchDue(id, due) {
 }
 async function patchDates(id, due, end) {
   const c = cards.find(c => c.id === id);
-  const nh = nextSprintHistory(c, derivedSprintFor(due, end));
+  const nh = c ? mergeSprintHistory(c, due, end) : null;
   if (nh && c) { c.fields = c.fields || {}; c.fields[SPRINTHIST_KEY] = nh; }
   if (!ONLINE) { if (c) { c.due = due; c.end = end || ""; } saveLocal(); render(); return; }
   const upd = { due: due || null, end_date: end || null }; if (nh && c) upd.fields = c.fields;
   const { error } = await db.from("deliverables").update(upd).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
+}
+// Set a card's value for a given dimension key (used by List split-column drag & drop).
+async function setCardDim(c, key, value) {
+  if (!c) return;
+  if (key === "status") { patchStatus(c.id, value); return; }
+  if (key === "brand" || key === "channel" || key === "owner") {
+    c[key] = value; render();
+    if (!ONLINE) { saveLocal(); return; }
+    const { error } = await db.from("deliverables").update({ [key]: value }).eq("id", c.id);
+    if (error) toast("Update failed: " + error.message);
+    return;
+  }
+  const fkey = key === "promotion" ? PROMO_KEY : key.slice(6);   // promotion or field:Name
+  setCardField(c, fkey, value); render();
+  if (!ONLINE) { saveLocal(); return; }
+  saveCardFields(c);
 }
 async function removeCard(id) {
   if (!ONLINE) { cards = cards.filter(c => c.id !== id); saveLocal(); render(); return; }
@@ -1126,6 +1160,10 @@ function renderList() {
       h.innerHTML = `<span class="ls-name">${val ? esc(val) : "(None)"}</span><span class="ls-count">${cmap.get(val).length}</span>`;
       col.appendChild(h);
       cmap.get(val).forEach(c => col.appendChild(listTaskEl(c)));
+      // drop target: dropping a task here sets its split-dimension value to this column's value
+      col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drag-over"); });
+      col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
+      col.addEventListener("drop", e => { e.preventDefault(); col.classList.remove("drag-over"); const id = e.dataTransfer.getData("text/plain"); const card = cards.find(x => x.id === id); if (card && splitVals(card, listSplit)[0] !== (val || "")) setCardDim(card, listSplit, val); });
       cols.appendChild(col);
     });
     body.appendChild(cols);
@@ -1147,6 +1185,11 @@ function listTaskEl(c) {
   const wrap = document.createElement("div"); wrap.className = "list-task";
   wrap.style.borderLeftColor = colorFor(c);   // respects the Color: brand/channel/status setting
   applyPromo(wrap, c);                          // promotion top stripe (same as calendar)
+  if (listSplit) {   // in split mode, drag a task to another column to change that dimension's value
+    wrap.draggable = true;
+    wrap.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); wrap.classList.add("dragging"); e.stopPropagation(); });
+    wrap.addEventListener("dragend", () => wrap.classList.remove("dragging"));
+  }
   const top = document.createElement("div"); top.className = "lt-top";
   const chev = document.createElement("button"); chev.className = "lt-chev"; chev.textContent = exp ? "▾" : "▸";
   chev.title = exp ? "Hide subtasks" : "Show / add subtasks";
@@ -1677,6 +1720,9 @@ function openModal(card, prefill) {
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
   document.getElementById("f_sprint").value = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   updateSprintField();
+  const track = card ? cardSprintHistory(card) : [];
+  document.getElementById("f_sprintTrackWrap").style.display = track.length ? "" : "none";
+  document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip" title="${esc(sprintRange(w))}">${esc(fmtSprint(w))}</span>`).join("");
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done })) : [];
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
