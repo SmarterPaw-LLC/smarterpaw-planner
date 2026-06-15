@@ -459,8 +459,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.34";
+const VERSION = "1.35";
 const CHANGELOG = [
+  "v1.35 — Your current view + filters are saved in the page URL, so you can bookmark or share a filtered view (e.g. “Wk 27 backlog for Doggi”) and it reopens exactly as you left it",
   "v1.34 — List view sprint filter is now a calendar week picker (like the modal); clear it for all sprints, or use the “No sprint” toggle for undated tasks",
   "v1.33 — Clicking outside the deliverable modal now saves your changes (Cancel still discards); Sprint week moved to its own row under the due date",
   "v1.32 — List view “+ Add task” now opens the full deliverable form (no more confusing inline title/week boxes); the sprint dropdown in the header is just the filter",
@@ -923,7 +924,7 @@ function renderActiveFilters() {
   };
   bar.appendChild(clear);
 }
-function render() { renderLegend(); renderActiveFilters(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else if (view === "list") renderList(); else renderBoard(); }
+function render() { writeUrl(); renderLegend(); renderActiveFilters(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else if (view === "list") renderList(); else renderBoard(); }
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
 function renderList() {
   const root = document.getElementById("list"); root.innerHTML = "";
@@ -1685,14 +1686,49 @@ function renderChangelog() {
   const box = document.getElementById("changelogList"); box.innerHTML = "";
   CHANGELOG.forEach((line, i) => { const d = document.createElement("div"); d.className = "cl" + (i === 0 ? " new" : ""); d.textContent = line; box.appendChild(d); });
 }
+// ── URL state (bookmarkable filtered views) ─────────────────────────
+const VIEW_KEYS = ["board", "calendar", "grid", "list"];
+function writeUrl() {
+  const p = new URLSearchParams();
+  if (view !== "board") p.set("view", view);
+  if (colorBy !== "brand") p.set("color", colorBy);
+  if (searchText.trim()) p.set("q", searchText.trim());
+  if (channelFilter) p.set("channel", channelFilter);
+  if (brandsList.length && activeBrands.size && activeBrands.size < brandsList.length) [...activeBrands].forEach(b => p.append("brand", b));
+  [...legendSel].forEach(v => p.append("legend", v));
+  Object.keys(filters).forEach(k => { const s = filters[k]; if (s) [...s].forEach(v => p.append("flt_" + k, v)); });
+  if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); }
+  const qs = p.toString();
+  try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {}
+}
+function readUrl() {
+  const p = new URLSearchParams(location.search);
+  if (![...p].length) return;
+  const v = p.get("view"); if (VIEW_KEYS.includes(v)) view = v;
+  const c = p.get("color"); if (c) colorBy = c;
+  const q = p.get("q"); if (q) searchText = q;
+  const ch = p.get("channel"); if (ch) channelFilter = ch;
+  const brands = p.getAll("brand"); if (brands.length) activeBrands = new Set(brands);
+  const legend = p.getAll("legend"); if (legend.length) legendSel = new Set(legend);
+  const fl = {};
+  for (const [key, val] of p) { if (key.indexOf("flt_") === 0) { const fk = key.slice(4); (fl[fk] = fl[fk] || new Set()).add(val); } }
+  if (Object.keys(fl).length) filters = fl;
+  const cm = p.get("calMode"); if (cm) calMode = cm;
+  const cd = p.get("calDate"); if (cd) { const d = new Date(cd + "T00:00:00"); if (!isNaN(d.getTime())) calRef = d; }
+}
 async function init() {
   fillStaticSelects();
   await loadLists();
+  readUrl();   // restore view + filters from the URL so a bookmarked link reopens the same view
   buildBrandFilters(); buildChannelFilter(); buildChannelSelect(); buildStatusSelect(); buildColorBy();
+  document.getElementById("search").value = searchText;
+  document.getElementById("channelFilter").value = channelFilter;
+  document.querySelectorAll("#calModeSeg button").forEach(b => b.classList.toggle("active", b.dataset.m === calMode));
   setSyncUI();
   document.getElementById("verBtn").textContent = "v" + VERSION;
   renderChangelog();
   await refetch();
+  setView(view);   // apply restored view (container visibility + active toggle)
 
   if (ONLINE) {
     db.channel("planner-deliverables").on("postgres_changes", { event: "*", schema: "public", table: "deliverables" }, refetch).subscribe();
