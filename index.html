@@ -125,6 +125,7 @@
   .list-head-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
   .list-sprint-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
   .list-sprint-wk { padding: 6px 9px; }
+  .list-sprint-wk-wrap { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .sprint-none { padding: 6px 11px; font-size: 12px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .sprint-none:hover { color: var(--text); border-color: var(--accent); }
   .sprint-none.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
@@ -139,6 +140,7 @@
   .rule-vals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .rule-chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; user-select: none; }
   .rule-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sprint-readonly { display: block; padding: 8px 11px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); }
   .sprint-track { display: flex; flex-wrap: wrap; gap: 6px; }
   .track-chip { font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 3px 10px; }
   .list-sprint-sel { padding: 7px 9px; }
@@ -426,7 +428,10 @@
         <div class="ch-wrap"><input id="f_end" type="date" /><button type="button" id="f_clearEnd" title="Remove end date">✕</button></div>
       </div>
     </div>
-    <div class="field"><label>Sprint week <span class="opt">— auto from date; set only for undated tasks</span></label><input id="f_sprint" type="week" /></div>
+    <div class="field"><label>Sprint week <span class="opt">— auto from date; for undated tasks pick any day in the week</span></label>
+      <input id="f_sprint" type="date" />
+      <span id="f_sprintText" class="sprint-readonly" style="display:none"></span>
+    </div>
     <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
     <div class="field"><label>Promotion</label>
@@ -578,8 +583,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.46";
+const VERSION = "1.47";
 const CHANGELOG = [
+  "v1.47 — Sprint pickers now use a normal date picker (pick any day in the week) so they work in Safari and on iPhone, where the old week picker had no support.",
   "v1.46 — Advanced filter: build conditions with is / is not / is empty / is not empty, multi-select values, and match ALL (AND) or ANY (OR) — e.g. “Sprint is empty AND Status is not Live”. Typed URLs in Notes now auto-link; fixed the mobile sprint picker closing instantly.",
   "v1.45 — Notes is now a rich-text editor (Bold/Italic/Lists/Links) with clickable links on cards. The “⟳ N sprints” tracker now shows for any date-range item (badge + modal), not only after edits.",
   "v1.44 — Bigger Notes field with light formatting (**bold**, *italic*) and auto-linked URLs on cards. Mobile fixes: the view switcher and the List sprint controls no longer get cut off, and taller week bars show the title (chips hidden).",
@@ -650,6 +656,7 @@ function isoWeek(ymdStr) {
   const week = 1 + Math.round(((dt - firstThu) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
   return dt.getUTCFullYear() + "-W" + String(week).padStart(2, "0");
 }
+function ymdUTC(d) { return d ? d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0") : ""; }
 // Monday Date (UTC) that starts an ISO week string like "2026-W25".
 function isoWeekStart(weekStr) {
   const m = /^(\d{4})-W(\d{2})$/.exec(weekStr || ""); if (!m) return null;
@@ -1278,10 +1285,12 @@ function renderList() {
     chip.querySelector(".x").onclick = () => { filters.sprint.delete(s); if (!filters.sprint.size) delete filters.sprint; updateFilterBtn(); render(); };
     right.appendChild(chip);
   });
-  // picker to ADD a sprint week (multi-select)
-  const wk = document.createElement("input"); wk.type = "week"; wk.className = "list-sprint-wk"; wk.title = "Add a sprint week to filter by";
-  wk.onchange = () => { if (!wk.value) return; if (!filters.sprint) filters.sprint = new Set(); filters.sprint.add(wk.value); updateFilterBtn(); render(); };
-  right.appendChild(wk);
+  // picker to ADD a sprint (date input works on Safari/iOS where type=week doesn't; pick any day → its week)
+  const wkWrap = document.createElement("label"); wkWrap.className = "list-sprint-wk-wrap"; wkWrap.title = "Add a sprint — pick any day in the week";
+  const wkLbl = document.createElement("span"); wkLbl.textContent = "＋ Sprint"; wkWrap.appendChild(wkLbl);
+  const wk = document.createElement("input"); wk.type = "date"; wk.className = "list-sprint-wk";
+  wk.onchange = () => { if (!wk.value) return; if (!filters.sprint) filters.sprint = new Set(); filters.sprint.add(isoWeek(wk.value)); updateFilterBtn(); render(); };
+  wkWrap.appendChild(wk); right.appendChild(wkWrap);
   const noBtn = document.createElement("button"); noBtn.className = "sprint-none" + (noSprintSel ? " on" : ""); noBtn.textContent = "No sprint"; noBtn.title = "Include undated tasks";
   noBtn.onclick = () => { if (!filters.sprint) filters.sprint = new Set(); if (noSprintSel) { filters.sprint.delete(""); if (!filters.sprint.size) delete filters.sprint; } else filters.sprint.add(""); updateFilterBtn(); render(); };
   right.appendChild(noBtn); head.appendChild(right); root.appendChild(head);
@@ -1758,10 +1767,12 @@ function defaultNewChannel() {
 function updateSprintField() {
   const due = document.getElementById("f_due").value;
   const end = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
-  const f = document.getElementById("f_sprint");
+  const f = document.getElementById("f_sprint"); const txt = document.getElementById("f_sprintText");
   const a = due || end, b = end || due;
-  if (a) { f.value = isoWeek(a < b ? a : b); f.disabled = true; f.title = "Auto-set from the date"; }
-  else { f.disabled = false; f.title = ""; }
+  if (a) {   // dated → sprint is derived; show it read-only
+    const w = isoWeek(a < b ? a : b);
+    f.style.display = "none"; txt.style.display = ""; txt.textContent = fmtSprint(w) + " · " + sprintRange(w) + "  (from date)";
+  } else { f.style.display = ""; txt.style.display = "none"; }
 }
 function buildStatusSelect() {
   const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
@@ -1858,7 +1869,8 @@ function openModal(card, prefill) {
   document.getElementById("f_addEnd").style.display = hasEnd ? "none" : "";
   renderFieldInputs(card ? (card.fields || {}) : {});
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
-  document.getElementById("f_sprint").value = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
+  const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
+  document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
   updateSprintField();
   const track = card ? cardSprints(card) : [];
   document.getElementById("f_sprintTrackWrap").style.display = track.length ? "" : "none";
@@ -1882,7 +1894,8 @@ function saveModal() {
   document.querySelectorAll("#f_fields input").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
   const promo = document.getElementById("f_promo").value.trim();
   if (promo && promo !== "__add_promo__") fields[PROMO_KEY] = promo;
-  const sprint = document.getElementById("f_sprint").value;
+  const sprintDate = document.getElementById("f_sprint").value;
+  const sprint = sprintDate ? isoWeek(sprintDate) : "";   // date input → ISO week
   const dueVal = document.getElementById("f_due").value;
   const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
   if (sprint && !(dueVal || endVal)) fields[SPRINT_KEY] = sprint;   // dated items derive their sprint, so don't store a stale manual one
