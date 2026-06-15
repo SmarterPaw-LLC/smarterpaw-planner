@@ -344,7 +344,7 @@
       <div class="field"><label>Promotion</label>
         <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
       </div>
-      <div class="field"><label>Sprint week</label><input id="f_sprint" type="week" /></div>
+      <div class="field"><label>Sprint week <span class="opt">— auto from date; set only for undated tasks</span></label><input id="f_sprint" type="week" /></div>
     </div>
     <div class="field"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
       <div id="f_subs" class="subs-edit"></div>
@@ -457,8 +457,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.28";
+const VERSION = "1.29";
 const CHANGELOG = [
+  "v1.29 — Sprint is now auto-set from a deliverable's date (first week a date range falls into); expand any task in the List view to add subtasks inline (each saved instantly)",
   "v1.28 — New List view for sprint task planning: add tasks, give each subtasks (checkbox + progress bar), set a sprint week, and filter by sprint. Tasks are deliverables, so they also show on Board, Calendar & Grid.",
   "v1.27 — Mark a lane as “Scheduled” (Manage panel) to give its cards & calendar events a clock badge, just like the green ✓ for the Complete lane. Defaults to a lane named “Scheduled”.",
   "v1.26 — Promotions legend now follows the calendar period you're viewing (so navigating to an empty month shows no promotions); on Board/Grid it stays ±30 days from today",
@@ -500,7 +501,24 @@ function cardPromo(c) { return (c.fields && c.fields[PROMO_KEY]) || ""; }
 function allPromos() { return [...new Set(cards.map(cardPromo).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
 const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks";
-function cardSprint(c) { return (c.fields && c.fields[SPRINT_KEY]) || ""; }
+// ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
+function isoWeek(ymdStr) {
+  if (!ymdStr) return "";
+  const d = new Date(ymdStr + "T00:00:00");
+  const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (dt.getUTCDay() + 6) % 7;            // Mon=0
+  dt.setUTCDate(dt.getUTCDate() - dayNum + 3);        // Thursday of this ISO week
+  const firstThu = new Date(Date.UTC(dt.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((dt - firstThu) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
+  return dt.getUTCFullYear() + "-W" + String(week).padStart(2, "0");
+}
+// Sprint is auto-derived from the deliverable's date (the first week a date range falls into).
+// Undated items fall back to a manually-set sprint (fields.__sprint).
+function cardSprint(c) {
+  const a = c.due || c.end, b = c.end || c.due;
+  if (a) return isoWeek(a < b ? a : b);
+  return (c.fields && c.fields[SPRINT_KEY]) || "";
+}
 function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_KEY])) ? c.fields[SUBTASKS_KEY] : []; }
 function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
 function allSprints() { return [...new Set(cards.map(cardSprint).filter(Boolean))].sort(); } // ISO week strings sort chronologically
@@ -941,9 +959,9 @@ function listTaskEl(c) {
   const subs = cardSubtasks(c); const prog = subProgress(c); const exp = listExpanded.has(c.id);
   const wrap = document.createElement("div"); wrap.className = "list-task";
   const top = document.createElement("div"); top.className = "lt-top";
-  const chev = document.createElement("button"); chev.className = "lt-chev" + (subs.length ? "" : " ghost-chev"); chev.textContent = subs.length ? (exp ? "▾" : "▸") : "";
-  chev.title = "Show subtasks";
-  chev.onclick = (e) => { e.stopPropagation(); if (!subs.length) { listExpanded.add(c.id); openModal(c); return; } if (exp) listExpanded.delete(c.id); else listExpanded.add(c.id); renderList(); };
+  const chev = document.createElement("button"); chev.className = "lt-chev"; chev.textContent = exp ? "▾" : "▸";
+  chev.title = exp ? "Hide subtasks" : "Show / add subtasks";
+  chev.onclick = (e) => { e.stopPropagation(); if (exp) listExpanded.delete(c.id); else listExpanded.add(c.id); renderList(); };
   top.appendChild(chev);
   const main = document.createElement("div"); main.className = "lt-main";
   const title = document.createElement("div"); title.className = "lt-title";
@@ -1440,7 +1458,7 @@ function openModal(card, prefill) {
   document.getElementById("f_addEnd").style.display = hasEnd ? "none" : "";
   renderFieldInputs(card ? (card.fields || {}) : {});
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
-  document.getElementById("f_sprint").value = card ? cardSprint(card) : (prefill && prefill.sprint ? prefill.sprint : "");
+  document.getElementById("f_sprint").value = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done })) : [];
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
