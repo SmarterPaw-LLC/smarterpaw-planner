@@ -67,7 +67,10 @@
 
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 50; }
   .overlay.show { display: flex; }
-  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; width: 460px; max-width: 92vw; max-height: 90vh; overflow-y: auto; padding: 20px; }
+  .modal { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; width: 460px; max-width: 92vw; max-height: 90vh; overflow-y: auto; padding: 20px; }
+  .modal-x { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; color: var(--muted); background: var(--panel-2); border-radius: 8px; z-index: 2; }
+  .modal-x:hover { color: var(--text); border-color: var(--accent); }
+  .modal > h2 { padding-right: 36px; }
   .modal h2 { margin: 0 0 16px; font-size: 16px; }
   .field { margin-bottom: 13px; }
   .field label, .seclabel { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
@@ -106,15 +109,17 @@
   .progress > i { display: block; height: 100%; background: var(--ok); border-radius: 999px; transition: width .15s; }
   .progress.full > i { background: var(--ok); }
   /* List / task view */
-  #list { display: none; flex-direction: column; gap: 16px; padding: 16px 20px; overflow: auto; }
-  .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+  #list { display: none; flex-direction: column; padding: 16px 20px; overflow: hidden; }
+  .list-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
+  .list-body.split { gap: 0; }
+  .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; flex: none; }
   .list-head-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
   .list-sprint-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
   .list-sprint-wk { padding: 6px 9px; }
   .sprint-none { padding: 6px 11px; font-size: 12px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .sprint-none:hover { color: var(--text); border-color: var(--accent); }
   .sprint-none.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
-  .sprint-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: 999px; padding: 4px 6px 4px 11px; }
+  .sprint-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: 8px; padding: 5px 7px 5px 11px; white-space: nowrap; flex: none; }
   .sprint-chip .x { cursor: pointer; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--muted); font-size: 11px; }
   .sprint-chip .x:hover { background: var(--danger); color: #fff; }
   .list-sprint-sel { padding: 7px 9px; }
@@ -252,6 +257,8 @@
   /* In calendar bars: brand chip is always shown; title truncates and secondary chips clip before it. */
   .ev-bar .done-check, .ev-bar .sched-check { flex: none; }
   .ev-bar .bt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev-bar.tall { align-items: flex-start; padding-top: 3px; line-height: 1.2; }
+  .ev-bar.tall .bt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-overflow: clip; }
   .ev-bar .barbrand { flex: 0 0 auto; display: inline-flex; align-items: center; }
   .ev-bar .bardims { flex: 0 100 auto; min-width: 0; overflow: hidden; display: inline-flex; align-items: center; white-space: nowrap; }
   .ev-bar .barbrand .dchip, .ev-bar .bardims .dchip:first-child { margin-left: 0; }
@@ -315,7 +322,8 @@
     #calGrid .month-bars, #calGrid .dow-row { min-width: 600px; }
     .cal-controls { gap: 6px; }
     /* Modals: roomier on small screens, stacked pairs */
-    .modal { padding: 16px; max-width: 94vw; }
+    .overlay { padding: 10px; }
+    .modal { padding: 16px; width: 100%; max-width: 100%; max-height: 94vh; }
     .row2 { flex-direction: column; gap: 0; }
     /* Collapse the whole controls area on mobile */
     #headerCollapse { display: inline-flex; align-items: center; order: 4; }
@@ -375,6 +383,7 @@
 <!-- Add / Edit deliverable -->
 <div class="overlay" id="overlay">
   <div class="modal">
+    <button class="modal-x" id="modalX" title="Close">✕</button>
     <h2 id="modalTitle">New deliverable</h2>
     <input type="hidden" id="f_id" />
     <div class="field"><label>Title</label><input id="f_title" placeholder="e.g. July sale carousel" /></div>
@@ -509,8 +518,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.40";
+const VERSION = "1.41";
 const CHANGELOG = [
+  "v1.41 — Mobile polish: sprint chips are rounded rectangles; the List header stays put while the list scrolls; opening a task no longer jumps into editing the title; the modal has an X to close and fits the screen; and week-view bars are taller on mobile.",
   "v1.40 — Promotion color now also shows as a top stripe on Board cards and List items (matching the calendar). Calendar’s Unscheduled panel only shows undated items with no sprint, or whose set sprint falls within the dates you’re viewing.",
   "v1.39 — Sprint headers/pills now show the week’s date range (e.g. “Jun 15 – Jun 21”); the List view lets you select multiple sprints (chips + add-week picker); spacing added under the add-task row; and on mobile a “Controls” button collapses the top area.",
   "v1.38 — List items now use the Color: brand/channel/status setting (left stripe); a “⟳ N sprints” badge tracks how many sprints a task has carried across (hover for the list); and you can hide the calendar’s Unscheduled panel to give the grid full width.",
@@ -1101,9 +1111,10 @@ function renderList() {
   const noBtn = document.createElement("button"); noBtn.className = "sprint-none" + (noSprintSel ? " on" : ""); noBtn.textContent = "No sprint"; noBtn.title = "Include undated tasks";
   noBtn.onclick = () => { if (!filters.sprint) filters.sprint = new Set(); if (noSprintSel) { filters.sprint.delete(""); if (!filters.sprint.size) delete filters.sprint; } else filters.sprint.add(""); updateFilterBtn(); render(); };
   right.appendChild(noBtn); head.appendChild(right); root.appendChild(head);
+  const body = document.createElement("div"); body.className = "list-body" + (listSplit ? " split" : ""); root.appendChild(body);
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
-  if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; root.appendChild(e); return; }
+  if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; body.appendChild(e); return; }
   // Split mode: columns by the chosen dimension, spanning the page.
   if (listSplit) {
     const cmap = new Map();
@@ -1117,7 +1128,7 @@ function renderList() {
       cmap.get(val).forEach(c => col.appendChild(listTaskEl(c)));
       cols.appendChild(col);
     });
-    root.appendChild(cols);
+    body.appendChild(cols);
     return;
   }
   const groups = {}; items.forEach(c => { const s = cardSprint(c); (groups[s] = groups[s] || []).push(c); });
@@ -1128,7 +1139,7 @@ function renderList() {
     h.innerHTML = `<span class="ls-head-main"><span class="ls-name">${sk ? esc(fmtSprint(sk)) : "No sprint"}</span>${sk ? `<span class="ls-range">${esc(sprintRange(sk))}</span>` : ""}</span><span class="ls-count">${groups[sk].length}</span>`;
     sec.appendChild(h);
     groups[sk].forEach(c => sec.appendChild(listTaskEl(c)));
-    root.appendChild(sec);
+    body.appendChild(sec);
   });
 }
 function listTaskEl(c) {
@@ -1242,7 +1253,7 @@ function setView(v) {
   document.getElementById("board").style.display = v === "board" ? "flex" : "none";
   document.getElementById("calendar").style.display = v === "calendar" ? "flex" : "none";
   document.getElementById("grid").style.display = v === "grid" ? "flex" : "none";
-  document.getElementById("list").style.display = v === "list" ? "block" : "none";
+  document.getElementById("list").style.display = v === "list" ? "flex" : "none";
   document.getElementById("calSettingsBtn").style.display = (v === "grid" || v === "list") ? "none" : "";
   document.querySelectorAll("#viewToggle button").forEach(b => b.classList.toggle("active", b.dataset.v === v));
   render();
@@ -1467,16 +1478,20 @@ function weekRow(weekStart, monthIdx, todayKey, mode) {
   wk.appendChild(daysWrap);
   const placed = packLanes(weekEvents(weekStart, addDays(weekStart, 6)), weekStart);
   const bars = document.createElement("div"); bars.className = "bars-layer";
+  // Taller bars (2-line content) in week view on mobile so more shows at a glance.
+  const tall = mode === "week" && window.matchMedia("(max-width: 760px)").matches;
+  const barH = tall ? 40 : BAR_H;
   placed.forEach(p => {
     const bar = barEl(p.c);
+    if (tall) { bar.classList.add("tall"); bar.style.height = (barH - 4) + "px"; }
     bar.style.left = `calc(${(p.s / 7 * 100).toFixed(4)}% + 3px)`;
     bar.style.width = `calc(${((p.e - p.s + 1) / 7 * 100).toFixed(4)}% - 6px)`;
-    bar.style.top = (WEEK_HEAD_H + p.lane * BAR_H) + "px";
+    bar.style.top = (WEEK_HEAD_H + p.lane * barH) + "px";
     bars.appendChild(bar);
   });
   wk.appendChild(bars);
   const laneCount = placed.reduce((mx, p) => Math.max(mx, p.lane + 1), 0);
-  wk.style.minHeight = Math.max(mode === "week" ? 380 : 96, WEEK_HEAD_H + laneCount * BAR_H + 8) + "px";
+  wk.style.minHeight = Math.max(mode === "week" ? 380 : 96, WEEK_HEAD_H + laneCount * barH + 8) + "px";
   return wk;
 }
 function renderTray() {
@@ -1670,7 +1685,7 @@ function openModal(card, prefill) {
   document.getElementById("f_notes").value = card ? (card.notes||"") : "";
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
   document.getElementById("overlay").classList.add("show");
-  document.getElementById("f_title").focus();
+  if (!card) document.getElementById("f_title").focus();   // only auto-focus when creating; editing just opens the card
 }
 function closeModal() { modalOpen = false; document.getElementById("overlay").classList.remove("show"); }
 function saveModal() {
@@ -1943,6 +1958,7 @@ async function init() {
   document.getElementById("deleteBtn").onclick = deleteCard;
   // Click outside the deliverable modal saves your changes (closes & discards only if there's no title to save).
   document.getElementById("overlay").onclick = e => { if (e.target.id !== "overlay") return; if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
+  document.getElementById("modalX").onclick = () => { if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
   document.getElementById("f_channelAdd").onclick = async () => {
     const name = (prompt("New channel name:") || "").trim(); if (!name) return;
     const ok = await addList("channel", name); if (ok) document.getElementById("f_channel").value = name;
