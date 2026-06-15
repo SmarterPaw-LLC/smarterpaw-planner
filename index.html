@@ -275,6 +275,36 @@
   #activeFilters .af-clear:hover { background: var(--danger); color: #fff; }
   ::-webkit-scrollbar { height: 10px; width: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+
+  /* ── Mobile ─────────────────────────────────────────────── */
+  @media (max-width: 760px) {
+    header { padding: 10px 12px; gap: 8px 10px; }
+    .brand-title { font-size: 15px; }
+    .status-dot { margin-right: 0; }
+    /* control groups each take a full row so nothing crams */
+    header > .filters, header > .toolbar { width: 100%; }
+    header > .filters .search { flex: 1; min-width: 0; }
+    header > .toolbar { justify-content: flex-start; }
+    #viewToggle { flex: 1; }
+    #viewToggle button { flex: 1; }
+    #legend { padding: 8px 12px; gap: 8px 12px; }
+    #legend .promo-legend { margin-left: 0; width: 100%; }
+    #activeFilters { padding: 8px 12px; }
+    /* Board: one column per screen, swipe horizontally */
+    .board { padding: 12px; gap: 12px; }
+    .col { width: 86vw; min-width: 86vw; }
+    #grid, #list { padding: 12px; }
+    .list-head-right { margin-left: 0; }
+    /* Calendar: unscheduled tray on top, grid scrolls horizontally (days stay legible) */
+    .cal-main { flex-direction: column; overflow: visible; }
+    .tray { width: 100%; min-width: 0; max-height: 120px; }
+    .cal-grid-wrap { min-height: 64vh; }
+    #calGrid .month-bars, #calGrid .dow-row { min-width: 600px; }
+    .cal-controls { gap: 6px; }
+    /* Modals: roomier on small screens, stacked pairs */
+    .modal { padding: 16px; max-width: 94vw; }
+    .row2 { flex-direction: column; gap: 0; }
+  }
 </style>
 </head>
 <body>
@@ -459,8 +489,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.35";
+const VERSION = "1.36";
 const CHANGELOG = [
+  "v1.36 — Mobile-friendly layout: header controls stack, the board swipes one column at a time, the calendar scrolls with legible days, and modals fit the screen",
   "v1.35 — Your current view + filters are saved in the page URL, so you can bookmark or share a filtered view (e.g. “Wk 27 backlog for Doggi”) and it reopens exactly as you left it",
   "v1.34 — List view sprint filter is now a calendar week picker (like the modal); clear it for all sprints, or use the “No sprint” toggle for undated tasks",
   "v1.33 — Clicking outside the deliverable modal now saves your changes (Cancel still discards); Sprint week moved to its own row under the due date",
