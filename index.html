@@ -131,6 +131,14 @@
   .sprint-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: 8px; padding: 5px 7px 5px 11px; white-space: nowrap; flex: none; }
   .sprint-chip .x { cursor: pointer; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--muted); font-size: 11px; }
   .sprint-chip .x:hover { background: var(--danger); color: #fff; }
+  .rule-match { margin-bottom: 12px; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .rule-row { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px; margin-bottom: 8px; }
+  .rule-top { display: flex; gap: 6px; align-items: center; }
+  .rule-top select { flex: 1; min-width: 0; }
+  .rule-top .mv { flex: none; color: var(--danger); }
+  .rule-vals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .rule-chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; user-select: none; }
+  .rule-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   .sprint-track { display: flex; flex-wrap: wrap; gap: 6px; }
   .track-chip { font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 3px 10px; }
   .list-sprint-sel { padding: 7px 9px; }
@@ -570,8 +578,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.45";
+const VERSION = "1.46";
 const CHANGELOG = [
+  "v1.46 — Advanced filter: build conditions with is / is not / is empty / is not empty, multi-select values, and match ALL (AND) or ANY (OR) — e.g. “Sprint is empty AND Status is not Live”. Typed URLs in Notes now auto-link; fixed the mobile sprint picker closing instantly.",
   "v1.45 — Notes is now a rich-text editor (Bold/Italic/Lists/Links) with clickable links on cards. The “⟳ N sprints” tracker now shows for any date-range item (badge + modal), not only after edits.",
   "v1.44 — Bigger Notes field with light formatting (**bold**, *italic*) and auto-linked URLs on cards. Mobile fixes: the view switcher and the List sprint controls no longer get cut off, and taller week bars show the title (chips hidden).",
   "v1.43 — Saved views: ★ Views lets you name and save the current view + filters. “Just me” views stay in your browser; “Everyone” views are shared app-wide (needs the views SQL run once).",
@@ -824,7 +833,44 @@ function setScheduled(item) {
 }
 const SCHED_ICON = '<svg viewBox="0 0 16 16" width="8" height="8" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8V4.6M8 8h3"/></svg>';
 function schedBadge(c) { const sl = effScheduledLane(); return (sl && c.status === sl) ? '<span class="sched-check" title="Scheduled">' + SCHED_ICON + '</span> ' : ''; }
-let filters = {};   // { owner:Set, status:Set, "field:Name":Set }
+let filters = {};   // quick sprint filter from the List header: { sprint: Set }
+let filterRules = [];      // advanced Filter panel: [{ field, op:'is'|'isnot'|'empty'|'notempty', values:[] }]
+let filterMatch = "all";   // "all" (AND) | "any" (OR)
+function ruleFields() {
+  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
+    .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
+}
+function ruleFieldLabel(key) { const f = ruleFields().find(x => x.key === key); return f ? f.label : key; }
+function ruleCardValues(c, field) {
+  if (field === "owner") return splitOwners(c.owner);
+  if (field === "brand") return c.brand ? [c.brand] : [];
+  if (field === "channel") return c.channel ? [c.channel] : [];
+  if (field === "status") return c.status ? [c.status] : [];
+  if (field === "promotion") { const p = cardPromo(c); return p ? [p] : []; }
+  if (field === "sprint") { const s = cardSprint(c); return s ? [s] : []; }
+  if (field.indexOf("field:") === 0) { const v = (c.fields && c.fields[field.slice(6)]) || ""; return v ? [v] : []; }
+  return [];
+}
+function ruleFieldValues(field) {
+  if (field === "owner") return peopleList.map(p => p.name);
+  if (field === "brand") return brandsList.map(b => b.name);
+  if (field === "channel") return channelsList.map(c => c.name);
+  if (field === "status") return statusList.map(s => s.name);
+  if (field === "promotion") return allPromos();
+  if (field === "sprint") return allSprints();
+  if (field.indexOf("field:") === 0) { const n = field.slice(6); return [...new Set(cards.map(c => c.fields && c.fields[n]).filter(Boolean))].sort(); }
+  return [];
+}
+function ruleValueLabel(field, v) { return field === "sprint" ? fmtSprint(v) : v; }
+function ruleMatches(c, r) {
+  const vals = ruleCardValues(c, r.field);
+  if (r.op === "empty") return vals.length === 0;
+  if (r.op === "notempty") return vals.length > 0;
+  const set = new Set(r.values || []);
+  if (r.op === "isnot") return !vals.some(v => set.has(v));
+  return vals.some(v => set.has(v));   // "is"
+}
+function activeRules() { return filterRules.filter(r => r.op === "empty" || r.op === "notempty" || (r.values && r.values.length)); }
 let _idc = Date.now();
 function uid() { return "c" + (_idc++).toString(36); }
 function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 3500); }
@@ -1071,14 +1117,9 @@ function renderNotes(raw) {
 function notesToEditor(raw) { return raw ? (looksLikeHtml(raw) ? sanitizeNotes(raw) : esc(raw).replace(/\n/g, "<br>")) : ""; }
 function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : c.brand; }
 function passesFilters(c) {
-  if (filters.owner && filters.owner.size && !splitOwners(c.owner).some(o => filters.owner.has(o))) return false;
-  if (filters.status && filters.status.size && !filters.status.has(c.status)) return false;
-  if (filters.promotion && filters.promotion.size && !filters.promotion.has(cardPromo(c))) return false;
-  if (filters.sprint && filters.sprint.size && !filters.sprint.has(cardSprint(c))) return false;
-  for (let i = 0; i < fieldsList.length; i++) {
-    const key = "field:" + fieldsList[i].name, set = filters[key];
-    if (set && set.size && !set.has((c.fields && c.fields[fieldsList[i].name]) || "")) return false;
-  }
+  if (filters.sprint && filters.sprint.size && !filters.sprint.has(cardSprint(c))) return false;   // List header quick sprint filter
+  const rs = activeRules();
+  if (rs.length) { const res = rs.map(r => ruleMatches(c, r)); if (!(filterMatch === "any" ? res.some(Boolean) : res.every(Boolean))) return false; }
   return true;
 }
 function visibleCards() {
@@ -1095,49 +1136,46 @@ function filterValues(key) {
   const name = key.slice(6);
   return [...new Set(cards.map(c => c.fields && c.fields[name]).filter(Boolean))].sort();
 }
-function filterCount() { return Object.keys(filters).reduce((n, k) => n + (filters[k] ? filters[k].size : 0), 0); }
+function filterCount() { return (filters.sprint ? filters.sprint.size : 0) + activeRules().length; }
 function updateFilterBtn() {
   const n = filterCount(); const b = document.getElementById("filterBtn");
   b.textContent = "⚲ Filter" + (n ? " (" + n + ")" : ""); b.classList.toggle("primary", n > 0);
 }
 function renderFilters() {
   const body = document.getElementById("filterBody"); body.innerHTML = "";
-  const sections = [{ key: "owner", label: "Owners" }, { key: "status", label: "Lane / status" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
-    .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
-  sections.forEach(sec => {
-    let vals;
-    if (sec.key === "sprint") {
-      // only the last 2 + next 2 weeks around today, plus any already-selected weeks outside that window
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const win = []; for (let d = -2; d <= 2; d++) win.push(isoWeek(ymd(addDays(today, d * 7))));
-      const sel = filters.sprint ? [...filters.sprint].filter(Boolean) : [];
-      vals = [...new Set([...win, ...sel])].sort();
-    } else { vals = filterValues(sec.key); if (!vals.length) return; }
-    const wrap = document.createElement("div"); wrap.className = "manage-sec";
-    const lab = document.createElement("span"); lab.className = "seclabel"; lab.textContent = sec.label; wrap.appendChild(lab);
-    const list = document.createElement("div"); list.className = "disp-dims scroll-cap";
+  const matchRow = document.createElement("div"); matchRow.className = "rule-match";
+  matchRow.appendChild(document.createTextNode("Match "));
+  const ms = document.createElement("select"); ms.innerHTML = '<option value="all">all (AND)</option><option value="any">any (OR)</option>'; ms.value = filterMatch;
+  ms.onchange = () => { filterMatch = ms.value; updateFilterBtn(); render(); };
+  matchRow.appendChild(ms); matchRow.appendChild(document.createTextNode(" of these conditions:"));
+  body.appendChild(matchRow);
+  filterRules.forEach((r, i) => body.appendChild(ruleRowEl(r, i)));
+  if (!filterRules.length) { const e = document.createElement("div"); e.className = "hint"; e.textContent = "No conditions yet — add one below."; body.appendChild(e); }
+  const add = document.createElement("button"); add.className = "primary"; add.textContent = "＋ Add condition"; add.style.marginTop = "8px";
+  add.onclick = () => { filterRules.push({ field: ruleFields()[0].key, op: "is", values: [] }); renderFilters(); };
+  body.appendChild(add);
+}
+function ruleRowEl(r, idx) {
+  const row = document.createElement("div"); row.className = "rule-row";
+  const top = document.createElement("div"); top.className = "rule-top";
+  const fs = document.createElement("select"); ruleFields().forEach(f => { const o = document.createElement("option"); o.value = f.key; o.textContent = f.label; fs.appendChild(o); }); fs.value = r.field;
+  fs.onchange = () => { r.field = fs.value; r.values = []; updateFilterBtn(); renderFilters(); render(); };
+  const os = document.createElement("select"); [["is", "is"], ["isnot", "is not"], ["empty", "is empty"], ["notempty", "is not empty"]].forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; os.appendChild(o); }); os.value = r.op;
+  os.onchange = () => { r.op = os.value; updateFilterBtn(); renderFilters(); render(); };
+  const rm = document.createElement("button"); rm.className = "mv"; rm.textContent = "✕"; rm.title = "Remove condition"; rm.onclick = () => { filterRules.splice(idx, 1); updateFilterBtn(); renderFilters(); render(); };
+  top.appendChild(fs); top.appendChild(os); top.appendChild(rm); row.appendChild(top);
+  if (r.op === "is" || r.op === "isnot") {
+    const vbox = document.createElement("div"); vbox.className = "rule-vals scroll-cap";
+    const vals = ruleFieldValues(r.field);
+    if (!vals.length) { const e = document.createElement("span"); e.className = "hint"; e.textContent = "No values yet."; vbox.appendChild(e); }
     vals.forEach(v => {
-      const l = document.createElement("label"); l.className = "disp-opt";
-      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(filters[sec.key] && filters[sec.key].has(v));
-      cb.onchange = () => {
-        if (!filters[sec.key]) filters[sec.key] = new Set();
-        if (cb.checked) filters[sec.key].add(v); else { filters[sec.key].delete(v); if (!filters[sec.key].size) delete filters[sec.key]; }
-        updateFilterBtn(); render();
-      };
-      l.appendChild(cb); l.appendChild(document.createTextNode(" " + (sec.key === "sprint" ? fmtSprint(v) : v))); list.appendChild(l);
+      const chip = document.createElement("span"); chip.className = "rule-chip" + (r.values.includes(v) ? " on" : ""); chip.textContent = ruleValueLabel(r.field, v);
+      chip.onclick = () => { r.values = r.values.includes(v) ? r.values.filter(x => x !== v) : [...r.values, v]; updateFilterBtn(); renderFilters(); render(); };
+      vbox.appendChild(chip);
     });
-    wrap.appendChild(list);
-    if (sec.key === "sprint") {
-      const addRow = document.createElement("div"); addRow.className = "add-row";
-      const inp = document.createElement("input"); inp.type = "week"; inp.title = "Pick any other sprint week to filter by";
-      inp.onchange = () => { if (!inp.value) return; if (!filters.sprint) filters.sprint = new Set(); filters.sprint.add(inp.value); updateFilterBtn(); renderFilters(); render(); };
-      const l2 = document.createElement("label"); l2.className = "opt"; l2.style.alignSelf = "center"; l2.textContent = "＋ Add sprint";
-      addRow.appendChild(l2); addRow.appendChild(inp);
-      wrap.appendChild(addRow);
-    }
-    body.appendChild(wrap);
-  });
-  if (!body.children.length) { const e = document.createElement("div"); e.className = "hint"; e.textContent = "No owners, lanes, or custom-field values to filter yet."; body.appendChild(e); }
+    row.appendChild(vbox);
+  }
+  return row;
 }
 function openFilter() { renderFilters(); document.getElementById("filterOverlay").classList.add("show"); }
 function filterKeyLabel(key) {
@@ -1152,14 +1190,16 @@ function renderActiveFilters() {
   if (channelFilter) pills.push({ k: "Channel", v: channelFilter, remove: () => { channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = ""; } });
   const dimLabel = (COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0]).label;
   legendSel.forEach(v => pills.push({ k: dimLabel, v, remove: () => legendSel.delete(v) }));
-  Object.keys(filters).forEach(key => { const set = filters[key]; if (!set) return; set.forEach(v => { const disp = key === "sprint" ? (v ? fmtSprint(v) + " · " + sprintRange(v) : "No sprint") : (v || "(blank)"); pills.push({ k: filterKeyLabel(key), v: disp, remove: () => { set.delete(v); if (!set.size) delete filters[key]; } }); }); });
+  if (filters.sprint) filters.sprint.forEach(v => { const disp = v ? fmtSprint(v) + " · " + sprintRange(v) : "No sprint"; pills.push({ k: "Sprint", v: disp, remove: () => { filters.sprint.delete(v); if (!filters.sprint.size) delete filters.sprint; } }); });
+  const opLbl = { is: "is", isnot: "is not", empty: "is empty", notempty: "is not empty" };
+  activeRules().forEach(r => { const v = (r.op === "is" || r.op === "isnot") ? r.values.map(x => ruleValueLabel(r.field, x)).join(", ") : ""; pills.push({ k: ruleFieldLabel(r.field) + " " + opLbl[r.op], v, remove: () => { const i = filterRules.indexOf(r); if (i >= 0) filterRules.splice(i, 1); } }); });
 
   if (!pills.length) { bar.style.display = "none"; return; }
   bar.style.display = "flex";
-  const label = document.createElement("span"); label.className = "af-label"; label.textContent = "Filtering by"; bar.appendChild(label);
+  const label = document.createElement("span"); label.className = "af-label"; label.textContent = activeRules().length > 1 ? "Filtering · match " + filterMatch : "Filtering by"; bar.appendChild(label);
   pills.forEach(p => {
     const pill = document.createElement("span"); pill.className = "af-pill";
-    pill.innerHTML = `<span>${esc(p.k)}: <b>${esc(p.v)}</b></span>`;
+    pill.innerHTML = p.v ? `<span>${esc(p.k)}: <b>${esc(p.v)}</b></span>` : `<span>${esc(p.k)}</span>`;
     const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "Remove this filter";
     x.onclick = () => { p.remove(); updateFilterBtn(); render(); };
     pill.appendChild(x); bar.appendChild(pill);
@@ -1168,12 +1208,23 @@ function renderActiveFilters() {
   clear.onclick = () => {
     searchText = ""; const s = document.getElementById("search"); if (s) s.value = "";
     channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = "";
-    legendSel.clear(); filters = {};
+    legendSel.clear(); filters = {}; filterRules = []; filterMatch = "all";
     updateFilterBtn(); render();
   };
   bar.appendChild(clear);
 }
-function render() { writeUrl(); renderLegend(); renderActiveFilters(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else if (view === "list") renderList(); else renderBoard(); }
+function render() {
+  writeUrl(); renderLegend(); renderActiveFilters();
+  if (view === "calendar") renderCalendar();
+  else if (view === "grid") renderGrid();
+  else if (view === "list") {
+    // Don't rebuild the List while its sprint date/week picker is open (rebuilding would close the native picker).
+    const ae = document.activeElement;
+    if (ae && ae.closest && ae.closest("#list .list-head") && /^(date|week|month)$/.test(ae.type || "")) return;
+    renderList();
+  }
+  else renderBoard();
+}
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
 let listSplit = "";             // dimension key to split the List view into columns ("" = single grouped list); never "sprint"
 function splitDims() {
@@ -2034,6 +2085,8 @@ function currentParams() {
   [...legendSel].forEach(v => p.append("legend", v));
   Object.keys(filters).forEach(k => { const s = filters[k]; if (s) [...s].forEach(v => p.append("flt_" + k, v)); });
   if (view === "list" && listSplit) p.set("split", listSplit);
+  if (activeRules().length) p.set("rules", JSON.stringify(activeRules()));
+  if (filterMatch !== "all") p.set("match", filterMatch);
   if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); }
   return p.toString();
 }
@@ -2088,7 +2141,7 @@ function renderViews() {
 async function openViews() { await loadSharedViews(); renderViews(); document.getElementById("viewsOverlay").classList.add("show"); }
 // Apply a saved view's query params: reset state to defaults, parse params, sync controls.
 function applySavedView(params) {
-  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; calMode = "month"; calRef = new Date(); listSplit = "";
+  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = "";
   activeBrands = new Set(brandsList.map(b => b.name));
   try { history.replaceState(null, "", location.pathname + (params ? "?" + params : "")); } catch (e) {}
   readUrl();
@@ -2113,6 +2166,8 @@ function readUrl() {
   for (const [key, val] of p) { if (key.indexOf("flt_") === 0) { const fk = key.slice(4); (fl[fk] = fl[fk] || new Set()).add(val); } }
   if (Object.keys(fl).length) filters = fl;
   const sp = p.get("split"); if (sp) listSplit = sp;
+  const rr = p.get("rules"); if (rr) { try { const a = JSON.parse(rr); if (Array.isArray(a)) filterRules = a; } catch (e) {} }
+  const mm = p.get("match"); if (mm === "any" || mm === "all") filterMatch = mm;
   const cm = p.get("calMode"); if (cm) calMode = cm;
   const cd = p.get("calDate"); if (cd) { const d = new Date(cd + "T00:00:00"); if (!isNaN(d.getTime())) calRef = d; }
 }
@@ -2184,6 +2239,7 @@ async function init() {
   };
   document.getElementById("f_notesUnlink").addEventListener("mousedown", e => e.preventDefault());
   document.getElementById("f_notesUnlink").onclick = () => { notesEd().focus(); document.execCommand("unlink", false, null); };
+  notesEd().addEventListener("blur", () => linkifyInto(notesEd()));   // turn typed/pasted URLs into links when you click away
   document.getElementById("f_subAddBtn").onclick = addModalSub;
   document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addModalSub(); } });
   document.getElementById("xlsxBtn").onclick = exportXLSX;
@@ -2197,7 +2253,7 @@ async function init() {
   document.getElementById("filterBtn").onclick = openFilter;
   document.getElementById("filterClose").onclick = () => document.getElementById("filterOverlay").classList.remove("show");
   document.getElementById("filterOverlay").onclick = e => { if (e.target.id === "filterOverlay") e.currentTarget.classList.remove("show"); };
-  document.getElementById("filterClear").onclick = () => { filters = {}; updateFilterBtn(); renderFilters(); render(); };
+  document.getElementById("filterClear").onclick = () => { filters = {}; filterRules = []; filterMatch = "all"; updateFilterBtn(); renderFilters(); render(); };
   updateFilterBtn();
   const closeViews = () => document.getElementById("viewsOverlay").classList.remove("show");
   document.getElementById("viewsBtn").onclick = openViews;
