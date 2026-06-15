@@ -583,8 +583,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.48";
+const VERSION = "1.49";
 const CHANGELOG = [
+  "v1.49 — Fixed: clicking a promotion in the legend now actually filters and shows in the “Filtering by” row (regression from the advanced-filter change). Saved views gain an “Update” action to overwrite a view with your current filters.",
   "v1.48 — Tidied the List header: dropped the redundant “Sprint” label and the duplicate sprint chips (selected sprints already show in the “Filtering by” row); the ＋ Sprint picker and No-sprint toggle remain.",
   "v1.47 — Sprint pickers now use a normal date picker (pick any day in the week) so they work in Safari and on iPhone, where the old week picker had no support.",
   "v1.46 — Advanced filter: build conditions with is / is not / is empty / is not empty, multi-select values, and match ALL (AND) or ANY (OR) — e.g. “Sprint is empty AND Status is not Live”. Typed URLs in Notes now auto-link; fixed the mobile sprint picker closing instantly.",
@@ -1125,7 +1126,8 @@ function renderNotes(raw) {
 function notesToEditor(raw) { return raw ? (looksLikeHtml(raw) ? sanitizeNotes(raw) : esc(raw).replace(/\n/g, "<br>")) : ""; }
 function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : c.brand; }
 function passesFilters(c) {
-  if (filters.sprint && filters.sprint.size && !filters.sprint.has(cardSprint(c))) return false;   // List header quick sprint filter
+  if (filters.sprint && filters.sprint.size && !filters.sprint.has(cardSprint(c))) return false;       // List header quick sprint filter
+  if (filters.promotion && filters.promotion.size && !filters.promotion.has(cardPromo(c))) return false; // Promotions legend quick filter
   const rs = activeRules();
   if (rs.length) { const res = rs.map(r => ruleMatches(c, r)); if (!(filterMatch === "any" ? res.some(Boolean) : res.every(Boolean))) return false; }
   return true;
@@ -1144,7 +1146,7 @@ function filterValues(key) {
   const name = key.slice(6);
   return [...new Set(cards.map(c => c.fields && c.fields[name]).filter(Boolean))].sort();
 }
-function filterCount() { return (filters.sprint ? filters.sprint.size : 0) + activeRules().length; }
+function filterCount() { return (filters.sprint ? filters.sprint.size : 0) + (filters.promotion ? filters.promotion.size : 0) + activeRules().length; }
 function updateFilterBtn() {
   const n = filterCount(); const b = document.getElementById("filterBtn");
   b.textContent = "⚲ Filter" + (n ? " (" + n + ")" : ""); b.classList.toggle("primary", n > 0);
@@ -1199,6 +1201,7 @@ function renderActiveFilters() {
   const dimLabel = (COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0]).label;
   legendSel.forEach(v => pills.push({ k: dimLabel, v, remove: () => legendSel.delete(v) }));
   if (filters.sprint) filters.sprint.forEach(v => { const disp = v ? fmtSprint(v) + " · " + sprintRange(v) : "No sprint"; pills.push({ k: "Sprint", v: disp, remove: () => { filters.sprint.delete(v); if (!filters.sprint.size) delete filters.sprint; } }); });
+  if (filters.promotion) filters.promotion.forEach(v => pills.push({ k: "Promotion", v, remove: () => { filters.promotion.delete(v); if (!filters.promotion.size) delete filters.promotion; } }));
   const opLbl = { is: "is", isnot: "is not", empty: "is empty", notempty: "is not empty" };
   activeRules().forEach(r => { const v = (r.op === "is" || r.op === "isnot") ? r.values.map(x => ruleValueLabel(r.field, x)).join(", ") : ""; pills.push({ k: ruleFieldLabel(r.field) + " " + opLbl[r.op], v, remove: () => { const i = filterRules.indexOf(r); if (i >= 0) filterRules.splice(i, 1); } }); });
 
@@ -2117,15 +2120,23 @@ async function deleteView(scope, key) {
   else savePersonalViews(loadPersonalViews().filter(v => v.name !== key));
   renderViews();
 }
+// Overwrite a saved view's params with the current filters/view.
+async function updateView(scope, key) {
+  const params = currentParams();
+  if (scope === "shared") { const { error } = await db.from("views").update({ params }).eq("id", key); if (error) { toast("Update failed: " + error.message); return; } await loadSharedViews(); }
+  else { const arr = loadPersonalViews(); const v = arr.find(x => x.name === key); if (v) v.params = params; savePersonalViews(arr); }
+  renderViews(); toast("View updated with current filters.");
+}
 function renderViews() {
   const mkRow = (name, scope, key, params) => {
     const r = document.createElement("div"); r.className = "manage-row";
     const apply = () => { applySavedView(params); document.getElementById("viewsOverlay").classList.remove("show"); };
     const left = document.createElement("span"); left.className = "row-left"; left.textContent = name; left.style.cursor = "pointer"; left.title = "Apply this view"; left.onclick = apply;
     const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
-    const ab = document.createElement("button"); ab.className = "mv"; ab.textContent = "Apply"; ab.onclick = apply;
+    const ab = document.createElement("button"); ab.className = "mv"; ab.textContent = "Apply"; ab.title = "Load this view"; ab.onclick = apply;
+    const ub = document.createElement("button"); ub.className = "mv"; ub.textContent = "Update"; ub.title = "Overwrite this view with the current filters"; ub.onclick = () => updateView(scope, key);
     const db2 = document.createElement("button"); db2.textContent = "Remove"; db2.onclick = () => deleteView(scope, key);
-    ctrls.appendChild(ab); ctrls.appendChild(db2); r.appendChild(left); r.appendChild(ctrls); return r;
+    ctrls.appendChild(ab); ctrls.appendChild(ub); ctrls.appendChild(db2); r.appendChild(left); r.appendChild(ctrls); return r;
   };
   const empty = t => { const e = document.createElement("div"); e.className = "hint"; e.textContent = t; return e; };
   const shared = document.getElementById("viewsShared"); shared.innerHTML = "";
