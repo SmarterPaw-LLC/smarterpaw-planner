@@ -354,6 +354,7 @@
   </div>
   <div class="toolbar">
     <button class="primary" id="addBtn">+ Deliverable</button>
+    <button id="viewsBtn" title="Saved views">★ Views</button>
     <button id="calSettingsBtn">⚙ Display</button>
     <button id="manageBtn">⚙ Manage</button>
     <button id="xlsxBtn">Export Excel</button>
@@ -480,6 +481,32 @@
   </div>
 </div>
 
+<!-- Saved views -->
+<div class="overlay" id="viewsOverlay">
+  <div class="modal" style="width:440px">
+    <button class="modal-x" id="viewsX" title="Close">✕</button>
+    <h2>Saved views</h2>
+    <div class="manage-sec">
+      <span class="seclabel">Save current view (filters, sort, calendar position)</span>
+      <div class="add-row">
+        <input id="vName" placeholder="View name…" autocomplete="off" />
+        <select id="vScope" title="Who can see it"><option value="personal">Just me</option><option value="shared">Everyone</option></select>
+        <button class="primary" id="vSaveBtn">Save</button>
+      </div>
+    </div>
+    <div class="manage-sec">
+      <span class="seclabel">Everyone (app-wide)</span>
+      <div class="manage-list scroll-cap" id="viewsShared"></div>
+    </div>
+    <div class="manage-sec">
+      <span class="seclabel">Just me (this browser)</span>
+      <div class="manage-list scroll-cap" id="viewsPersonal"></div>
+    </div>
+    <div class="modal-actions"><div class="spacer"></div><button id="viewsClose">Done</button></div>
+    <div class="hint">App-wide views are shared with your team; “Just me” views stay in this browser only.</div>
+  </div>
+</div>
+
 <!-- Filter -->
 <div class="overlay" id="filterOverlay">
   <div class="modal" style="width:420px">
@@ -524,8 +551,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.42";
+const VERSION = "1.43";
 const CHANGELOG = [
+  "v1.43 — Saved views: ★ Views lets you name and save the current view + filters. “Just me” views stay in your browser; “Everyone” views are shared app-wide (needs the views SQL run once).",
   "v1.42 — Sprint tracker: a date range now records every sprint week it spans (shown in the deliverable modal and the “⟳ N sprints” badge). In the List view’s split-by-dimension mode, drag a task between columns to change that value (owner, status, brand, channel, promotion, field).",
   "v1.41 — Mobile polish: sprint chips are rounded rectangles; the List header stays put while the list scrolls; opening a task no longer jumps into editing the title; the modal has an X to close and fits the screen; and week-view bars are taller on mobile.",
   "v1.40 — Promotion color now also shows as a top stripe on Board cards and List items (matching the calendar). Calendar’s Unscheduled panel only shows undated items with no sprint, or whose set sprint falls within the dates you’re viewing.",
@@ -1933,7 +1961,7 @@ function renderChangelog() {
 }
 // ── URL state (bookmarkable filtered views) ─────────────────────────
 const VIEW_KEYS = ["board", "calendar", "grid", "list"];
-function writeUrl() {
+function currentParams() {
   const p = new URLSearchParams();
   if (view !== "board") p.set("view", view);
   if (colorBy !== "brand") p.set("color", colorBy);
@@ -1944,8 +1972,70 @@ function writeUrl() {
   Object.keys(filters).forEach(k => { const s = filters[k]; if (s) [...s].forEach(v => p.append("flt_" + k, v)); });
   if (view === "list" && listSplit) p.set("split", listSplit);
   if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); }
-  const qs = p.toString();
-  try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {}
+  return p.toString();
+}
+function writeUrl() { const qs = currentParams(); try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {} }
+// ── Saved views (personal → localStorage; app-wide → Supabase 'views' table) ──
+let sharedViews = [], _viewsTableMissing = false;
+function loadPersonalViews() { try { return JSON.parse(localStorage.getItem("planner-views") || "[]"); } catch (e) { return []; } }
+function savePersonalViews(arr) { localStorage.setItem("planner-views", JSON.stringify(arr)); }
+async function loadSharedViews() {
+  if (!ONLINE) { sharedViews = []; return; }
+  const { data, error } = await db.from("views").select("*").order("name", { ascending: true });
+  if (error) { sharedViews = []; _viewsTableMissing = true; return; }
+  _viewsTableMissing = false; sharedViews = data.map(r => ({ id: r.id, name: r.name, params: r.params || "" }));
+}
+async function addView(name, scope) {
+  name = (name || "").trim(); if (!name) { toast("Name the view first."); return; }
+  const params = currentParams();
+  if (scope === "shared") {
+    if (!ONLINE) { toast("App-wide views need the online backend."); return; }
+    const { error } = await db.from("views").insert({ name, params });
+    if (error) { toast("App-wide save failed — run the views SQL (0006): " + error.message); return; }
+    await loadSharedViews();
+  } else { const arr = loadPersonalViews(); arr.push({ name, params }); savePersonalViews(arr); }
+  document.getElementById("vName").value = ""; renderViews();
+}
+async function deleteView(scope, key) {
+  if (scope === "shared") { const { error } = await db.from("views").delete().eq("id", key); if (error) { toast("Delete failed: " + error.message); return; } await loadSharedViews(); }
+  else savePersonalViews(loadPersonalViews().filter(v => v.name !== key));
+  renderViews();
+}
+function renderViews() {
+  const mkRow = (name, scope, key, params) => {
+    const r = document.createElement("div"); r.className = "manage-row";
+    const apply = () => { applySavedView(params); document.getElementById("viewsOverlay").classList.remove("show"); };
+    const left = document.createElement("span"); left.className = "row-left"; left.textContent = name; left.style.cursor = "pointer"; left.title = "Apply this view"; left.onclick = apply;
+    const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
+    const ab = document.createElement("button"); ab.className = "mv"; ab.textContent = "Apply"; ab.onclick = apply;
+    const db2 = document.createElement("button"); db2.textContent = "Remove"; db2.onclick = () => deleteView(scope, key);
+    ctrls.appendChild(ab); ctrls.appendChild(db2); r.appendChild(left); r.appendChild(ctrls); return r;
+  };
+  const empty = t => { const e = document.createElement("div"); e.className = "hint"; e.textContent = t; return e; };
+  const shared = document.getElementById("viewsShared"); shared.innerHTML = "";
+  if (!ONLINE) shared.appendChild(empty("Offline — app-wide views unavailable."));
+  else if (_viewsTableMissing) shared.appendChild(empty("Run the views SQL (0006) in Supabase to enable app-wide views."));
+  else if (!sharedViews.length) shared.appendChild(empty("None yet."));
+  else sharedViews.forEach(v => shared.appendChild(mkRow(v.name, "shared", v.id, v.params)));
+  const personal = document.getElementById("viewsPersonal"); personal.innerHTML = "";
+  const pv = loadPersonalViews();
+  if (!pv.length) personal.appendChild(empty("None yet."));
+  else pv.forEach(v => personal.appendChild(mkRow(v.name, "personal", v.name, v.params)));
+}
+async function openViews() { await loadSharedViews(); renderViews(); document.getElementById("viewsOverlay").classList.add("show"); }
+// Apply a saved view's query params: reset state to defaults, parse params, sync controls.
+function applySavedView(params) {
+  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; calMode = "month"; calRef = new Date(); listSplit = "";
+  activeBrands = new Set(brandsList.map(b => b.name));
+  try { history.replaceState(null, "", location.pathname + (params ? "?" + params : "")); } catch (e) {}
+  readUrl();
+  document.getElementById("search").value = searchText;
+  document.getElementById("channelFilter").value = channelFilter;
+  document.getElementById("colorBy").value = colorBy;
+  buildBrandFilters();
+  document.querySelectorAll("#calModeSeg button").forEach(b => b.classList.toggle("active", b.dataset.m === calMode));
+  updateFilterBtn();
+  setView(view);
 }
 function readUrl() {
   const p = new URLSearchParams(location.search);
@@ -2032,6 +2122,13 @@ async function init() {
   document.getElementById("filterOverlay").onclick = e => { if (e.target.id === "filterOverlay") e.currentTarget.classList.remove("show"); };
   document.getElementById("filterClear").onclick = () => { filters = {}; updateFilterBtn(); renderFilters(); render(); };
   updateFilterBtn();
+  const closeViews = () => document.getElementById("viewsOverlay").classList.remove("show");
+  document.getElementById("viewsBtn").onclick = openViews;
+  document.getElementById("viewsClose").onclick = closeViews;
+  document.getElementById("viewsX").onclick = closeViews;
+  document.getElementById("viewsOverlay").onclick = e => { if (e.target.id === "viewsOverlay") closeViews(); };
+  document.getElementById("vSaveBtn").onclick = () => addView(document.getElementById("vName").value, document.getElementById("vScope").value);
+  document.getElementById("vName").addEventListener("keydown", e => { if (e.key === "Enter") addView(document.getElementById("vName").value, document.getElementById("vScope").value); });
   document.getElementById("f_addEnd").onclick = () => { const w = document.getElementById("f_endWrap"); w.style.display = ""; document.getElementById("f_addEnd").style.display = "none"; const due = document.getElementById("f_due").value; const end = document.getElementById("f_end"); if (!end.value && due) end.value = due; end.focus(); updateSprintField(); };
   document.getElementById("f_clearEnd").onclick = () => { document.getElementById("f_end").value = ""; document.getElementById("f_endWrap").style.display = "none"; document.getElementById("f_addEnd").style.display = ""; updateSprintField(); };
   document.getElementById("f_due").addEventListener("change", updateSprintField);
@@ -2066,7 +2163,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") saveModal();
   });
 }
