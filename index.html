@@ -242,7 +242,7 @@
   .cal-dragging .ev-bar, .cal-dragging .ev { pointer-events: none; }
   /* Promotion: a thin colored stripe across the top groups items of the same promotion.
      Drawn as an inset shadow so it sits BELOW the bar's chips/text (and follows the rounded corners). */
-  .ev-bar.has-promo, .ev.has-promo { box-shadow: inset 0 3px 0 0 var(--promo); }
+  .ev-bar.has-promo, .ev.has-promo, .card.has-promo, .list-task.has-promo { box-shadow: inset 0 3px 0 0 var(--promo); }
   .ev-bar { position: absolute; height: 19px; line-height: 19px; border-radius: 5px; color: #fff; font-size: 11px;
     padding: 0 7px; overflow: hidden; cursor: grab; pointer-events: auto; box-sizing: border-box;
     display: flex; align-items: center; gap: 5px; }
@@ -509,8 +509,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.39";
+const VERSION = "1.40";
 const CHANGELOG = [
+  "v1.40 — Promotion color now also shows as a top stripe on Board cards and List items (matching the calendar). Calendar’s Unscheduled panel only shows undated items with no sprint, or whose set sprint falls within the dates you’re viewing.",
   "v1.39 — Sprint headers/pills now show the week’s date range (e.g. “Jun 15 – Jun 21”); the List view lets you select multiple sprints (chips + add-week picker); spacing added under the add-task row; and on mobile a “Controls” button collapses the top area.",
   "v1.38 — List items now use the Color: brand/channel/status setting (left stripe); a “⟳ N sprints” badge tracks how many sprints a task has carried across (hover for the list); and you can hide the calendar’s Unscheduled panel to give the grid full width.",
   "v1.37 — List view: opens to the current week’s sprint by default, and “Split by” any dimension (owner, status, brand, channel, promotion, field) into columns across the page. Filter panel’s Sprint section now shows just the ±2-week window with a “＋ Add sprint” week picker.",
@@ -633,6 +634,15 @@ function calVisibleRange() {
   const first = new Date(y, m, 1); const gridStart = startOfWeek(first);
   const daysInMonth = new Date(y, m + 1, 0).getDate(); const weeks = Math.ceil((first.getDay() + daysInMonth) / 7);
   return { start: ymd(gridStart), end: ymd(addDays(gridStart, weeks * 7 - 1)) };
+}
+// Does an ISO sprint week's date range overlap the currently-displayed calendar window?
+function sprintInView(sprintStr) {
+  const mon = isoWeekStart(sprintStr); if (!mon) return false;
+  const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+  const ymdU = d => d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+  const sStart = ymdU(mon), sEnd = ymdU(sun);
+  const r = calVisibleRange();
+  return !(sEnd < r.start || sStart > r.end);
 }
 // Promotions for the legend: the viewed calendar range on Calendar, else ±30 days from today.
 function legendPromoSet() {
@@ -1125,6 +1135,7 @@ function listTaskEl(c) {
   const subs = cardSubtasks(c); const prog = subProgress(c); const exp = listExpanded.has(c.id);
   const wrap = document.createElement("div"); wrap.className = "list-task";
   wrap.style.borderLeftColor = colorFor(c);   // respects the Color: brand/channel/status setting
+  applyPromo(wrap, c);                          // promotion top stripe (same as calendar)
   const top = document.createElement("div"); top.className = "lt-top";
   const chev = document.createElement("button"); chev.className = "lt-chev"; chev.textContent = exp ? "▾" : "▸";
   chev.title = exp ? "Hide subtasks" : "Show / add subtasks";
@@ -1204,7 +1215,7 @@ function fmtRange(due, end) {
 }
 function cardEl(c) {
   const el = document.createElement("div"); el.className = "card";
-  el.style.borderLeftColor = colorFor(c); el.draggable = true;
+  el.style.borderLeftColor = colorFor(c); el.draggable = true; applyPromo(el, c);
   const badges = dimBadges(c);
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
   const prog = subProgress(c);
@@ -1475,7 +1486,8 @@ function renderTray() {
   tray.style.display = showTray ? "" : "none";
   if (!showTray) return;
   tray.innerHTML = "<h3>Unscheduled</h3>";
-  const un = visibleCards().filter(c => !c.due && !c.end);
+  // Undated items only: show those with no sprint, or whose set sprint falls within the visible calendar window.
+  const un = visibleCards().filter(c => { if (c.due || c.end) return false; const sp = cardSprint(c); return !sp || sprintInView(sp); });
   if (un.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Nothing unscheduled"; tray.appendChild(e); return; }
   un.forEach(c => { const e = evEl(c); e.style.whiteSpace = "normal"; tray.appendChild(e); });
 }
