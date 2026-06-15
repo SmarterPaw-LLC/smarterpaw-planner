@@ -583,8 +583,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.47";
+const VERSION = "1.48";
 const CHANGELOG = [
+  "v1.48 — Tidied the List header: dropped the redundant “Sprint” label and the duplicate sprint chips (selected sprints already show in the “Filtering by” row); the ＋ Sprint picker and No-sprint toggle remain.",
   "v1.47 — Sprint pickers now use a normal date picker (pick any day in the week) so they work in Safari and on iPhone, where the old week picker had no support.",
   "v1.46 — Advanced filter: build conditions with is / is not / is empty / is not empty, multi-select values, and match ALL (AND) or ANY (OR) — e.g. “Sprint is empty AND Status is not Live”. Typed URLs in Notes now auto-link; fixed the mobile sprint picker closing instantly.",
   "v1.45 — Notes is now a rich-text editor (Bold/Italic/Lists/Links) with clickable links on cards. The “⟳ N sprints” tracker now shows for any date-range item (badge + modal), not only after edits.",
@@ -1224,12 +1225,7 @@ function render() {
   writeUrl(); renderLegend(); renderActiveFilters();
   if (view === "calendar") renderCalendar();
   else if (view === "grid") renderGrid();
-  else if (view === "list") {
-    // Don't rebuild the List while its sprint date/week picker is open (rebuilding would close the native picker).
-    const ae = document.activeElement;
-    if (ae && ae.closest && ae.closest("#list .list-head") && /^(date|week|month)$/.test(ae.type || "")) return;
-    renderList();
-  }
+  else if (view === "list") renderList();
   else renderBoard();
 }
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
@@ -1275,16 +1271,7 @@ function renderList() {
   splitSel.value = listSplit;
   splitSel.onchange = () => { listSplit = splitSel.value; render(); };
   right.appendChild(splitSel);
-  const lab = document.createElement("span"); lab.className = "list-sprint-lab"; lab.textContent = "Sprint"; right.appendChild(lab);
-  const selected = filters.sprint ? [...filters.sprint] : [];
-  const noSprintSel = selected.includes("");
-  // chips for each selected sprint week (removable)
-  selected.filter(Boolean).sort().forEach(s => {
-    const chip = document.createElement("span"); chip.className = "sprint-chip"; chip.title = sprintRange(s);
-    chip.innerHTML = `${esc(fmtSprint(s))} <span class="x">✕</span>`;
-    chip.querySelector(".x").onclick = () => { filters.sprint.delete(s); if (!filters.sprint.size) delete filters.sprint; updateFilterBtn(); render(); };
-    right.appendChild(chip);
-  });
+  const noSprintSel = filters.sprint ? filters.sprint.has("") : false;   // selected sprints show in the "Filtering by" row above
   // picker to ADD a sprint (date input works on Safari/iOS where type=week doesn't; pick any day → its week)
   const wkWrap = document.createElement("label"); wkWrap.className = "list-sprint-wk-wrap"; wkWrap.title = "Add a sprint — pick any day in the week";
   const wkLbl = document.createElement("span"); wkLbl.textContent = "＋ Sprint"; wkWrap.appendChild(wkLbl);
