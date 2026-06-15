@@ -35,6 +35,9 @@
     border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
   input:disabled { opacity: .75; cursor: not-allowed; }
+  /* The native date-picker calendar icon renders dark on a dark theme — brighten it so it's visible. */
+  input[type=date]::-webkit-calendar-picker-indicator { filter: invert(1) brightness(1.6); opacity: .65; cursor: pointer; }
+  input[type=date]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
   .chip { border: 1px solid var(--line); background: var(--panel-2); padding: 5px 11px; border-radius: 999px;
     font-size: 12px; cursor: pointer; user-select: none; display: inline-flex; gap: 6px; align-items: center; }
   .chip .dot { width: 9px; height: 9px; border-radius: 50%; }
@@ -584,8 +587,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.51";
+const VERSION = "1.52";
 const CHANGELOG = [
+  "v1.52 — Brightened the date-picker calendar icon so it’s visible on the dark theme (it was nearly invisible before).",
   "v1.51 — Fixed “Sprints tracked” for undated tasks: setting/changing the manual sprint week now records into the tracker (it previously only tracked sprints from a due-date range). The tracker also updates live as you change the date or sprint in the editor. Scheduled-lane badge is now a 🕒 clock emoji.",
   "v1.50 — Custom fields can now be a Text or Dropdown type (set the dropdown options in the Manage panel); the deliverable form shows a real dropdown. Scheduled-lane badge is now a 📅 emoji instead of the unclear clock.",
   "v1.49 — Fixed: clicking a promotion in the legend now actually filters and shows in the “Filtering by” row (regression from the advanced-filter change). Saved views gain an “Update” action to overwrite a view with your current filters.",
