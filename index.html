@@ -339,12 +339,10 @@
         <div class="ch-wrap"><input id="f_end" type="date" /><button type="button" id="f_clearEnd" title="Remove end date">✕</button></div>
       </div>
     </div>
+    <div class="field"><label>Sprint week <span class="opt">— auto from date; set only for undated tasks</span></label><input id="f_sprint" type="week" /></div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
-    <div class="row2">
-      <div class="field"><label>Promotion</label>
-        <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
-      </div>
-      <div class="field"><label>Sprint week <span class="opt">— auto from date; set only for undated tasks</span></label><input id="f_sprint" type="week" /></div>
+    <div class="field"><label>Promotion</label>
+      <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
     </div>
     <div class="field"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
       <div id="f_subs" class="subs-edit"></div>
@@ -457,8 +455,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.32";
+const VERSION = "1.33";
 const CHANGELOG = [
+  "v1.33 — Clicking outside the deliverable modal now saves your changes (Cancel still discards); Sprint week moved to its own row under the due date",
   "v1.32 — List view “+ Add task” now opens the full deliverable form (no more confusing inline title/week boxes); the sprint dropdown in the header is just the filter",
   "v1.31 — The modal now shows the auto-derived sprint week (read-only) when a deliverable has a date, updating live as you change the date; the field stays editable only for undated tasks",
   "v1.30 — New deliverables default to no channel (List items often have none); but if the view is filtered to a channel, a new deliverable auto-fills that channel",
@@ -1709,7 +1708,8 @@ async function init() {
   document.getElementById("saveBtn").onclick = saveModal;
   document.getElementById("cancelBtn").onclick = closeModal;
   document.getElementById("deleteBtn").onclick = deleteCard;
-  document.getElementById("overlay").onclick = e => { if (e.target.id === "overlay") closeModal(); };
+  // Click outside the deliverable modal saves your changes (closes & discards only if there's no title to save).
+  document.getElementById("overlay").onclick = e => { if (e.target.id !== "overlay") return; if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
   document.getElementById("f_channelAdd").onclick = async () => {
     const name = (prompt("New channel name:") || "").trim(); if (!name) return;
     const ok = await addList("channel", name); if (ok) document.getElementById("f_channel").value = name;
