@@ -94,6 +94,50 @@
   .add-row { display: flex; gap: 8px; margin-top: 9px; } .add-row input { flex: 1; }
   .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
   .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
+  .subs-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .sub-row { display: flex; align-items: center; gap: 8px; }
+  .sub-row input[type=checkbox] { width: 16px; height: 16px; flex: none; margin: 0; cursor: pointer; }
+  .sub-text { flex: 1; padding: 5px 9px; }
+  .sub-text.done { text-decoration: line-through; color: var(--muted); }
+  .sub-rm { flex: none; padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
+  .sub-rm:hover { border-color: var(--danger); }
+  .progress { height: 6px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+  .progress > i { display: block; height: 100%; background: var(--ok); border-radius: 999px; transition: width .15s; }
+  .progress.full > i { background: var(--ok); }
+  /* List / task view */
+  #list { display: none; flex-direction: column; gap: 16px; padding: 16px 20px; overflow: auto; }
+  .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .list-add-title { flex: 1; min-width: 200px; padding: 8px 11px; }
+  .list-add-week { width: 150px; padding: 7px 9px; }
+  .list-sprint-lab { margin-left: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
+  .list-sprint-sel { padding: 7px 9px; }
+  .list-empty { padding: 30px; text-align: center; }
+  .list-sec { display: flex; flex-direction: column; gap: 7px; }
+  .list-sec-head { display: flex; align-items: center; gap: 9px; padding: 2px 2px 4px; border-bottom: 1px solid var(--line); }
+  .list-sec-head .ls-name { font-weight: 700; font-size: 13px; }
+  .list-sec-head .ls-count { font-size: 11px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  .list-task { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+  .lt-top { display: flex; align-items: flex-start; gap: 8px; }
+  .lt-chev { flex: none; padding: 0; width: 20px; height: 22px; color: var(--muted); border: none; background: transparent; font-size: 12px; cursor: pointer; }
+  .lt-chev.ghost-chev { opacity: .35; }
+  .lt-chev:hover { color: var(--text); }
+  .lt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .lt-title { font-weight: 600; cursor: pointer; }
+  .lt-title:hover { color: var(--accent); }
+  .lt-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .lt-meta .lt-sub { font-size: 12px; color: var(--muted); }
+  .lt-prog { display: flex; align-items: center; gap: 9px; max-width: 320px; }
+  .lt-prog .progress { flex: 1; }
+  .lt-prog .lt-prog-txt { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+  .lt-subs { display: flex; flex-direction: column; gap: 5px; margin: 9px 0 2px 28px; padding-left: 11px; border-left: 2px solid var(--line); }
+  .lt-sub-row { display: flex; align-items: center; gap: 8px; }
+  .lt-sub-row input[type=checkbox] { width: 15px; height: 15px; flex: none; margin: 0; cursor: pointer; }
+  .lt-sub-text { flex: 1; font-size: 13px; }
+  .lt-sub-text.done { text-decoration: line-through; color: var(--muted); }
+  .lt-sub-add input { flex: 1; padding: 4px 9px; font-size: 13px; }
+  .card-prog { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .card-prog .progress { flex: 1; }
+  .card-prog span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--danger);
     color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 80; display: none; max-width: 90vw; }
   /* calendar */
@@ -234,7 +278,7 @@
   <div class="brand-title">Smarter<span>Paw</span> · Channel Planner</div>
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
-  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button></div>
+  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button></div>
   <div class="filters" id="brandFilters"></div>
   <div class="filters">
     <select id="channelFilter"><option value="">All channels</option></select>
@@ -272,6 +316,8 @@
 
 <div id="grid"><div class="grid-wrap"><table id="gridTable"></table></div></div>
 
+<div id="list"></div>
+
 <!-- Add / Edit deliverable -->
 <div class="overlay" id="overlay">
   <div class="modal">
@@ -294,8 +340,15 @@
       </div>
     </div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
-    <div class="field"><label>Promotion</label>
-      <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
+    <div class="row2">
+      <div class="field"><label>Promotion</label>
+        <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
+      </div>
+      <div class="field"><label>Sprint week</label><input id="f_sprint" type="week" /></div>
+    </div>
+    <div class="field"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
+      <div id="f_subs" class="subs-edit"></div>
+      <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask…" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button></div>
     </div>
     <div id="f_fields"></div>
     <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Brief, links, copy direction…"></textarea></div>
@@ -404,8 +457,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.27";
+const VERSION = "1.28";
 const CHANGELOG = [
+  "v1.28 — New List view for sprint task planning: add tasks, give each subtasks (checkbox + progress bar), set a sprint week, and filter by sprint. Tasks are deliverables, so they also show on Board, Calendar & Grid.",
   "v1.27 — Mark a lane as “Scheduled” (Manage panel) to give its cards & calendar events a clock badge, just like the green ✓ for the Complete lane. Defaults to a lane named “Scheduled”.",
   "v1.26 — Promotions legend now follows the calendar period you're viewing (so navigating to an empty month shows no promotions); on Board/Grid it stays ±30 days from today",
   "v1.25 — Promotions color legend on the right of the channel-legend row (promotions dated within ±30 days); click a promotion to filter, same as channels",
@@ -444,6 +498,22 @@ function promoHash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 3
 function promoColor(name) { return name ? PROMO_PALETTE[promoHash(name) % PROMO_PALETTE.length] : ""; }
 function cardPromo(c) { return (c.fields && c.fields[PROMO_KEY]) || ""; }
 function allPromos() { return [...new Set(cards.map(cardPromo).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
+// Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks";
+function cardSprint(c) { return (c.fields && c.fields[SPRINT_KEY]) || ""; }
+function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_KEY])) ? c.fields[SUBTASKS_KEY] : []; }
+function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
+function allSprints() { return [...new Set(cards.map(cardSprint).filter(Boolean))].sort(); } // ISO week strings sort chronologically
+function fmtSprint(w) { const m = /^(\d{4})-W(\d{2})$/.exec(w || ""); return m ? "Wk " + (+m[2]) + " ’" + m[1].slice(2) : (w || ""); }
+function subId() { return "st" + (_idc++).toString(36); }
+// Set fields[key] = val (or delete if empty) on a card object, mutating in place.
+function setCardField(c, key, val) { c.fields = c.fields || {}; if (val === "" || val == null || (Array.isArray(val) && !val.length)) delete c.fields[key]; else c.fields[key] = val; }
+// Persist just a card's fields blob (used for inline subtask toggles); optimistic — caller updates local + renders first.
+async function saveCardFields(c) {
+  if (!ONLINE) { saveLocal(); return; }
+  const { error } = await db.from("deliverables").update({ fields: c.fields }).eq("id", c.id);
+  if (error) toast("Save failed: " + error.message);
+}
 // Promotions with at least one dated card overlapping [start, end] (ymd strings).
 function promosInRange(start, end) {
   const set = new Set();
@@ -482,7 +552,7 @@ function statusColor(name) { return colorOf(statusList, name, STATUS_COLORS); }
 function colorFor(c) { return colorBy === "channel" ? channelColorOf(c.channel) : colorBy === "status" ? statusColor(c.status) : brandColor(c.brand); }
 function availableDims() {
   return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owners", label: "Owners" },
-    { key: "status", label: "Lane / status" }, { key: "promotion", label: "Promotion" }, { key: "dates", label: "Dates" }]
+    { key: "status", label: "Lane / status" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }, { key: "dates", label: "Dates" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
 }
 function dimInfo(c, key) {
@@ -491,6 +561,7 @@ function dimInfo(c, key) {
   if (key === "owners") return { text: c.owner, color: null };
   if (key === "status") return { text: c.status, color: statusColor(c.status) };
   if (key === "promotion") { const p = cardPromo(c); return { text: p, color: promoColor(p) }; }
+  if (key === "sprint") return { text: fmtSprint(cardSprint(c)), color: null };
   if (key === "dates") return { text: fmtRange(c.due, c.end), color: null };
   if (key.indexOf("field:") === 0) { const n = key.slice(6); return { text: (c.fields && c.fields[n]) || "", color: null }; }
   return { text: "", color: null };
@@ -537,6 +608,7 @@ let activeBrands = new Set(BRANDS.map(b => b.name));
 let channelFilter = "", searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
+let modalSubs = [];   // working copy of the open card's subtasks
 let view = "board", calMode = "month", calRef = new Date();
 let gridSort = { key: "due", dir: 1 };
 let legendSel = new Set();
@@ -743,6 +815,7 @@ function passesFilters(c) {
   if (filters.owner && filters.owner.size && !splitOwners(c.owner).some(o => filters.owner.has(o))) return false;
   if (filters.status && filters.status.size && !filters.status.has(c.status)) return false;
   if (filters.promotion && filters.promotion.size && !filters.promotion.has(cardPromo(c))) return false;
+  if (filters.sprint && filters.sprint.size && !filters.sprint.has(cardSprint(c))) return false;
   for (let i = 0; i < fieldsList.length; i++) {
     const key = "field:" + fieldsList[i].name, set = filters[key];
     if (set && set.size && !set.has((c.fields && c.fields[fieldsList[i].name]) || "")) return false;
@@ -759,6 +832,7 @@ function filterValues(key) {
   if (key === "owner") return peopleList.map(p => p.name);
   if (key === "status") return statusList.map(s => s.name);
   if (key === "promotion") return allPromos();
+  if (key === "sprint") return allSprints();
   const name = key.slice(6);
   return [...new Set(cards.map(c => c.fields && c.fields[name]).filter(Boolean))].sort();
 }
@@ -769,7 +843,7 @@ function updateFilterBtn() {
 }
 function renderFilters() {
   const body = document.getElementById("filterBody"); body.innerHTML = "";
-  const sections = [{ key: "owner", label: "Owners" }, { key: "status", label: "Lane / status" }, { key: "promotion", label: "Promotion" }]
+  const sections = [{ key: "owner", label: "Owners" }, { key: "status", label: "Lane / status" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
   sections.forEach(sec => {
     const vals = filterValues(sec.key); if (!vals.length) return;
@@ -784,7 +858,7 @@ function renderFilters() {
         if (cb.checked) filters[sec.key].add(v); else { filters[sec.key].delete(v); if (!filters[sec.key].size) delete filters[sec.key]; }
         updateFilterBtn(); render();
       };
-      l.appendChild(cb); l.appendChild(document.createTextNode(" " + v)); list.appendChild(l);
+      l.appendChild(cb); l.appendChild(document.createTextNode(" " + (sec.key === "sprint" ? fmtSprint(v) : v))); list.appendChild(l);
     });
     wrap.appendChild(list); body.appendChild(wrap);
   });
@@ -792,7 +866,7 @@ function renderFilters() {
 }
 function openFilter() { renderFilters(); document.getElementById("filterOverlay").classList.add("show"); }
 function filterKeyLabel(key) {
-  if (key === "owner") return "Owner"; if (key === "status") return "Lane"; if (key === "promotion") return "Promotion";
+  if (key === "owner") return "Owner"; if (key === "status") return "Lane"; if (key === "promotion") return "Promotion"; if (key === "sprint") return "Sprint";
   if (key.indexOf("field:") === 0) return key.slice(6); return key;
 }
 function renderActiveFilters() {
@@ -803,7 +877,7 @@ function renderActiveFilters() {
   if (channelFilter) pills.push({ k: "Channel", v: channelFilter, remove: () => { channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = ""; } });
   const dimLabel = (COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0]).label;
   legendSel.forEach(v => pills.push({ k: dimLabel, v, remove: () => legendSel.delete(v) }));
-  Object.keys(filters).forEach(key => { const set = filters[key]; if (!set) return; set.forEach(v => pills.push({ k: filterKeyLabel(key), v: v || "(blank)", remove: () => { set.delete(v); if (!set.size) delete filters[key]; } })); });
+  Object.keys(filters).forEach(key => { const set = filters[key]; if (!set) return; set.forEach(v => { const disp = key === "sprint" ? (v ? fmtSprint(v) : "No sprint") : (v || "(blank)"); pills.push({ k: filterKeyLabel(key), v: disp, remove: () => { set.delete(v); if (!set.size) delete filters[key]; } }); }); });
 
   if (!pills.length) { bar.style.display = "none"; return; }
   bar.style.display = "flex";
@@ -824,7 +898,91 @@ function renderActiveFilters() {
   };
   bar.appendChild(clear);
 }
-function render() { renderLegend(); renderActiveFilters(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else renderBoard(); }
+function render() { renderLegend(); renderActiveFilters(); if (view === "calendar") renderCalendar(); else if (view === "grid") renderGrid(); else if (view === "list") renderList(); else renderBoard(); }
+let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
+function renderList() {
+  const root = document.getElementById("list"); root.innerHTML = "";
+  // header: quick add-task + sprint focus selector
+  const head = document.createElement("div"); head.className = "list-head";
+  const ti = document.createElement("input"); ti.className = "list-add-title"; ti.placeholder = "Add a task…"; ti.autocomplete = "off";
+  const wk = document.createElement("input"); wk.type = "week"; wk.className = "list-add-week"; wk.title = "Sprint week (optional)";
+  const ab = document.createElement("button"); ab.className = "primary"; ab.textContent = "Add task";
+  const doAdd = () => { const t = ti.value.trim(); if (!t) { ti.focus(); return; }
+    const f = {}; if (wk.value) f[SPRINT_KEY] = wk.value;
+    createCard({ title: t, brand: (BRANDS[0]||{}).name || "", channel: "", owner: "", due: "", end: "",
+      status: statusList[0] ? statusList[0].name : "Backlog", notes: "", fields: f });
+    ti.value = ""; ti.focus(); };
+  ab.onclick = doAdd; ti.addEventListener("keydown", e => { if (e.key === "Enter") doAdd(); });
+  head.appendChild(ti); head.appendChild(wk); head.appendChild(ab);
+  const lab = document.createElement("span"); lab.className = "list-sprint-lab"; lab.textContent = "Sprint"; head.appendChild(lab);
+  const sel = document.createElement("select"); sel.className = "list-sprint-sel";
+  const oAll = document.createElement("option"); oAll.value = "__all__"; oAll.textContent = "All sprints"; sel.appendChild(oAll);
+  allSprints().forEach(s => { const o = document.createElement("option"); o.value = s; o.textContent = fmtSprint(s); sel.appendChild(o); });
+  const oNo = document.createElement("option"); oNo.value = "__none__"; oNo.textContent = "No sprint"; sel.appendChild(oNo);
+  const cur = (filters.sprint && filters.sprint.size === 1) ? [...filters.sprint][0] : null;
+  sel.value = cur === null ? "__all__" : (cur === "" ? "__none__" : cur);
+  sel.onchange = () => { const v = sel.value; if (v === "__all__") delete filters.sprint; else filters.sprint = new Set([v === "__none__" ? "" : v]); updateFilterBtn(); render(); };
+  head.appendChild(sel); root.appendChild(head);
+  // grouped tasks (by sprint, chronological; "No sprint" last)
+  const items = visibleCards();
+  if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; root.appendChild(e); return; }
+  const groups = {}; items.forEach(c => { const s = cardSprint(c); (groups[s] = groups[s] || []).push(c); });
+  const ordered = Object.keys(groups).filter(k => k).sort().concat(groups[""] ? [""] : []);
+  ordered.forEach(sk => {
+    const sec = document.createElement("div"); sec.className = "list-sec";
+    const h = document.createElement("div"); h.className = "list-sec-head";
+    h.innerHTML = `<span class="ls-name">${sk ? esc(fmtSprint(sk)) : "No sprint"}</span><span class="ls-count">${groups[sk].length}</span>`;
+    sec.appendChild(h);
+    groups[sk].forEach(c => sec.appendChild(listTaskEl(c)));
+    root.appendChild(sec);
+  });
+}
+function listTaskEl(c) {
+  const subs = cardSubtasks(c); const prog = subProgress(c); const exp = listExpanded.has(c.id);
+  const wrap = document.createElement("div"); wrap.className = "list-task";
+  const top = document.createElement("div"); top.className = "lt-top";
+  const chev = document.createElement("button"); chev.className = "lt-chev" + (subs.length ? "" : " ghost-chev"); chev.textContent = subs.length ? (exp ? "▾" : "▸") : "";
+  chev.title = "Show subtasks";
+  chev.onclick = (e) => { e.stopPropagation(); if (!subs.length) { listExpanded.add(c.id); openModal(c); return; } if (exp) listExpanded.delete(c.id); else listExpanded.add(c.id); renderList(); };
+  top.appendChild(chev);
+  const main = document.createElement("div"); main.className = "lt-main";
+  const title = document.createElement("div"); title.className = "lt-title";
+  const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
+  title.innerHTML = done + schedBadge(c) + esc(c.title);
+  title.onclick = () => openModal(c);
+  main.appendChild(title);
+  const meta = document.createElement("div"); meta.className = "lt-meta";
+  const sub = [c.channel, c.owner, cardPromo(c), fmtRange(c.due, c.end)].filter(Boolean).map(esc).join(" · ");
+  meta.innerHTML = `<span class="dchip" style="background:${statusColor(c.status)};border-color:rgba(255,255,255,.85);color:#fff">${esc(c.status)}</span>`
+    + (sub ? `<span class="lt-sub">${sub}</span>` : "");
+  main.appendChild(meta);
+  if (subs.length) {
+    const pr = document.createElement("div"); pr.className = "lt-prog";
+    pr.innerHTML = `<div class="progress${prog.pct === 100 ? " full" : ""}"><i style="width:${prog.pct}%"></i></div><span class="lt-prog-txt">${prog.done}/${prog.total}</span>`;
+    main.appendChild(pr);
+  }
+  top.appendChild(main); wrap.appendChild(top);
+  if (exp) {
+    const sb = document.createElement("div"); sb.className = "lt-subs";
+    subs.forEach(s => {
+      const row = document.createElement("div"); row.className = "lt-sub-row";
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
+      cb.onchange = () => { s.done = cb.checked; setCardField(c, SUBTASKS_KEY, cardSubtasks(c)); saveCardFields(c); renderList(); };
+      const tx = document.createElement("span"); tx.className = "lt-sub-text" + (s.done ? " done" : ""); tx.textContent = s.text;
+      const rm = document.createElement("button"); rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove subtask";
+      rm.onclick = () => { setCardField(c, SUBTASKS_KEY, cardSubtasks(c).filter(x => x !== s)); saveCardFields(c); renderList(); };
+      row.appendChild(cb); row.appendChild(tx); row.appendChild(rm); sb.appendChild(row);
+    });
+    const addRow = document.createElement("div"); addRow.className = "lt-sub-row lt-sub-add";
+    const ai = document.createElement("input"); ai.placeholder = "Add subtask…"; ai.autocomplete = "off";
+    const doAddSub = () => { const t = ai.value.trim(); if (!t) return; const arr = cardSubtasks(c).slice(); arr.push({ id: subId(), text: t, done: false }); setCardField(c, SUBTASKS_KEY, arr); saveCardFields(c); renderList(); };
+    ai.addEventListener("keydown", e => { if (e.key === "Enter") doAddSub(); });
+    const aib = document.createElement("button"); aib.className = "sub-rm"; aib.textContent = "＋"; aib.style.color = "var(--accent)"; aib.onclick = doAddSub;
+    addRow.appendChild(ai); addRow.appendChild(aib); sb.appendChild(addRow);
+    wrap.appendChild(sb);
+  }
+  return wrap;
+}
 function renderBoard() {
   const board = document.getElementById("board"); board.innerHTML = "";
   const vis = visibleCards();
@@ -862,8 +1020,11 @@ function cardEl(c) {
   el.style.borderLeftColor = colorFor(c); el.draggable = true;
   const badges = dimBadges(c);
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
+  const prog = subProgress(c);
+  const progHtml = prog.total ? `<div class="card-prog"><div class="progress${prog.pct === 100 ? " full" : ""}"><i style="width:${prog.pct}%"></i></div><span>${prog.done}/${prog.total}</span></div>` : "";
   el.innerHTML = `<h3>${done}${schedBadge(c)}${esc(c.title)}</h3>` +
     (badges ? `<div class="dimrow${curDisp().badge ? "" : " text"}">${badges}</div>` : "") +
+    progHtml +
     (c.notes ? `<div class="notes">${esc(c.notes)}</div>` : "");
   el.addEventListener("click", () => openModal(c));
   el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); el.classList.add("dragging"); });
@@ -883,7 +1044,8 @@ function setView(v) {
   document.getElementById("board").style.display = v === "board" ? "flex" : "none";
   document.getElementById("calendar").style.display = v === "calendar" ? "flex" : "none";
   document.getElementById("grid").style.display = v === "grid" ? "flex" : "none";
-  document.getElementById("calSettingsBtn").style.display = v === "grid" ? "none" : "";
+  document.getElementById("list").style.display = v === "list" ? "block" : "none";
+  document.getElementById("calSettingsBtn").style.display = (v === "grid" || v === "list") ? "none" : "";
   document.querySelectorAll("#viewToggle button").forEach(b => b.classList.toggle("active", b.dataset.v === v));
   render();
 }
@@ -940,12 +1102,14 @@ function renderLegend() {
   }
 }
 function gridColumns() {
-  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "promotion", label: "Promotion" }, { key: "title", label: "Title" },
-    { key: "owner", label: "Owners" }, { key: "status", label: "Status" }, { key: "due", label: "Due" }, { key: "end", label: "End" }]
+  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }, { key: "title", label: "Title" },
+    { key: "owner", label: "Owners" }, { key: "status", label: "Status" }, { key: "subtasks", label: "Subtasks" }, { key: "due", label: "Due" }, { key: "end", label: "End" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name }))).concat([{ key: "notes", label: "Notes" }]);
 }
 function gridValue(c, key) {
   if (key === "promotion") return cardPromo(c);
+  if (key === "sprint") return cardSprint(c);
+  if (key === "subtasks") { const p = subProgress(c); return p.total ? p.done + "/" + p.total : ""; }
   if (key.indexOf("field:") === 0) return (c.fields && c.fields[key.slice(6)]) || "";
   return c[key] || "";
 }
@@ -972,6 +1136,7 @@ function renderGrid() {
       if (col.key === "brand") { const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = brandColor(c.brand); td.appendChild(dot); td.appendChild(document.createTextNode(c.brand)); }
       else if (col.key === "promotion") { const p = cardPromo(c); if (p) { const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = promoColor(p); td.appendChild(dot); } td.appendChild(document.createTextNode(p)); }
       else if (col.key === "due" || col.key === "end") td.textContent = gridValue(c, col.key) ? fmtDue(gridValue(c, col.key)) : "";
+      else if (col.key === "sprint") td.textContent = fmtSprint(cardSprint(c));
       else td.textContent = gridValue(c, col.key);
       tr.appendChild(td);
     });
@@ -1226,6 +1391,25 @@ function renderOwnerChips() {
     const ok = await addList("person", name); if (ok) { modalOwners.add(name); renderOwnerChips(); } };
   box.appendChild(add);
 }
+function renderSubsEdit() {
+  const box = document.getElementById("f_subs"); box.innerHTML = "";
+  const done = modalSubs.filter(s => s.done).length;
+  document.getElementById("f_subProg").textContent = modalSubs.length ? "(" + done + "/" + modalSubs.length + ")" : "";
+  modalSubs.forEach(s => {
+    const row = document.createElement("div"); row.className = "sub-row";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
+    cb.onchange = () => { s.done = cb.checked; renderSubsEdit(); };
+    const inp = document.createElement("input"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.value = s.text;
+    inp.oninput = () => { s.text = inp.value; };
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
+    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
+    row.appendChild(cb); row.appendChild(inp); row.appendChild(rm); box.appendChild(row);
+  });
+}
+function addModalSub() {
+  const inp = document.getElementById("f_subAdd"); const t = inp.value.trim(); if (!t) return;
+  modalSubs.push({ id: subId(), text: t, done: false }); inp.value = ""; renderSubsEdit(); inp.focus();
+}
 function renderFieldInputs(values) {
   const box = document.getElementById("f_fields"); box.innerHTML = "";
   fieldsList.forEach(f => {
@@ -1256,6 +1440,9 @@ function openModal(card, prefill) {
   document.getElementById("f_addEnd").style.display = hasEnd ? "none" : "";
   renderFieldInputs(card ? (card.fields || {}) : {});
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
+  document.getElementById("f_sprint").value = card ? cardSprint(card) : (prefill && prefill.sprint ? prefill.sprint : "");
+  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done })) : [];
+  document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : (statusList[0] ? statusList[0].name : "Backlog");
@@ -1273,6 +1460,10 @@ function saveModal() {
   document.querySelectorAll("#f_fields input").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
   const promo = document.getElementById("f_promo").value.trim();
   if (promo && promo !== "__add_promo__") fields[PROMO_KEY] = promo;
+  const sprint = document.getElementById("f_sprint").value;
+  if (sprint) fields[SPRINT_KEY] = sprint;
+  const subs = modalSubs.map(s => ({ id: s.id, text: s.text.trim(), done: !!s.done })).filter(s => s.text);
+  if (subs.length) fields[SUBTASKS_KEY] = subs;
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
@@ -1378,8 +1569,8 @@ function closeManage() { manageOpen = false; document.getElementById("manageOver
 /* ---------- exports ---------- */
 function download(filename, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
-function exportCols() { return ["Brand","Channel","Promotion","Title","Owners","Status","Due","End"].concat(fieldsList.map(f => f.name)).concat(["Notes"]); }
-function exportRow(c) { return [c.brand, c.channel, cardPromo(c), c.title, c.owner||"", c.status, c.due||"", c.end||""]
+function exportCols() { return ["Brand","Channel","Promotion","Sprint","Title","Owners","Status","Subtasks","Due","End"].concat(fieldsList.map(f => f.name)).concat(["Notes"]); }
+function exportRow(c) { const p = subProgress(c); return [c.brand, c.channel, cardPromo(c), cardSprint(c), c.title, c.owner||"", c.status, p.total ? p.done + "/" + p.total : "", c.due||"", c.end||""]
   .concat(fieldsList.map(f => (c.fields && c.fields[f.name]) || "")).concat([(c.notes||"").replace(/\n/g," ")]); }
 function exportCSV() {
   const rows = [exportCols()];
@@ -1497,6 +1688,8 @@ async function init() {
   });
   document.getElementById("f_promoAdd").onclick = () => addPromoPrompt();
   document.getElementById("f_promo").addEventListener("change", e => { if (e.target.value === "__add_promo__") addPromoPrompt(); });
+  document.getElementById("f_subAddBtn").onclick = addModalSub;
+  document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addModalSub(); } });
   document.getElementById("xlsxBtn").onclick = exportXLSX;
   document.getElementById("verBtn").onclick = () => document.getElementById("verOverlay").classList.add("show");
   document.getElementById("verClose").onclick = () => document.getElementById("verOverlay").classList.remove("show");
