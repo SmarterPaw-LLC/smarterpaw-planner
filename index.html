@@ -110,6 +110,10 @@
   .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .list-head-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
   .list-sprint-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
+  .list-sprint-wk { padding: 6px 9px; }
+  .sprint-none { padding: 6px 11px; font-size: 12px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .sprint-none:hover { color: var(--text); border-color: var(--accent); }
+  .sprint-none.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
   .list-sprint-sel { padding: 7px 9px; }
   .list-empty { padding: 30px; text-align: center; }
   .list-sec { display: flex; flex-direction: column; gap: 7px; }
@@ -455,8 +459,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.33";
+const VERSION = "1.34";
 const CHANGELOG = [
+  "v1.34 — List view sprint filter is now a calendar week picker (like the modal); clear it for all sprints, or use the “No sprint” toggle for undated tasks",
   "v1.33 — Clicking outside the deliverable modal now saves your changes (Cancel still discards); Sprint week moved to its own row under the due date",
   "v1.32 — List view “+ Add task” now opens the full deliverable form (no more confusing inline title/week boxes); the sprint dropdown in the header is just the filter",
   "v1.31 — The modal now shows the auto-derived sprint week (read-only) when a deliverable has a date, updating live as you change the date; the field stays editable only for undated tasks",
@@ -929,14 +934,14 @@ function renderList() {
   head.appendChild(ab);
   const right = document.createElement("div"); right.className = "list-head-right";
   const lab = document.createElement("span"); lab.className = "list-sprint-lab"; lab.textContent = "Sprint"; right.appendChild(lab);
-  const sel = document.createElement("select"); sel.className = "list-sprint-sel";
-  const oAll = document.createElement("option"); oAll.value = "__all__"; oAll.textContent = "All sprints"; sel.appendChild(oAll);
-  allSprints().forEach(s => { const o = document.createElement("option"); o.value = s; o.textContent = fmtSprint(s); sel.appendChild(o); });
-  const oNo = document.createElement("option"); oNo.value = "__none__"; oNo.textContent = "No sprint"; sel.appendChild(oNo);
-  const cur = (filters.sprint && filters.sprint.size === 1) ? [...filters.sprint][0] : null;
-  sel.value = cur === null ? "__all__" : (cur === "" ? "__none__" : cur);
-  sel.onchange = () => { const v = sel.value; if (v === "__all__") delete filters.sprint; else filters.sprint = new Set([v === "__none__" ? "" : v]); updateFilterBtn(); render(); };
-  right.appendChild(sel); head.appendChild(right); root.appendChild(head);
+  const cur = (filters.sprint && filters.sprint.size === 1) ? [...filters.sprint][0] : null;   // null=all, ""=no sprint, ISO week=specific
+  const wk = document.createElement("input"); wk.type = "week"; wk.className = "list-sprint-wk"; wk.title = "Filter to a sprint week — clear to show all";
+  wk.value = (cur && cur !== "") ? cur : "";
+  wk.onchange = () => { if (wk.value) filters.sprint = new Set([wk.value]); else delete filters.sprint; updateFilterBtn(); render(); };
+  right.appendChild(wk);
+  const noBtn = document.createElement("button"); noBtn.className = "sprint-none" + (cur === "" ? " on" : ""); noBtn.textContent = "No sprint"; noBtn.title = "Show only undated tasks";
+  noBtn.onclick = () => { if (cur === "") delete filters.sprint; else filters.sprint = new Set([""]); updateFilterBtn(); render(); };
+  right.appendChild(noBtn); head.appendChild(right); root.appendChild(head);
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
   if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; root.appendChild(e); return; }
