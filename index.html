@@ -108,9 +108,8 @@
   /* List / task view */
   #list { display: none; flex-direction: column; gap: 16px; padding: 16px 20px; overflow: auto; }
   .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .list-add-title { flex: 1; min-width: 200px; padding: 8px 11px; }
-  .list-add-week { width: 150px; padding: 7px 9px; }
-  .list-sprint-lab { margin-left: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
+  .list-head-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+  .list-sprint-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
   .list-sprint-sel { padding: 7px 9px; }
   .list-empty { padding: 30px; text-align: center; }
   .list-sec { display: flex; flex-direction: column; gap: 7px; }
@@ -458,8 +457,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.31";
+const VERSION = "1.32";
 const CHANGELOG = [
+  "v1.32 — List view “+ Add task” now opens the full deliverable form (no more confusing inline title/week boxes); the sprint dropdown in the header is just the filter",
   "v1.31 — The modal now shows the auto-derived sprint week (read-only) when a deliverable has a date, updating live as you change the date; the field stays editable only for undated tasks",
   "v1.30 — New deliverables default to no channel (List items often have none); but if the view is filtered to a channel, a new deliverable auto-fills that channel",
   "v1.29 — Sprint is now auto-set from a deliverable's date (first week a date range falls into); expand any task in the List view to add subtasks inline (each saved instantly)",
@@ -923,19 +923,13 @@ function render() { renderLegend(); renderActiveFilters(); if (view === "calenda
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
 function renderList() {
   const root = document.getElementById("list"); root.innerHTML = "";
-  // header: quick add-task + sprint focus selector
+  // header: add-task (opens the deliverable modal) + sprint filter
   const head = document.createElement("div"); head.className = "list-head";
-  const ti = document.createElement("input"); ti.className = "list-add-title"; ti.placeholder = "Add a task…"; ti.autocomplete = "off";
-  const wk = document.createElement("input"); wk.type = "week"; wk.className = "list-add-week"; wk.title = "Sprint week (optional)";
-  const ab = document.createElement("button"); ab.className = "primary"; ab.textContent = "Add task";
-  const doAdd = () => { const t = ti.value.trim(); if (!t) { ti.focus(); return; }
-    const f = {}; if (wk.value) f[SPRINT_KEY] = wk.value;
-    createCard({ title: t, brand: (BRANDS[0]||{}).name || "", channel: "", owner: "", due: "", end: "",
-      status: statusList[0] ? statusList[0].name : "Backlog", notes: "", fields: f });
-    ti.value = ""; ti.focus(); };
-  ab.onclick = doAdd; ti.addEventListener("keydown", e => { if (e.key === "Enter") doAdd(); });
-  head.appendChild(ti); head.appendChild(wk); head.appendChild(ab);
-  const lab = document.createElement("span"); lab.className = "list-sprint-lab"; lab.textContent = "Sprint"; head.appendChild(lab);
+  const ab = document.createElement("button"); ab.className = "primary"; ab.textContent = "+ Add task";
+  ab.onclick = () => openModal(null, {});
+  head.appendChild(ab);
+  const right = document.createElement("div"); right.className = "list-head-right";
+  const lab = document.createElement("span"); lab.className = "list-sprint-lab"; lab.textContent = "Sprint"; right.appendChild(lab);
   const sel = document.createElement("select"); sel.className = "list-sprint-sel";
   const oAll = document.createElement("option"); oAll.value = "__all__"; oAll.textContent = "All sprints"; sel.appendChild(oAll);
   allSprints().forEach(s => { const o = document.createElement("option"); o.value = s; o.textContent = fmtSprint(s); sel.appendChild(o); });
@@ -943,7 +937,7 @@ function renderList() {
   const cur = (filters.sprint && filters.sprint.size === 1) ? [...filters.sprint][0] : null;
   sel.value = cur === null ? "__all__" : (cur === "" ? "__none__" : cur);
   sel.onchange = () => { const v = sel.value; if (v === "__all__") delete filters.sprint; else filters.sprint = new Set([v === "__none__" ? "" : v]); updateFilterBtn(); render(); };
-  head.appendChild(sel); root.appendChild(head);
+  right.appendChild(sel); head.appendChild(right); root.appendChild(head);
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
   if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; root.appendChild(e); return; }
