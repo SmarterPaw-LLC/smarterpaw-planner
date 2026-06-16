@@ -601,6 +601,9 @@
       <div class="field"><span class="seclabel">Style</span>
         <div class="seg" id="dispStyle"><button data-s="badge">Badges</button><button data-s="text">Plain text</button></div>
       </div>
+      <div class="field" id="dispSortField"><span class="seclabel">Sort cards by</span>
+        <div class="ch-wrap"><select id="dispSortKey"></select><button type="button" id="dispSortDir" title="Ascending / descending">▲ Asc</button></div>
+      </div>
     </div>
     <div id="dispGridSec" style="display:none">
       <div class="field"><span class="seclabel">Columns to show</span><div id="dispGridCols" class="disp-dims"></div></div>
@@ -634,8 +637,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.61";
+const VERSION = "1.62";
 const CHANGELOG = [
+  "v1.62 — Board ⚙ Display now has a “Sort cards by” option (Title, Due, Priority, Brand, Channel, Owners, Promotion, Sprint, or any custom field, ascending/descending) that orders the cards within every lane. Defaults to manual order. Saved in this browser.",
   "v1.61 — Fixed the same scroll-jump on the Board view: closing a card now keeps each column's scroll position (and the board's horizontal scroll) instead of jumping to the top.",
   "v1.60 — Fixed: opening and closing a card on the List view no longer jumps the list back to the top. Scroll position is now tracked persistently and restored reliably after any re-render.",
   "v1.59 — Grid view gets a ⚙ Display menu: choose which columns appear and set the default sort (column + direction). Both are saved with bookmarks and saved views, so a saved Grid view reopens with your exact columns and sort.",
@@ -906,15 +910,37 @@ const DISP_DEFAULT = { dims: ["brand", "channel", "owners", "dates"], badge: tru
 const LIST_DISP_DEFAULT = { dims: ["status", "channel", "owners", "promotion", "dates"], badge: true };
 function loadDisplay() {
   const raw = JSON.parse(localStorage.getItem("planner-display") || "null");
-  const dup = d => ({ dims: d.dims.slice(), badge: d.badge !== false });
-  const listDef = () => ({ dims: LIST_DISP_DEFAULT.dims.slice(), badge: true });
-  if (raw && raw.board && raw.calendar) return { board: raw.board, calendar: raw.calendar, list: raw.list || listDef() };
-  if (raw && raw.dims) return { board: dup(raw), calendar: dup(raw), list: listDef() };   // migrate old single setting
-  return { board: dup(DISP_DEFAULT), calendar: dup(DISP_DEFAULT), list: listDef() };
+  const norm = d => ({                                       // ensure every profile has dims/badge/sort
+    dims: Array.isArray(d.dims) ? d.dims.slice() : DISP_DEFAULT.dims.slice(),
+    badge: d.badge !== false,
+    sort: { key: (d.sort && d.sort.key) || "", dir: (d.sort && d.sort.dir === -1) ? -1 : 1 },
+  });
+  if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT) };
+  if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT) };   // migrate old single setting
+  return { board: norm(DISP_DEFAULT), calendar: norm(DISP_DEFAULT), list: norm(LIST_DISP_DEFAULT) };
 }
 let displaySettings = loadDisplay();
 function saveDisplay() { localStorage.setItem("planner-display", JSON.stringify(displaySettings)); }
 function curDisp() { return displaySettings[view === "calendar" ? "calendar" : view === "list" ? "list" : "board"]; }
+// Sortable keys offered in the Board's Display menu ("" = manual / creation order).
+function boardSortDims() {
+  return [{ key: "", label: "None (manual order)" }, { key: "title", label: "Title" }, { key: "due", label: "Due date" }, { key: "end", label: "End date" },
+    { key: "priority", label: "Priority" }, { key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owners" },
+    { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
+    .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
+}
+function cardSortKey(c, key) {
+  if (key === "priority") { const i = PRIORITIES.findIndex(p => p.name === cardPriority(c)); return String(i < 0 ? 99 : i).padStart(3, "0"); }
+  if (key === "due" || key === "end") return c[key] || "9999-99-99";          // undated sort last
+  if (key === "sprint") return cardSprint(c) || "9999-W99";
+  if (key === "promotion") return cardPromo(c).toLowerCase();
+  if (key.indexOf("field:") === 0) return ((c.fields && c.fields[key.slice(6)]) || "").toLowerCase();
+  return String(c[key] || "").toLowerCase();                                   // title, brand, channel, owner
+}
+function sortCards(arr, sort) {
+  if (!sort || !sort.key) return arr;
+  return arr.slice().sort((a, b) => { const va = cardSortKey(a, sort.key), vb = cardSortKey(b, sort.key); return (va < vb ? -1 : va > vb ? 1 : 0) * sort.dir; });
+}
 let activeBrands = new Set(BRANDS.map(b => b.name));
 let channelFilter = "", searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
@@ -1523,7 +1549,7 @@ function renderBoard() {
     .concat(orphans.map(name => ({ name, color: "#475569" })));
   lanes.forEach(st => {
     const col = document.createElement("div"); col.className = "col";
-    const colCards = vis.filter(c => c.status === st.name);
+    const colCards = sortCards(vis.filter(c => c.status === st.name), curDisp().sort);
     const head = document.createElement("div"); head.className = "col-head";
     const bar = document.createElement("div"); bar.className = "bar"; bar.style.background = st.color;
     const h2 = document.createElement("h2"); h2.textContent = st.name;
@@ -1714,6 +1740,21 @@ function renderDispSettings() {
     lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + d.label)); box.appendChild(lab);
   });
   document.querySelectorAll("#dispStyle button").forEach(b => b.classList.toggle("active", (b.dataset.s === "badge") === ds.badge));
+  // Card sort — Board only (Calendar is date-positioned; List is grouped by sprint).
+  const sortField = document.getElementById("dispSortField");
+  const showSort = view === "board";
+  sortField.style.display = showSort ? "" : "none";
+  if (showSort) {
+    const sort = ds.sort || { key: "", dir: 1 };
+    const sel = document.getElementById("dispSortKey"); sel.innerHTML = "";
+    boardSortDims().forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = d.label; sel.appendChild(o); });
+    sel.value = sort.key;
+    sel.onchange = () => { ds.sort = { key: sel.value, dir: sort.dir }; saveDisplay(); render(); renderDispSettings(); };
+    const dir = document.getElementById("dispSortDir");
+    dir.style.display = sort.key ? "" : "none";
+    dir.textContent = sort.dir > 0 ? "▲ Asc" : "▼ Desc";
+    dir.onclick = () => { ds.sort = { key: sort.key, dir: sort.dir > 0 ? -1 : 1 }; saveDisplay(); render(); renderDispSettings(); };
+  }
 }
 // Grid view: choose which columns appear + the default sort.
 function renderDispGrid() {
