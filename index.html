@@ -634,8 +634,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.59";
+const VERSION = "1.60";
 const CHANGELOG = [
+  "v1.60 — Fixed: opening and closing a card on the List view no longer jumps the list back to the top. Scroll position is now tracked persistently and restored reliably after any re-render.",
   "v1.59 — Grid view gets a ⚙ Display menu: choose which columns appear and set the default sort (column + direction). Both are saved with bookmarks and saved views, so a saved Grid view reopens with your exact columns and sort.",
   "v1.58 — List view now has its own Display menu (⚙ Display): choose which dimensions show on each task — status, channel, owners, priority, promotion, sprint, dates, or any custom field — as chips or text, just like Board and Calendar.",
   "v1.57 — Added a favicon (the SmarterPaw cat + calendar) so the app has an icon in browser tabs and bookmarks.",
@@ -1357,6 +1358,7 @@ function renderSprintPicker() {
   noBtn.classList.toggle("on", filters.sprint ? filters.sprint.has("") : false);
 }
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
+let listScroll = 0;             // persisted List scroll position (kept by a scroll listener; survives re-renders/modal close)
 let listSplit = "";             // dimension key to split the List view into columns ("" = single grouped list); never "sprint"
 function splitDims() {
   return [{ key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "priority", label: "Priority" }, { key: "promotion", label: "Promotion" }]
@@ -1388,8 +1390,7 @@ function orderedSplitValues(key, groups) {
 }
 function renderList() {
   const root = document.getElementById("list");
-  const prevBody = root.querySelector(".list-body");          // preserve scroll across the rebuild (e.g. expanding a task)
-  const prevScroll = prevBody ? prevBody.scrollTop : 0;
+  const target = listScroll;   // last known scroll (maintained by the body's scroll listener; survives modal close / rebuilds)
   root.innerHTML = "";
   // header: add-task (opens the deliverable modal) + sprint filter
   const head = document.createElement("div"); head.className = "list-head";
@@ -1415,8 +1416,10 @@ function renderList() {
   noBtn.onclick = () => { if (!filters.sprint) filters.sprint = new Set(); if (noSprintSel) { filters.sprint.delete(""); if (!filters.sprint.size) delete filters.sprint; } else filters.sprint.add(""); updateFilterBtn(); render(); };
   right.appendChild(noBtn); head.appendChild(right); root.appendChild(head);
   const body = document.createElement("div"); body.className = "list-body" + (listSplit ? " split" : ""); root.appendChild(body);
-  // restore the prior scroll synchronously once content is appended (works even when the tab is backgrounded, unlike rAF)
-  const keepScroll = () => { if (prevScroll) body.scrollTop = prevScroll; };
+  body.addEventListener("scroll", () => { listScroll = body.scrollTop; }, { passive: true });   // remember real user scrolling
+  // Restore the prior scroll. Sync covers the backgrounded-tab case; the rAF retry covers layout that
+  // isn't measured yet at the sync moment (which would otherwise clamp scrollTop to 0 → "jump to top").
+  const keepScroll = () => { if (!target) return; body.scrollTop = target; requestAnimationFrame(() => { body.scrollTop = target; }); };
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
   if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; body.appendChild(e); return; }
