@@ -596,12 +596,20 @@
 <div class="overlay" id="dispOverlay">
   <div class="modal" style="width:400px">
     <h2 id="dispTitle">Display on Board</h2>
-    <div class="field"><span class="seclabel">Show these on each item</span><div id="dispDims" class="disp-dims"></div></div>
-    <div class="field"><span class="seclabel">Style</span>
-      <div class="seg" id="dispStyle"><button data-s="badge">Badges</button><button data-s="text">Plain text</button></div>
+    <div id="dispCardSec">
+      <div class="field"><span class="seclabel">Show these on each item</span><div id="dispDims" class="disp-dims"></div></div>
+      <div class="field"><span class="seclabel">Style</span>
+        <div class="seg" id="dispStyle"><button data-s="badge">Badges</button><button data-s="text">Plain text</button></div>
+      </div>
+    </div>
+    <div id="dispGridSec" style="display:none">
+      <div class="field"><span class="seclabel">Columns to show</span><div id="dispGridCols" class="disp-dims"></div></div>
+      <div class="field"><span class="seclabel">Default sort</span>
+        <div class="ch-wrap"><select id="dispGridSortKey"></select><button type="button" id="dispGridSortDir" title="Ascending / descending">▲ Asc</button></div>
+      </div>
     </div>
     <div class="modal-actions"><div class="spacer"></div><button id="dispClose">Done</button></div>
-    <div class="hint">Applies to the current view only — Board and Calendar are independent. Saved in this browser.</div>
+    <div class="hint" id="dispHint">Applies to the current view only — Board and Calendar are independent. Saved in this browser.</div>
   </div>
 </div>
 
@@ -626,8 +634,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.58";
+const VERSION = "1.59";
 const CHANGELOG = [
+  "v1.59 — Grid view gets a ⚙ Display menu: choose which columns appear and set the default sort (column + direction). Both are saved with bookmarks and saved views, so a saved Grid view reopens with your exact columns and sort.",
   "v1.58 — List view now has its own Display menu (⚙ Display): choose which dimensions show on each task — status, channel, owners, priority, promotion, sprint, dates, or any custom field — as chips or text, just like Board and Calendar.",
   "v1.57 — Added a favicon (the SmarterPaw cat + calendar) so the app has an icon in browser tabs and bookmarks.",
   "v1.56 — The ＋ Sprint picker and “No sprint” toggle now appear in the toolbar on Board, Grid, and Calendar too (List keeps its own in its header). Selected sprints show as removable chips in the “Filtering by” row on every view.",
@@ -912,6 +921,7 @@ let modalSubs = [];   // working copy of the open card's subtasks
 let view = "board", calMode = "month", calRef = new Date();
 let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
 let gridSort = { key: "due", dir: 1 };
+let gridCols = null;   // null = show all columns; else an ordered array of visible column keys
 let legendSel = new Set();
 let completeLane = "";
 // The "Scheduled" lane gets a clock badge (parallel to the green ✓ complete lane). Stored locally (no SQL);
@@ -1559,7 +1569,7 @@ function setView(v) {
   document.getElementById("calendar").style.display = v === "calendar" ? "flex" : "none";
   document.getElementById("grid").style.display = v === "grid" ? "flex" : "none";
   document.getElementById("list").style.display = v === "list" ? "flex" : "none";
-  document.getElementById("calSettingsBtn").style.display = (v === "grid") ? "none" : "";
+  document.getElementById("calSettingsBtn").style.display = "";   // Display config exists for every view (cards on Board/Cal/List, columns on Grid)
   document.querySelectorAll("#viewToggle button").forEach(b => b.classList.toggle("active", b.dataset.v === v));
   render();
 }
@@ -1615,13 +1625,22 @@ function renderLegend() {
     el.appendChild(grp);
   }
 }
-function gridColumns() {
-  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }, { key: "title", label: "Title" },
+function allGridColumns() {
+  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "promotion", label: "Promotion" }, { key: "priority", label: "Priority" }, { key: "sprint", label: "Sprint" }, { key: "title", label: "Title" },
     { key: "owner", label: "Owners" }, { key: "status", label: "Status" }, { key: "subtasks", label: "Subtasks" }, { key: "due", label: "Due" }, { key: "end", label: "End" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name }))).concat([{ key: "notes", label: "Notes" }]);
 }
+// The visible/ordered subset (gridCols = null → show all, in canonical order).
+function gridColumns() {
+  const all = allGridColumns();
+  if (!gridCols) return all;
+  const vis = new Set(gridCols);
+  const out = all.filter(c => vis.has(c.key));
+  return out.length ? out : all;   // never render an empty table
+}
 function gridValue(c, key) {
   if (key === "promotion") return cardPromo(c);
+  if (key === "priority") return cardPriority(c);
   if (key === "sprint") return cardSprint(c);
   if (key === "subtasks") { const p = subProgress(c); return p.total ? p.done + "/" + p.total : ""; }
   if (key.indexOf("field:") === 0) return (c.fields && c.fields[key.slice(6)]) || "";
@@ -1638,7 +1657,7 @@ function renderGrid() {
   cols.forEach(col => {
     const th = document.createElement("th");
     th.textContent = col.label + (gridSort.key === col.key ? (gridSort.dir > 0 ? " ▲" : " ▼") : "");
-    th.onclick = () => { if (gridSort.key === col.key) gridSort.dir *= -1; else { gridSort.key = col.key; gridSort.dir = 1; } renderGrid(); };
+    th.onclick = () => { if (gridSort.key === col.key) gridSort.dir *= -1; else { gridSort.key = col.key; gridSort.dir = 1; } render(); };
     trh.appendChild(th);
   });
   thead.appendChild(trh); table.appendChild(thead);
@@ -1649,6 +1668,7 @@ function renderGrid() {
       const td = document.createElement("td");
       if (col.key === "brand") { const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = brandColor(c.brand); td.appendChild(dot); td.appendChild(document.createTextNode(c.brand)); }
       else if (col.key === "promotion") { const p = cardPromo(c); if (p) { const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = promoColor(p); td.appendChild(dot); } td.appendChild(document.createTextNode(p)); }
+      else if (col.key === "priority") { const p = cardPriority(c); const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = priorityColor(p); td.appendChild(dot); td.appendChild(document.createTextNode(p)); }
       else if (col.key === "due" || col.key === "end") td.textContent = gridValue(c, col.key) ? fmtDue(gridValue(c, col.key)) : "";
       else if (col.key === "sprint") td.textContent = fmtSprint(cardSprint(c));
       else td.textContent = gridValue(c, col.key);
@@ -1664,6 +1684,10 @@ function setCalMode(m) {
   render();
 }
 function renderDispSettings() {
+  const grid = view === "grid";
+  document.getElementById("dispCardSec").style.display = grid ? "none" : "";
+  document.getElementById("dispGridSec").style.display = grid ? "" : "none";
+  if (grid) return renderDispGrid();
   const ds = curDisp();
   const box = document.getElementById("dispDims"); box.innerHTML = "";
   availableDims().forEach(d => {
@@ -1678,8 +1702,37 @@ function renderDispSettings() {
   });
   document.querySelectorAll("#dispStyle button").forEach(b => b.classList.toggle("active", (b.dataset.s === "badge") === ds.badge));
 }
+// Grid view: choose which columns appear + the default sort.
+function renderDispGrid() {
+  const all = allGridColumns();
+  const allKeys = all.map(c => c.key);
+  const visSet = new Set(gridCols || allKeys);
+  const box = document.getElementById("dispGridCols"); box.innerHTML = "";
+  all.forEach(col => {
+    const lab = document.createElement("label"); lab.className = "disp-opt";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = visSet.has(col.key);
+    cb.onchange = () => {
+      const cur = new Set(gridCols || allKeys);
+      if (cb.checked) cur.add(col.key); else cur.delete(col.key);
+      gridCols = allKeys.filter(k => cur.has(k));   // store in canonical order
+      render();
+    };
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + col.label)); box.appendChild(lab);
+  });
+  const sel = document.getElementById("dispGridSortKey"); sel.innerHTML = "";
+  all.forEach(col => { const o = document.createElement("option"); o.value = col.key; o.textContent = col.label; sel.appendChild(o); });
+  sel.value = gridSort.key;
+  sel.onchange = () => { gridSort.key = sel.value; render(); };
+  const dir = document.getElementById("dispGridSortDir");
+  dir.textContent = gridSort.dir > 0 ? "▲ Asc" : "▼ Desc";
+  dir.onclick = () => { gridSort.dir *= -1; render(); };
+}
 function openDisp() {
-  document.getElementById("dispTitle").textContent = "Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : "Board");
+  const grid = view === "grid";
+  document.getElementById("dispTitle").textContent = grid ? "Grid columns & sort" : ("Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : "Board"));
+  document.getElementById("dispHint").textContent = grid
+    ? "Choose which columns appear and the default sort. Saved with bookmarks and saved views."
+    : "Applies to the current view only — Board, Calendar and List are independent. Saved in this browser.";
   renderDispSettings(); document.getElementById("dispOverlay").classList.add("show");
 }
 function calNav(dir) {
@@ -2321,6 +2374,10 @@ function currentParams() {
   if (activeRules().length) p.set("rules", JSON.stringify(activeRules()));
   if (filterMatch !== "all") p.set("match", filterMatch);
   if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); }
+  if (view === "grid") {
+    if (gridCols) p.set("gcols", gridCols.join(","));
+    if (gridSort.key !== "due" || gridSort.dir !== 1) p.set("gsort", gridSort.key + ":" + (gridSort.dir < 0 ? "d" : "a"));
+  }
   return p.toString();
 }
 function writeUrl() { const qs = currentParams(); try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {} }
@@ -2382,7 +2439,7 @@ function renderViews() {
 async function openViews() { await loadSharedViews(); renderViews(); document.getElementById("viewsOverlay").classList.add("show"); }
 // Apply a saved view's query params: reset state to defaults, parse params, sync controls.
 function applySavedView(params) {
-  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = "";
+  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; gridSort = { key: "due", dir: 1 };
   activeBrands = new Set(brandsList.map(b => b.name));
   try { history.replaceState(null, "", location.pathname + (params ? "?" + params : "")); } catch (e) {}
   readUrl();
@@ -2411,6 +2468,8 @@ function readUrl() {
   const mm = p.get("match"); if (mm === "any" || mm === "all") filterMatch = mm;
   const cm = p.get("calMode"); if (cm) calMode = cm;
   const cd = p.get("calDate"); if (cd) { const d = new Date(cd + "T00:00:00"); if (!isNaN(d.getTime())) calRef = d; }
+  const gc = p.get("gcols"); if (gc) gridCols = gc.split(",");
+  const gs = p.get("gsort"); if (gs) { const i = gs.lastIndexOf(":"); const k = i > 0 ? gs.slice(0, i) : gs; const d = gs.slice(i + 1); if (k) gridSort = { key: k, dir: d === "d" ? -1 : 1 }; }
 }
 async function init() {
   fillStaticSelects();
