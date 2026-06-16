@@ -195,6 +195,8 @@
   .lt-title:hover { color: var(--accent); }
   .lt-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .lt-meta .lt-sub { font-size: 12px; color: var(--muted); }
+  .lt-dims { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .lt-dims.text { gap: 0; color: var(--muted); font-size: 12px; }
   .lt-prog { display: flex; align-items: center; gap: 9px; max-width: 320px; }
   .lt-prog .progress { flex: 1; }
   .lt-prog .lt-prog-txt { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
@@ -624,8 +626,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.57";
+const VERSION = "1.58";
 const CHANGELOG = [
+  "v1.58 — List view now has its own Display menu (⚙ Display): choose which dimensions show on each task — status, channel, owners, priority, promotion, sprint, dates, or any custom field — as chips or text, just like Board and Calendar.",
   "v1.57 — Added a favicon (the SmarterPaw cat + calendar) so the app has an icon in browser tabs and bookmarks.",
   "v1.56 — The ＋ Sprint picker and “No sprint” toggle now appear in the toolbar on Board, Grid, and Calendar too (List keeps its own in its header). Selected sprints show as removable chips in the “Filtering by” row on every view.",
   "v1.55 — List view no longer jumps to the top when you expand a task or add a subtask — your scroll position is kept.",
@@ -889,15 +892,18 @@ function fieldByName(n) { return fieldsList.find(f => f.name === n); }
 function splitMulti(v) { return (v || "").split(",").map(s => s.trim()).filter(Boolean); }
 let colorBy = localStorage.getItem("planner-colorby") || "brand";
 const DISP_DEFAULT = { dims: ["brand", "channel", "owners", "dates"], badge: true };
+const LIST_DISP_DEFAULT = { dims: ["status", "channel", "owners", "promotion", "dates"], badge: true };
 function loadDisplay() {
   const raw = JSON.parse(localStorage.getItem("planner-display") || "null");
-  if (raw && raw.board && raw.calendar) return raw;
-  if (raw && raw.dims) return { board: raw, calendar: JSON.parse(JSON.stringify(raw)) }; // migrate old single setting
-  return { board: { dims: DISP_DEFAULT.dims.slice(), badge: true }, calendar: { dims: DISP_DEFAULT.dims.slice(), badge: true } };
+  const dup = d => ({ dims: d.dims.slice(), badge: d.badge !== false });
+  const listDef = () => ({ dims: LIST_DISP_DEFAULT.dims.slice(), badge: true });
+  if (raw && raw.board && raw.calendar) return { board: raw.board, calendar: raw.calendar, list: raw.list || listDef() };
+  if (raw && raw.dims) return { board: dup(raw), calendar: dup(raw), list: listDef() };   // migrate old single setting
+  return { board: dup(DISP_DEFAULT), calendar: dup(DISP_DEFAULT), list: listDef() };
 }
 let displaySettings = loadDisplay();
 function saveDisplay() { localStorage.setItem("planner-display", JSON.stringify(displaySettings)); }
-function curDisp() { return displaySettings[view === "calendar" ? "calendar" : "board"]; }
+function curDisp() { return displaySettings[view === "calendar" ? "calendar" : view === "list" ? "list" : "board"]; }
 let activeBrands = new Set(BRANDS.map(b => b.name));
 let channelFilter = "", searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
@@ -1459,11 +1465,10 @@ function listTaskEl(c) {
   title.onclick = () => openModal(c);
   main.appendChild(title);
   const meta = document.createElement("div"); meta.className = "lt-meta";
-  const sub = [c.channel, c.owner, cardPromo(c), fmtRange(c.due, c.end)].filter(Boolean).map(esc).join(" · ");
   const hist = cardSprints(c);
   const histChip = hist.length >= 2 ? `<span class="sprint-hist" title="Spans ${hist.length} sprints: ${esc(hist.map(fmtSprint).join(", "))}">⟳ ${hist.length} sprints</span>` : "";
-  meta.innerHTML = `<span class="dchip" style="background:${statusColor(c.status)};border-color:rgba(255,255,255,.85);color:#fff">${esc(c.status)}</span>`
-    + histChip + (sub ? `<span class="lt-sub">${sub}</span>` : "");
+  const badges = dimBadges(c);   // dimensions chosen in the Display menu (List profile)
+  meta.innerHTML = (badges ? `<span class="lt-dims${curDisp().badge ? "" : " text"}">${badges}</span>` : "") + histChip;
   main.appendChild(meta);
   if (subs.length) {
     const pr = document.createElement("div"); pr.className = "lt-prog";
@@ -1554,7 +1559,7 @@ function setView(v) {
   document.getElementById("calendar").style.display = v === "calendar" ? "flex" : "none";
   document.getElementById("grid").style.display = v === "grid" ? "flex" : "none";
   document.getElementById("list").style.display = v === "list" ? "flex" : "none";
-  document.getElementById("calSettingsBtn").style.display = (v === "grid" || v === "list") ? "none" : "";
+  document.getElementById("calSettingsBtn").style.display = (v === "grid") ? "none" : "";
   document.querySelectorAll("#viewToggle button").forEach(b => b.classList.toggle("active", b.dataset.v === v));
   render();
 }
@@ -1674,7 +1679,7 @@ function renderDispSettings() {
   document.querySelectorAll("#dispStyle button").forEach(b => b.classList.toggle("active", (b.dataset.s === "badge") === ds.badge));
 }
 function openDisp() {
-  document.getElementById("dispTitle").textContent = "Display on " + (view === "calendar" ? "Calendar" : "Board");
+  document.getElementById("dispTitle").textContent = "Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : "Board");
   renderDispSettings(); document.getElementById("dispOverlay").classList.add("show");
 }
 function calNav(dir) {
