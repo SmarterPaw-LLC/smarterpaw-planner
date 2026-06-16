@@ -634,8 +634,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.60";
+const VERSION = "1.61";
 const CHANGELOG = [
+  "v1.61 — Fixed the same scroll-jump on the Board view: closing a card now keeps each column's scroll position (and the board's horizontal scroll) instead of jumping to the top.",
   "v1.60 — Fixed: opening and closing a card on the List view no longer jumps the list back to the top. Scroll position is now tracked persistently and restored reliably after any re-render.",
   "v1.59 — Grid view gets a ⚙ Display menu: choose which columns appear and set the default sort (column + direction). Both are saved with bookmarks and saved views, so a saved Grid view reopens with your exact columns and sort.",
   "v1.58 — List view now has its own Display menu (⚙ Display): choose which dimensions show on each task — status, channel, owners, priority, promotion, sprint, dates, or any custom field — as chips or text, just like Board and Calendar.",
@@ -1510,8 +1511,11 @@ function listTaskEl(c) {
   }
   return wrap;
 }
+let colScroll = {};   // persisted Board scroll: per-lane column scrollTop, kept by scroll listeners so it survives re-renders (e.g. closing a card)
 function renderBoard() {
-  const board = document.getElementById("board"); board.innerHTML = "";
+  const board = document.getElementById("board");
+  const xTarget = board.scrollLeft;   // preserve horizontal board scroll across the rebuild
+  board.innerHTML = "";
   const vis = visibleCards();
   const laneNames = statusList.map(s => s.name);
   const orphans = [...new Set(vis.map(c => c.status))].filter(s => s && !laneNames.includes(s));
@@ -1529,13 +1533,19 @@ function renderBoard() {
     col.appendChild(head); col.appendChild(body);
     if (colCards.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Drop here"; body.appendChild(e); }
     else colCards.forEach(c => body.appendChild(cardEl(c)));
+    body.addEventListener("scroll", () => { colScroll[st.name] = body.scrollTop; }, { passive: true });
     body.addEventListener("dragover", e => { e.preventDefault(); body.classList.add("drag-over"); });
     body.addEventListener("dragleave", () => body.classList.remove("drag-over"));
     body.addEventListener("drop", e => { e.preventDefault(); body.classList.remove("drag-over");
       const id = e.dataTransfer.getData("text/plain"); const card = cards.find(c => c.id === id);
       if (card && card.status !== st.name) patchStatus(id, st.name); });
     board.appendChild(col);
+    // Restore this lane's scroll AFTER the column is in the DOM — otherwise the body is detached (0 height)
+    // and the set is silently dropped. Now it's laid out, so the sync set sticks (rAF is just a backup).
+    const vTarget = colScroll[st.name] || 0;
+    if (vTarget) { body.scrollTop = vTarget; requestAnimationFrame(() => { body.scrollTop = vTarget; }); }
   });
+  if (xTarget) { board.scrollLeft = xTarget; requestAnimationFrame(() => { board.scrollLeft = xTarget; }); }
 }
 function fmtRange(due, end) {
   if (!due && !end) return "";
