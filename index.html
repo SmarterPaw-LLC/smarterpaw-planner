@@ -315,6 +315,11 @@
   .ev-bar .barbrand { flex: 0 0 auto; display: inline-flex; align-items: center; }
   .ev-bar .bardims { flex: 0 100 auto; min-width: 0; overflow: hidden; display: inline-flex; align-items: center; white-space: nowrap; }
   .ev-bar .barbrand .dchip, .ev-bar .bardims .dchip:first-child { margin-left: 0; }
+  /* Larger calendar items: stack the title over its dimension chips so more detail is visible. */
+  .ev-bar.stacked { flex-direction: column; align-items: stretch; justify-content: flex-start; padding: 4px 7px; line-height: 1.25; gap: 3px; }
+  .ev-bar.stacked .bt { flex: 0 0 auto; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ev-bar.stacked .barbrand { display: none; }   /* the bar color already encodes the color-by dimension */
+  .ev-bar.stacked .bardims { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 4px; overflow: hidden; white-space: normal; min-width: 0; align-content: flex-start; }
   .dchip { display: inline-flex; align-items: center; font-size: 10px; line-height: 1; padding: 2px 8px; border-radius: 999px;
     background: rgba(0,0,0,.30); border: 1px solid rgba(255,255,255,.6); color: #fff; margin-left: 6px; vertical-align: middle;
     font-weight: 600; white-space: nowrap; }
@@ -384,6 +389,20 @@
     body.hdr-collapsed header > .toolbar,
     body.hdr-collapsed #legend { display: none; }
   }
+  /* ── Print / Export-as-PDF: show only the active view, fully expanded ── */
+  #printHeader { display: none; }
+  @media print {
+    @page { margin: 11mm; }
+    html, body { height: auto !important; overflow: visible !important; display: block !important; background: #fff !important; color: #000 !important; }
+    header, #legend, #activeFilters, .overlay, #calTray, #trayToggle, #headerCollapse { display: none !important; }
+    #printHeader { display: block !important; font-size: 13px; font-weight: 700; margin: 0 0 10px; color: #000; }
+    #board, #calendar, #grid, #list { height: auto !important; overflow: visible !important; }
+    .board { overflow: visible !important; }
+    .col-body { overflow: visible !important; max-height: none !important; }
+    .cal-grid-wrap, .grid-wrap, .list-body { overflow: visible !important; height: auto !important; max-height: none !important; }
+    .card, .ev-bar, .ev, .list-task, #gridTable tr, .cal-week, .list-sec { break-inside: avoid; }
+    #gridTable th { position: static !important; }
+  }
 </style>
 </head>
 <body>
@@ -407,11 +426,12 @@
     <button id="viewsBtn" title="Saved views">★ Views</button>
     <button id="calSettingsBtn">⚙ Display</button>
     <button id="manageBtn">⚙ Manage</button>
-    <button id="xlsxBtn">Export Excel</button>
+    <button id="exportBtn">⬇ Export ▾</button>
     <button class="ghost" id="menuBtn">⋯</button>
   </div>
 </header>
 
+<div id="printHeader"></div>
 <div id="legend"></div>
 <div id="activeFilters"></div>
 
@@ -543,6 +563,17 @@
   </div>
 </div>
 
+<!-- Export -->
+<div class="overlay" id="exportOverlay">
+  <div class="modal" style="width:360px">
+    <button class="modal-x" id="exportX" title="Close">✕</button>
+    <h2>Export</h2>
+    <div class="field"><button id="exportPdfBtn" style="width:100%">🖨 PDF — current view</button></div>
+    <div class="field"><button id="exportXlsxBtn" style="width:100%">⬇ Excel — all deliverables (.xlsx)</button></div>
+    <div class="hint">PDF captures whatever you're viewing now (Board, Calendar, Grid or List) as shown — including filters and Display settings. It opens your browser's print dialog; choose “Save as PDF” as the destination.</div>
+  </div>
+</div>
+
 <!-- Data & backup -->
 <div class="overlay" id="menuOverlay">
   <div class="modal" style="width:360px">
@@ -604,6 +635,9 @@
       <div class="field" id="dispSortField"><span class="seclabel">Sort cards by</span>
         <div class="ch-wrap"><select id="dispSortKey"></select><button type="button" id="dispSortDir" title="Ascending / descending">▲ Asc</button></div>
       </div>
+      <div class="field" id="dispCalSizeField"><span class="seclabel">Item size</span>
+        <select id="dispCalSize"><option value="compact">Compact</option><option value="comfortable">Comfortable — taller, shows chips</option><option value="spacious">Spacious — tallest</option></select>
+      </div>
     </div>
     <div id="dispGridSec" style="display:none">
       <div class="field"><span class="seclabel">Columns to show</span><div id="dispGridCols" class="disp-dims"></div></div>
@@ -637,8 +671,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.62";
+const VERSION = "1.63";
 const CHANGELOG = [
+  "v1.63 — Calendar ⚙ Display has an “Item size” setting (Compact / Comfortable / Spacious) — larger sizes make event bars taller and stack the title over its dimension chips so you can read more on each item. New Export menu adds “PDF — current view”, which prints the current Board/Calendar/Grid/List (as filtered) to PDF; Excel export moved under the same menu.",
   "v1.62 — Board ⚙ Display now has a “Sort cards by” option (Title, Due, Priority, Brand, Channel, Owners, Promotion, Sprint, or any custom field, ascending/descending) that orders the cards within every lane. Defaults to manual order. Saved in this browser.",
   "v1.61 — Fixed the same scroll-jump on the Board view: closing a card now keeps each column's scroll position (and the board's horizontal scroll) instead of jumping to the top.",
   "v1.60 — Fixed: opening and closing a card on the List view no longer jumps the list back to the top. Scroll position is now tracked persistently and restored reliably after any re-render.",
@@ -910,10 +945,11 @@ const DISP_DEFAULT = { dims: ["brand", "channel", "owners", "dates"], badge: tru
 const LIST_DISP_DEFAULT = { dims: ["status", "channel", "owners", "promotion", "dates"], badge: true };
 function loadDisplay() {
   const raw = JSON.parse(localStorage.getItem("planner-display") || "null");
-  const norm = d => ({                                       // ensure every profile has dims/badge/sort
+  const norm = d => ({                                       // ensure every profile has dims/badge/sort/eventSize
     dims: Array.isArray(d.dims) ? d.dims.slice() : DISP_DEFAULT.dims.slice(),
     badge: d.badge !== false,
     sort: { key: (d.sort && d.sort.key) || "", dir: (d.sort && d.sort.dir === -1) ? -1 : 1 },
+    eventSize: ["compact", "comfortable", "spacious"].includes(d.eventSize) ? d.eventSize : "compact",
   });
   if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT) };
   if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT) };   // migrate old single setting
@@ -1755,6 +1791,15 @@ function renderDispSettings() {
     dir.textContent = sort.dir > 0 ? "▲ Asc" : "▼ Desc";
     dir.onclick = () => { ds.sort = { key: sort.key, dir: sort.dir > 0 ? -1 : 1 }; saveDisplay(); render(); renderDispSettings(); };
   }
+  // Calendar item size — Calendar only.
+  const calSizeField = document.getElementById("dispCalSizeField");
+  const showCalSize = view === "calendar";
+  calSizeField.style.display = showCalSize ? "" : "none";
+  if (showCalSize) {
+    const sz = document.getElementById("dispCalSize");
+    sz.value = ds.eventSize || "compact";
+    sz.onchange = () => { ds.eventSize = sz.value; saveDisplay(); render(); };
+  }
 }
 // Grid view: choose which columns appear + the default sort.
 function renderDispGrid() {
@@ -1891,12 +1936,15 @@ function weekRow(weekStart, monthIdx, todayKey, mode) {
   wk.appendChild(daysWrap);
   const placed = packLanes(weekEvents(weekStart, addDays(weekStart, 6)), weekStart);
   const bars = document.createElement("div"); bars.className = "bars-layer";
-  // Taller bars (2-line content) in week view on mobile so more shows at a glance.
-  const tall = mode === "week" && window.matchMedia("(max-width: 760px)").matches;
-  const barH = tall ? 40 : BAR_H;
+  // Event-bar size — user setting (Calendar Display). Larger sizes stack the title over its dimension chips.
+  const sizeMap = { compact: BAR_H, comfortable: 50, spacious: 78 };
+  let size = curDisp().eventSize || "compact";
+  if (mode === "week" && size === "compact" && window.matchMedia("(max-width: 760px)").matches) size = "comfortable";   // keep mobile week readable
+  const barH = sizeMap[size] || BAR_H;
+  const stacked = size !== "compact";
   placed.forEach(p => {
     const bar = barEl(p.c);
-    if (tall) { bar.classList.add("tall"); bar.style.height = (barH - 4) + "px"; }
+    if (stacked) { bar.classList.add("stacked"); bar.style.height = (barH - 4) + "px"; }
     bar.style.left = `calc(${(p.s / 7 * 100).toFixed(4)}% + 3px)`;
     bar.style.width = `calc(${((p.e - p.s + 1) / 7 * 100).toFixed(4)}% - 6px)`;
     bar.style.top = (WEEK_HEAD_H + p.lane * barH) + "px";
@@ -2345,6 +2393,25 @@ function exportCSV() {
   download("smarterpaw-planner.csv", new Blob([csv], { type: "text/csv" }));
 }
 function exportJSON() { download("smarterpaw-planner-backup.json", new Blob([JSON.stringify(cards,null,2)], { type: "application/json" })); }
+// Export the current view as a PDF via the browser's print dialog ("Save as PDF").
+function printView() {
+  const names = { board: "Board", calendar: "Calendar", grid: "Grid", list: "List" };
+  const viewName = names[view] || "Board";
+  let sub = "";
+  if (view === "calendar") { const lbl = document.getElementById("calLabel"); if (lbl) sub = " — " + lbl.textContent.trim(); }
+  document.getElementById("printHeader").textContent = "SmarterPaw Channel Planner · " + viewName + sub;
+  // Wide views read better landscape; the List is a tall single column → portrait.
+  const orient = view === "list" ? "portrait" : "landscape";
+  let st = document.getElementById("printPageStyle");
+  if (!st) { st = document.createElement("style"); st.id = "printPageStyle"; document.head.appendChild(st); }
+  st.textContent = "@page { size: " + orient + "; margin: 11mm; }";
+  const prevTitle = document.title;
+  document.title = "SmarterPaw Planner - " + viewName + (sub ? sub.replace(" — ", " ") : "");   // suggested PDF filename
+  const restore = () => { document.title = prevTitle; window.removeEventListener("afterprint", restore); };
+  window.addEventListener("afterprint", restore);
+  setTimeout(restore, 60000);   // fallback if afterprint never fires
+  window.print();
+}
 function colLetter(n){ let s=""; n++; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26);} return s; }
 function xmlEsc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"}[c])); }
 function sheetXml(rows){
@@ -2598,7 +2665,13 @@ async function init() {
   notesEd().addEventListener("blur", () => linkifyInto(notesEd()));   // turn typed/pasted URLs into links when you click away
   document.getElementById("f_subAddBtn").onclick = addModalSub;
   document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addModalSub(); } });
-  document.getElementById("xlsxBtn").onclick = exportXLSX;
+  const exportOv = document.getElementById("exportOverlay");
+  const closeExport = () => exportOv.classList.remove("show");
+  document.getElementById("exportBtn").onclick = () => exportOv.classList.add("show");
+  document.getElementById("exportX").onclick = closeExport;
+  exportOv.onclick = e => { if (e.target.id === "exportOverlay") closeExport(); };
+  document.getElementById("exportXlsxBtn").onclick = () => { closeExport(); exportXLSX(); };
+  document.getElementById("exportPdfBtn").onclick = () => { closeExport(); setTimeout(printView, 60); };   // let the overlay hide before printing
   document.getElementById("verBtn").onclick = () => document.getElementById("verOverlay").classList.add("show");
   document.getElementById("verClose").onclick = () => document.getElementById("verOverlay").classList.remove("show");
   document.getElementById("verOverlay").onclick = e => { if (e.target.id === "verOverlay") e.currentTarget.classList.remove("show"); };
@@ -2657,7 +2730,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
