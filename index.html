@@ -393,15 +393,20 @@
   #printHeader { display: none; }
   @media print {
     @page { margin: 11mm; }
-    html, body { height: auto !important; overflow: visible !important; display: block !important; background: #fff !important; color: #000 !important; }
-    header, #legend, #activeFilters, .overlay, #calTray, #trayToggle, #headerCollapse { display: none !important; }
-    #printHeader { display: block !important; font-size: 13px; font-weight: 700; margin: 0 0 10px; color: #000; }
-    #board, #calendar, #grid, #list { height: auto !important; overflow: visible !important; }
-    .board { overflow: visible !important; }
-    .col-body { overflow: visible !important; max-height: none !important; }
-    .cal-grid-wrap, .grid-wrap, .list-body { overflow: visible !important; height: auto !important; max-height: none !important; }
-    .card, .ev-bar, .ev, .list-task, #gridTable tr, .cal-week, .list-sec { break-inside: avoid; }
-    #gridTable th { position: static !important; }
+    /* Flip the dark UI to a clean light palette; brand/channel/status/promo colors stay vivid. */
+    :root { --bg:#fff; --panel:#fff; --panel-2:#fff; --line:#c9ced8; --text:#15181f; --muted:#525866; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }   /* keep colored fills/chips */
+    html, body { height:auto !important; overflow:visible !important; display:block !important; background:#fff !important; }
+    header, #legend, #activeFilters, .overlay, #calTray, #trayToggle, .cal-controls, #headerCollapse { display:none !important; }
+    #printHeader { display:block !important; font-size:14px; font-weight:700; color:#15181f; margin:0 0 12px; }
+    #board, #calendar, #grid, #list, .cal-main { height:auto !important; overflow:visible !important; display:block !important; }
+    .board { overflow:visible !important; }
+    .col-body { overflow:visible !important; max-height:none !important; }
+    .cal-grid-wrap, .grid-wrap, .list-body { overflow:visible !important; height:auto !important; max-height:none !important; border:none !important; }
+    .ev-bar, .ev { color:#fff !important; }   /* white title on the colored fill */
+    #gridTable th { position:static !important; background:#eef0f4 !important; color:#15181f !important; }
+    #gridTable td, #gridTable th { border-color:#c9ced8 !important; }
+    .card, .ev-bar, .ev, .list-task, #gridTable tr, .cal-week, .list-sec { break-inside:avoid; }
   }
 </style>
 </head>
@@ -672,8 +677,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.64";
+const VERSION = "1.65";
 const CHANGELOG = [
+  "v1.65 — Much better PDF export: colored event bars/cards and chips now print with their fills (instead of washed-out outlines), the page uses a clean light theme with readable text and grid lines, and the calendar’s Month/Week/Day nav bar is hidden (the title header already names the view and month).",
   "v1.64 — Open any deliverable (from any view) and click “⧉ Duplicate” to create a copy — same brand, channel, owners, dates, status, priority, promotion, notes, custom fields and subtasks, with “ (copy)” added to the title.",
   "v1.63 — Calendar ⚙ Display has an “Item size” setting (Compact / Comfortable / Spacious) — larger sizes make event bars taller and stack the title over its dimension chips so you can read more on each item. New Export menu adds “PDF — current view”, which prints the current Board/Calendar/Grid/List (as filtered) to PDF; Excel export moved under the same menu.",
   "v1.62 — Board ⚙ Display now has a “Sort cards by” option (Title, Due, Priority, Brand, Channel, Owners, Promotion, Sprint, or any custom field, ascending/descending) that orders the cards within every lane. Defaults to manual order. Saved in this browser.",
