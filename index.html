@@ -505,6 +505,7 @@
     </div>
     <div class="modal-actions">
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
+      <button class="ghost" id="duplicateBtn">⧉ Duplicate</button>
       <div class="spacer"></div>
       <button id="cancelBtn">Cancel</button>
       <button class="primary" id="saveBtn">Save</button>
@@ -671,8 +672,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.63";
+const VERSION = "1.64";
 const CHANGELOG = [
+  "v1.64 — Open any deliverable (from any view) and click “⧉ Duplicate” to create a copy — same brand, channel, owners, dates, status, priority, promotion, notes, custom fields and subtasks, with “ (copy)” added to the title.",
   "v1.63 — Calendar ⚙ Display has an “Item size” setting (Compact / Comfortable / Spacious) — larger sizes make event bars taller and stack the title over its dimension chips so you can read more on each item. New Export menu adds “PDF — current view”, which prints the current Board/Calendar/Grid/List (as filtered) to PDF; Excel export moved under the same menu.",
   "v1.62 — Board ⚙ Display now has a “Sort cards by” option (Title, Due, Priority, Brand, Channel, Owners, Promotion, Sprint, or any custom field, ascending/descending) that orders the cards within every lane. Defaults to manual order. Saved in this browser.",
   "v1.61 — Fixed the same scroll-jump on the Board view: closing a card now keeps each column's scroll position (and the board's horizontal scroll) instead of jumping to the top.",
@@ -2193,6 +2195,7 @@ function openModal(card, prefill) {
   stSel.value = card ? card.status : (statusList[0] ? statusList[0].name : "Backlog");
   document.getElementById("f_notes").innerHTML = card ? notesToEditor(card.notes) : "";
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
+  document.getElementById("duplicateBtn").style.display = card ? "" : "none";   // only existing cards can be duplicated
   document.getElementById("overlay").classList.add("show");
   if (!card) document.getElementById("f_title").focus();   // only auto-focus when creating; editing just opens the card
 }
@@ -2224,6 +2227,18 @@ function saveModal() {
   closeModal();
 }
 function deleteCard() { const id = document.getElementById("f_id").value; if (id && confirm("Delete this deliverable?")) { removeCard(id); closeModal(); } }
+// Duplicate the open deliverable as a new card (title gets " (copy)"; subtasks get fresh ids).
+function duplicateCard() {
+  const id = document.getElementById("f_id").value;
+  const orig = cards.find(c => c.id === id); if (!orig) return;
+  const fields = JSON.parse(JSON.stringify(orig.fields || {}));
+  delete fields[SPRINTHIST_KEY];   // the copy rebuilds its own sprint history from its dates/sprint
+  if (Array.isArray(fields[SUBTASKS_KEY])) fields[SUBTASKS_KEY] = fields[SUBTASKS_KEY].map(s => ({ id: subId(), text: s.text, done: !!s.done }));
+  createCard({ title: orig.title + " (copy)", brand: orig.brand, channel: orig.channel, owner: orig.owner || "",
+    due: orig.due || "", end: orig.end || "", status: orig.status, notes: orig.notes || "", fields });
+  closeModal();
+  toast("Duplicated “" + orig.title + "”.");
+}
 
 /* ---------- manage panel ---------- */
 function fillManage(id, list, kind) {
@@ -2633,6 +2648,7 @@ async function init() {
   document.getElementById("saveBtn").onclick = saveModal;
   document.getElementById("cancelBtn").onclick = closeModal;
   document.getElementById("deleteBtn").onclick = deleteCard;
+  document.getElementById("duplicateBtn").onclick = duplicateCard;
   // Click outside the deliverable modal saves your changes (closes & discards only if there's no title to save).
   document.getElementById("overlay").onclick = e => { if (e.target.id !== "overlay") return; if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
   document.getElementById("modalX").onclick = () => { if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
