@@ -671,8 +671,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.66";
+const VERSION = "1.67";
 const CHANGELOG = [
+  "v1.67 — Sprint weeks now show their date range everywhere they appear (e.g. “Wk 25 ’26 · Jun 15 – Jun 21”) — on cards, calendar items, the Grid Sprint column, the Sprints-tracked chips, and filter values — matching the sprint picker.",
   "v1.66 — Unified sorting: the Filter panel is now “⚲ Filter & sort” and its “Sort by” works on every view — Board (within each lane), List (within each sprint group), and Grid (rows; clicking a column header still sorts). The sort saves with bookmarks and saved views, and shows as a removable chip in the Filtering row. Removed the separate per-view sort controls from the Display menus.",
   "v1.65 — Much better PDF export: colored event bars/cards and chips now print with their fills (instead of washed-out outlines), the page uses a clean light theme with readable text and grid lines, and the calendar’s Month/Week/Day nav bar is hidden (the title header already names the view and month).",
   "v1.64 — Open any deliverable (from any view) and click “⧉ Duplicate” to create a copy — same brand, channel, owners, dates, status, priority, promotion, notes, custom fields and subtasks, with “ (copy)” added to the title.",
@@ -834,6 +835,8 @@ function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_K
 function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
 function allSprints() { return [...new Set(cards.map(cardSprint).filter(Boolean))].sort(); } // ISO week strings sort chronologically
 function fmtSprint(w) { const m = /^(\d{4})-W(\d{2})$/.exec(w || ""); return m ? "Wk " + (+m[2]) + " ’" + m[1].slice(2) : (w || ""); }
+// Sprint label WITH its date range, e.g. "Wk 25 ’26 · Jun 15 – Jun 21" — used wherever a sprint is shown.
+function fmtSprintFull(w) { if (!w) return ""; const r = sprintRange(w); return fmtSprint(w) + (r ? " · " + r : ""); }
 function subId() { return "st" + (_idc++).toString(36); }
 // Set fields[key] = val (or delete if empty) on a card object, mutating in place.
 function setCardField(c, key, val) { c.fields = c.fields || {}; if (val === "" || val == null || (Array.isArray(val) && !val.length)) delete c.fields[key]; else c.fields[key] = val; }
@@ -900,7 +903,7 @@ function dimInfo(c, key) {
   if (key === "status") return { text: c.status, color: statusColor(c.status) };
   if (key === "priority") { const p = cardPriority(c); return { text: p, color: priorityColor(p) }; }
   if (key === "promotion") { const p = cardPromo(c); return { text: p, color: promoColor(p) }; }
-  if (key === "sprint") return { text: fmtSprint(cardSprint(c)), color: null };
+  if (key === "sprint") return { text: fmtSprintFull(cardSprint(c)), color: null };
   if (key === "dates") return { text: fmtRange(c.due, c.end), color: null };
   if (key.indexOf("field:") === 0) { const n = key.slice(6); return { text: (c.fields && c.fields[n]) || "", color: null }; }
   return { text: "", color: null };
@@ -1039,7 +1042,7 @@ function ruleFieldValues(field) {
     return [...new Set(cards.map(c => c.fields && c.fields[n]).filter(Boolean))].sort(); }
   return [];
 }
-function ruleValueLabel(field, v) { return field === "sprint" ? fmtSprint(v) : v; }
+function ruleValueLabel(field, v) { return field === "sprint" ? fmtSprintFull(v) : v; }
 function ruleMatches(c, r) {
   const vals = ruleCardValues(c, r.field);
   if (r.op === "empty") return vals.length === 0;
@@ -1761,7 +1764,7 @@ function renderGrid() {
       else if (col.key === "promotion") { const p = cardPromo(c); if (p) { const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = promoColor(p); td.appendChild(dot); } td.appendChild(document.createTextNode(p)); }
       else if (col.key === "priority") { const p = cardPriority(c); const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = priorityColor(p); td.appendChild(dot); td.appendChild(document.createTextNode(p)); }
       else if (col.key === "due" || col.key === "end") td.textContent = gridValue(c, col.key) ? fmtDue(gridValue(c, col.key)) : "";
-      else if (col.key === "sprint") td.textContent = fmtSprint(cardSprint(c));
+      else if (col.key === "sprint") td.textContent = fmtSprintFull(cardSprint(c));
       else td.textContent = gridValue(c, col.key);
       tr.appendChild(td);
     });
@@ -2050,7 +2053,7 @@ function renderSprintTrack() {
   else { const sd = document.getElementById("f_sprint").value; if (sd) set.add(isoWeek(sd)); }   // undated → manual sprint
   const track = [...set].sort();
   document.getElementById("f_sprintTrackWrap").style.display = track.length ? "" : "none";
-  document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip" title="${esc(sprintRange(w))}">${esc(fmtSprint(w))}</span>`).join("");
+  document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip">${esc(fmtSprintFull(w))}</span>`).join("");
 }
 function buildStatusSelect() {
   const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
