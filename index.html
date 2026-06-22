@@ -422,7 +422,7 @@
     <select id="channelFilter"><option value="">All channels</option></select>
     <select id="colorBy" title="Color cards by"></select>
     <input class="search" id="search" placeholder="Search…" />
-    <button id="filterBtn">⚲ Filter</button>
+    <button id="filterBtn">⚲ Filter &amp; sort</button>
     <label class="list-sprint-wk-wrap" id="sprintPickWrap" title="Filter to a sprint — pick any day in the week"><span>＋ Sprint</span><input type="date" id="sprintWk" class="list-sprint-wk" /></label>
     <button id="noSprintBtn" class="sprint-none" title="Include undated tasks">No sprint</button>
   </div>
@@ -622,10 +622,10 @@
 <!-- Filter -->
 <div class="overlay" id="filterOverlay">
   <div class="modal" style="width:420px">
-    <h2>Filter</h2>
+    <h2>Filter &amp; Sort</h2>
     <div id="filterBody"></div>
     <div class="modal-actions"><button id="filterClear">Clear all</button><div class="spacer"></div><button id="filterClose">Done</button></div>
-    <div class="hint">Narrows Board, Calendar &amp; Grid. Brand, Channel and the color legend have their own controls.</div>
+    <div class="hint">Filter &amp; sort apply to every view and save with your views. Brand, Channel and the color legend have their own controls.</div>
   </div>
 </div>
 
@@ -638,18 +638,12 @@
       <div class="field"><span class="seclabel">Style</span>
         <div class="seg" id="dispStyle"><button data-s="badge">Badges</button><button data-s="text">Plain text</button></div>
       </div>
-      <div class="field" id="dispSortField"><span class="seclabel">Sort cards by</span>
-        <div class="ch-wrap"><select id="dispSortKey"></select><button type="button" id="dispSortDir" title="Ascending / descending">▲ Asc</button></div>
-      </div>
       <div class="field" id="dispCalSizeField"><span class="seclabel">Item size</span>
         <select id="dispCalSize"><option value="compact">Compact</option><option value="comfortable">Comfortable — taller, shows chips</option><option value="spacious">Spacious — tallest</option></select>
       </div>
     </div>
     <div id="dispGridSec" style="display:none">
       <div class="field"><span class="seclabel">Columns to show</span><div id="dispGridCols" class="disp-dims"></div></div>
-      <div class="field"><span class="seclabel">Default sort</span>
-        <div class="ch-wrap"><select id="dispGridSortKey"></select><button type="button" id="dispGridSortDir" title="Ascending / descending">▲ Asc</button></div>
-      </div>
     </div>
     <div class="modal-actions"><div class="spacer"></div><button id="dispClose">Done</button></div>
     <div class="hint" id="dispHint">Applies to the current view only — Board and Calendar are independent. Saved in this browser.</div>
@@ -677,8 +671,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.65";
+const VERSION = "1.66";
 const CHANGELOG = [
+  "v1.66 — Unified sorting: the Filter panel is now “⚲ Filter & sort” and its “Sort by” works on every view — Board (within each lane), List (within each sprint group), and Grid (rows; clicking a column header still sorts). The sort saves with bookmarks and saved views, and shows as a removable chip in the Filtering row. Removed the separate per-view sort controls from the Display menus.",
   "v1.65 — Much better PDF export: colored event bars/cards and chips now print with their fills (instead of washed-out outlines), the page uses a clean light theme with readable text and grid lines, and the calendar’s Month/Week/Day nav bar is hidden (the title header already names the view and month).",
   "v1.64 — Open any deliverable (from any view) and click “⧉ Duplicate” to create a copy — same brand, channel, owners, dates, status, priority, promotion, notes, custom fields and subtasks, with “ (copy)” added to the title.",
   "v1.63 — Calendar ⚙ Display has an “Item size” setting (Compact / Comfortable / Spacious) — larger sizes make event bars taller and stack the title over its dimension chips so you can read more on each item. New Export menu adds “PDF — current view”, which prints the current Board/Calendar/Grid/List (as filtered) to PDF; Excel export moved under the same menu.",
@@ -966,13 +961,14 @@ function loadDisplay() {
 let displaySettings = loadDisplay();
 function saveDisplay() { localStorage.setItem("planner-display", JSON.stringify(displaySettings)); }
 function curDisp() { return displaySettings[view === "calendar" ? "calendar" : view === "list" ? "list" : "board"]; }
-// Sortable keys offered in the Board's Display menu ("" = manual / creation order).
-function boardSortDims() {
-  return [{ key: "", label: "None (manual order)" }, { key: "title", label: "Title" }, { key: "due", label: "Due date" }, { key: "end", label: "End date" },
-    { key: "priority", label: "Priority" }, { key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owners" },
+// Sortable keys offered in the unified Filter & Sort panel ("" = manual / creation order).
+function sortDims() {
+  return [{ key: "", label: "— None (manual order) —" }, { key: "title", label: "Title" }, { key: "due", label: "Due date" }, { key: "end", label: "End date" },
+    { key: "priority", label: "Priority" }, { key: "status", label: "Status / Lane" }, { key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owners" },
     { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
 }
+function sortLabel(key) { const d = sortDims().find(x => x.key === key); return d ? d.label : key; }
 function cardSortKey(c, key) {
   if (key === "priority") { const i = PRIORITIES.findIndex(p => p.name === cardPriority(c)); return String(i < 0 ? 99 : i).padStart(3, "0"); }
   if (key === "due" || key === "end") return c[key] || "9999-99-99";          // undated sort last
@@ -992,7 +988,7 @@ let modalOwners = new Set();
 let modalSubs = [];   // working copy of the open card's subtasks
 let view = "board", calMode = "month", calRef = new Date();
 let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
-let gridSort = { key: "due", dir: 1 };
+let sortKey = "", sortDir = 1;   // unified sort across all views (Filter & Sort panel); "" = manual/creation order
 let gridCols = null;   // null = show all columns; else an ordered array of visible column keys
 let legendSel = new Set();
 let completeLane = "";
@@ -1321,9 +1317,10 @@ function passesFilters(c) {
 }
 function visibleCards() {
   const q = searchText.trim().toLowerCase();
-  return cards.filter(c => activeBrands.has(c.brand) && (!channelFilter || c.channel === channelFilter) &&
+  const out = cards.filter(c => activeBrands.has(c.brand) && (!channelFilter || c.channel === channelFilter) &&
     (legendSel.size === 0 || legendSel.has(legendVal(c))) && passesFilters(c) &&
     (!q || (c.title + " " + (c.notes||"") + " " + (c.owner||"")).toLowerCase().includes(q)));
+  return sortCards(out, { key: sortKey, dir: sortDir });   // unified sort flows into every view
 }
 function filterValues(key) {
   if (key === "owner") return peopleList.map(p => p.name);
@@ -1333,13 +1330,26 @@ function filterValues(key) {
   const name = key.slice(6);
   return [...new Set(cards.map(c => c.fields && c.fields[name]).filter(Boolean))].sort();
 }
-function filterCount() { return (filters.sprint ? filters.sprint.size : 0) + (filters.promotion ? filters.promotion.size : 0) + activeRules().length; }
+function filterCount() { return (filters.sprint ? filters.sprint.size : 0) + (filters.promotion ? filters.promotion.size : 0) + activeRules().length + (sortKey ? 1 : 0); }
 function updateFilterBtn() {
   const n = filterCount(); const b = document.getElementById("filterBtn");
-  b.textContent = "⚲ Filter" + (n ? " (" + n + ")" : ""); b.classList.toggle("primary", n > 0);
+  b.textContent = "⚲ Filter & sort" + (n ? " (" + n + ")" : ""); b.classList.toggle("primary", n > 0);
 }
 function renderFilters() {
   const body = document.getElementById("filterBody"); body.innerHTML = "";
+  // ── Sort (applies to every view) ──
+  const sortWrap = document.createElement("div"); sortWrap.className = "field";
+  const sortLab = document.createElement("span"); sortLab.className = "seclabel"; sortLab.textContent = "Sort by"; sortWrap.appendChild(sortLab);
+  const sortRow = document.createElement("div"); sortRow.className = "ch-wrap";
+  const ss = document.createElement("select");
+  sortDims().forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = d.label; ss.appendChild(o); });
+  ss.value = sortKey;
+  ss.onchange = () => { sortKey = ss.value; updateFilterBtn(); renderFilters(); render(); };
+  const sdir = document.createElement("button"); sdir.type = "button"; sdir.textContent = sortDir > 0 ? "▲ Asc" : "▼ Desc";
+  sdir.title = "Ascending / descending"; sdir.style.display = sortKey ? "" : "none";
+  sdir.onclick = () => { sortDir = sortDir > 0 ? -1 : 1; updateFilterBtn(); renderFilters(); render(); };
+  sortRow.appendChild(ss); sortRow.appendChild(sdir); sortWrap.appendChild(sortRow); body.appendChild(sortWrap);
+  const condLab = document.createElement("span"); condLab.className = "seclabel"; condLab.style.display = "block"; condLab.style.marginTop = "6px"; condLab.textContent = "Conditions"; body.appendChild(condLab);
   const matchRow = document.createElement("div"); matchRow.className = "rule-match";
   matchRow.appendChild(document.createTextNode("Match "));
   const ms = document.createElement("select"); ms.innerHTML = '<option value="all">all (AND)</option><option value="any">any (OR)</option>'; ms.value = filterMatch;
@@ -1389,6 +1399,7 @@ function renderActiveFilters() {
   legendSel.forEach(v => pills.push({ k: dimLabel, v, remove: () => legendSel.delete(v) }));
   if (filters.sprint) filters.sprint.forEach(v => { const disp = v ? fmtSprint(v) + " · " + sprintRange(v) : "No sprint"; pills.push({ k: "Sprint", v: disp, remove: () => { filters.sprint.delete(v); if (!filters.sprint.size) delete filters.sprint; } }); });
   if (filters.promotion) filters.promotion.forEach(v => pills.push({ k: "Promotion", v, remove: () => { filters.promotion.delete(v); if (!filters.promotion.size) delete filters.promotion; } }));
+  if (sortKey) pills.push({ k: "Sort", v: sortLabel(sortKey) + (sortDir > 0 ? " ↑" : " ↓"), remove: () => { sortKey = ""; } });
   const opLbl = { is: "is", isnot: "is not", empty: "is empty", notempty: "is not empty" };
   activeRules().forEach(r => { const v = (r.op === "is" || r.op === "isnot") ? r.values.map(x => ruleValueLabel(r.field, x)).join(", ") : ""; pills.push({ k: ruleFieldLabel(r.field) + " " + opLbl[r.op], v, remove: () => { const i = filterRules.indexOf(r); if (i >= 0) filterRules.splice(i, 1); } }); });
 
@@ -1406,7 +1417,7 @@ function renderActiveFilters() {
   clear.onclick = () => {
     searchText = ""; const s = document.getElementById("search"); if (s) s.value = "";
     channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = "";
-    legendSel.clear(); filters = {}; filterRules = []; filterMatch = "all";
+    legendSel.clear(); filters = {}; filterRules = []; filterMatch = "all"; sortKey = ""; sortDir = 1;
     updateFilterBtn(); render();
   };
   bar.appendChild(clear);
@@ -1593,7 +1604,7 @@ function renderBoard() {
     .concat(orphans.map(name => ({ name, color: "#475569" })));
   lanes.forEach(st => {
     const col = document.createElement("div"); col.className = "col";
-    const colCards = sortCards(vis.filter(c => c.status === st.name), curDisp().sort);
+    const colCards = vis.filter(c => c.status === st.name);   // vis is already sorted by the global Filter & Sort setting
     const head = document.createElement("div"); head.className = "col-head";
     const bar = document.createElement("div"); bar.className = "bar"; bar.style.background = st.color;
     const h2 = document.createElement("h2"); h2.textContent = st.name;
@@ -1731,16 +1742,13 @@ function gridValue(c, key) {
 }
 function renderGrid() {
   const cols = gridColumns();
-  const rows = visibleCards().slice().sort((a, b) => {
-    const va = String(gridValue(a, gridSort.key)).toLowerCase(), vb = String(gridValue(b, gridSort.key)).toLowerCase();
-    return (va < vb ? -1 : va > vb ? 1 : 0) * gridSort.dir;
-  });
+  const rows = visibleCards();   // already sorted by the global Filter & Sort setting
   const table = document.getElementById("gridTable"); table.innerHTML = "";
   const thead = document.createElement("thead"); const trh = document.createElement("tr");
   cols.forEach(col => {
     const th = document.createElement("th");
-    th.textContent = col.label + (gridSort.key === col.key ? (gridSort.dir > 0 ? " ▲" : " ▼") : "");
-    th.onclick = () => { if (gridSort.key === col.key) gridSort.dir *= -1; else { gridSort.key = col.key; gridSort.dir = 1; } render(); };
+    th.textContent = col.label + (sortKey === col.key ? (sortDir > 0 ? " ▲" : " ▼") : "");
+    th.onclick = () => { if (sortKey === col.key) sortDir *= -1; else { sortKey = col.key; sortDir = 1; } updateFilterBtn(); render(); };   // header click drives the global sort
     trh.appendChild(th);
   });
   thead.appendChild(trh); table.appendChild(thead);
@@ -1784,21 +1792,6 @@ function renderDispSettings() {
     lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + d.label)); box.appendChild(lab);
   });
   document.querySelectorAll("#dispStyle button").forEach(b => b.classList.toggle("active", (b.dataset.s === "badge") === ds.badge));
-  // Card sort — Board only (Calendar is date-positioned; List is grouped by sprint).
-  const sortField = document.getElementById("dispSortField");
-  const showSort = view === "board";
-  sortField.style.display = showSort ? "" : "none";
-  if (showSort) {
-    const sort = ds.sort || { key: "", dir: 1 };
-    const sel = document.getElementById("dispSortKey"); sel.innerHTML = "";
-    boardSortDims().forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = d.label; sel.appendChild(o); });
-    sel.value = sort.key;
-    sel.onchange = () => { ds.sort = { key: sel.value, dir: sort.dir }; saveDisplay(); render(); renderDispSettings(); };
-    const dir = document.getElementById("dispSortDir");
-    dir.style.display = sort.key ? "" : "none";
-    dir.textContent = sort.dir > 0 ? "▲ Asc" : "▼ Desc";
-    dir.onclick = () => { ds.sort = { key: sort.key, dir: sort.dir > 0 ? -1 : 1 }; saveDisplay(); render(); renderDispSettings(); };
-  }
   // Calendar item size — Calendar only.
   const calSizeField = document.getElementById("dispCalSizeField");
   const showCalSize = view === "calendar";
@@ -1826,19 +1819,12 @@ function renderDispGrid() {
     };
     lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + col.label)); box.appendChild(lab);
   });
-  const sel = document.getElementById("dispGridSortKey"); sel.innerHTML = "";
-  all.forEach(col => { const o = document.createElement("option"); o.value = col.key; o.textContent = col.label; sel.appendChild(o); });
-  sel.value = gridSort.key;
-  sel.onchange = () => { gridSort.key = sel.value; render(); };
-  const dir = document.getElementById("dispGridSortDir");
-  dir.textContent = gridSort.dir > 0 ? "▲ Asc" : "▼ Desc";
-  dir.onclick = () => { gridSort.dir *= -1; render(); };
 }
 function openDisp() {
   const grid = view === "grid";
-  document.getElementById("dispTitle").textContent = grid ? "Grid columns & sort" : ("Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : "Board"));
+  document.getElementById("dispTitle").textContent = grid ? "Grid columns" : ("Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : "Board"));
   document.getElementById("dispHint").textContent = grid
-    ? "Choose which columns appear and the default sort. Saved with bookmarks and saved views."
+    ? "Choose which columns appear (saved with bookmarks and views). Sort lives in ⚲ Filter & sort, or click a column header."
     : "Applies to the current view only — Board, Calendar and List are independent. Saved in this browser.";
   renderDispSettings(); document.getElementById("dispOverlay").classList.add("show");
 }
@@ -2516,10 +2502,8 @@ function currentParams() {
   if (activeRules().length) p.set("rules", JSON.stringify(activeRules()));
   if (filterMatch !== "all") p.set("match", filterMatch);
   if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); }
-  if (view === "grid") {
-    if (gridCols) p.set("gcols", gridCols.join(","));
-    if (gridSort.key !== "due" || gridSort.dir !== 1) p.set("gsort", gridSort.key + ":" + (gridSort.dir < 0 ? "d" : "a"));
-  }
+  if (view === "grid" && gridCols) p.set("gcols", gridCols.join(","));
+  if (sortKey) p.set("sort", sortKey + ":" + (sortDir < 0 ? "d" : "a"));
   return p.toString();
 }
 function writeUrl() { const qs = currentParams(); try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {} }
@@ -2581,7 +2565,7 @@ function renderViews() {
 async function openViews() { await loadSharedViews(); renderViews(); document.getElementById("viewsOverlay").classList.add("show"); }
 // Apply a saved view's query params: reset state to defaults, parse params, sync controls.
 function applySavedView(params) {
-  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; gridSort = { key: "due", dir: 1 };
+  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; sortKey = ""; sortDir = 1;
   activeBrands = new Set(brandsList.map(b => b.name));
   try { history.replaceState(null, "", location.pathname + (params ? "?" + params : "")); } catch (e) {}
   readUrl();
@@ -2611,7 +2595,7 @@ function readUrl() {
   const cm = p.get("calMode"); if (cm) calMode = cm;
   const cd = p.get("calDate"); if (cd) { const d = new Date(cd + "T00:00:00"); if (!isNaN(d.getTime())) calRef = d; }
   const gc = p.get("gcols"); if (gc) gridCols = gc.split(",");
-  const gs = p.get("gsort"); if (gs) { const i = gs.lastIndexOf(":"); const k = i > 0 ? gs.slice(0, i) : gs; const d = gs.slice(i + 1); if (k) gridSort = { key: k, dir: d === "d" ? -1 : 1 }; }
+  const so = p.get("sort"); if (so) { const i = so.lastIndexOf(":"); const k = i > 0 ? so.slice(0, i) : so; const d = so.slice(i + 1); if (k) { sortKey = k; sortDir = d === "d" ? -1 : 1; } }
 }
 async function init() {
   fillStaticSelects();
@@ -2704,7 +2688,7 @@ async function init() {
   document.getElementById("filterBtn").onclick = openFilter;
   document.getElementById("filterClose").onclick = () => document.getElementById("filterOverlay").classList.remove("show");
   document.getElementById("filterOverlay").onclick = e => { if (e.target.id === "filterOverlay") e.currentTarget.classList.remove("show"); };
-  document.getElementById("filterClear").onclick = () => { filters = {}; filterRules = []; filterMatch = "all"; updateFilterBtn(); renderFilters(); render(); };
+  document.getElementById("filterClear").onclick = () => { filters = {}; filterRules = []; filterMatch = "all"; sortKey = ""; sortDir = 1; updateFilterBtn(); renderFilters(); render(); };
   updateFilterBtn();
   const closeViews = () => document.getElementById("viewsOverlay").classList.remove("show");
   document.getElementById("viewsBtn").onclick = openViews;
