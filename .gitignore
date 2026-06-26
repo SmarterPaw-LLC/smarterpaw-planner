@@ -18,3 +18,8 @@ supabase/.env
 test.xlsx
 .preview-server.cjs
 .claude/
+
+# Google Drive sync artifacts (the folder is hidden; the temp file names are .tmp.driveupload\NNNNN)
+.tmp.drivedownload/
+.tmp.driveupload/
+.tmp.drive*
