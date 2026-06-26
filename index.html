@@ -671,8 +671,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.71";
+const VERSION = "1.72";
 const CHANGELOG = [
+  "v1.72 — You can now set a custom color for each promotion in Manage → Promotions (just like brands/channels/lanes). Picking a color stores an override; an ↺ button next to renamed/colored promos resets back to the auto color.",
   "v1.71 — Expanded the auto-assigned color palette for channels (and any other list with auto colors) from 10 to 30 distinct hues, so colors no longer repeat with similar shades once you have more than a handful of channels.",
   "v1.70 — Updated the app favicon to the new calendar + SmarterPaw cat icon.",
   "v1.69 — Updated the app favicon to the new SmarterPaw planner icon.",
@@ -756,8 +757,13 @@ const COLOR_DIMS = [{ key: "brand", label: "Brand" }, { key: "channel", label: "
 // Promotion: a per-card tag stored in the fields blob (no schema change). Color is auto-derived from the name so it's identical for everyone.
 const PROMO_KEY = "__promotion";
 const PROMO_PALETTE = ["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e","#10b981","#06b6d4","#3b82f6","#6366f1","#a855f7","#ec4899"];
+// Promotion color overrides live in a single sentinel `lists` row of kind=field with name=PROMO_COLORS_KEY.
+// We piggyback on `kind=field` (the only one whose color column we already use to store JSON) — no schema change needed.
+const PROMO_COLORS_KEY = "__promo_colors__";
+let promoOverrides = {};   // { promoName: hexColor }
+let _promoOverrideRowId = null;   // id of the sentinel row (null until first save)
 function promoHash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
-function promoColor(name) { return name ? PROMO_PALETTE[promoHash(name) % PROMO_PALETTE.length] : ""; }
+function promoColor(name) { if (!name) return ""; return promoOverrides[name] || PROMO_PALETTE[promoHash(name) % PROMO_PALETTE.length]; }
 function cardPromo(c) { return (c.fields && c.fields[PROMO_KEY]) || ""; }
 function allPromos() { return [...new Set(cards.map(cardPromo).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
 // Priority: a built-in dimension (fixed options + colors) stored per card in the fields blob (no schema change).
@@ -1174,14 +1180,38 @@ async function loadLists() {
   const map = (k) => data.filter(r => r.kind === k).map(r => ({ id: r.id, name: r.name, color: r.color || undefined }));
   channelsList = map("channel"); peopleList = map("person"); statusList = map("status");
   brandsList = map("brand");
+  // Promotions don't have full list rows (they live in card fields), but we DO store optional color overrides
+  // here as lists rows of kind=promotion. Build a {name -> {id, color}} map for promoColor() / Manage.
+  promoOverrides = {};
+  data.filter(r => r.kind === "promotion").forEach(r => { if (r.color) promoOverrides[r.name] = { id: r.id, color: r.color }; });
   // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
-  fieldsList = data.filter(r => r.kind === "field").map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  // The sentinel name PROMO_COLORS_KEY holds a JSON {promoName: hexColor} map — pulled into promoOverrides, not fieldsList.
+  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  const pcRow = data.find(r => r.kind === "field" && r.name === PROMO_COLORS_KEY);
+  promoOverrides = {}; _promoOverrideRowId = pcRow ? pcRow.id : null;
+  if (pcRow && pcRow.color) { try { const m = JSON.parse(pcRow.color); if (m && typeof m === "object") promoOverrides = m; } catch (e) {} }
   completeLane = (data.find(r => r.kind === "status" && r.is_complete) || {}).name || "";
   if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
   if (statusList.length === 0) statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
   if (brandsList.length === 0) brandsList = defaultBrands();
 }
 function listFor(kind) { return { channel: channelsList, person: peopleList, status: statusList, brand: brandsList, field: fieldsList }[kind]; }
+// Persist promoOverrides to the sentinel row (insert it on first write; delete it when the map is empty).
+async function savePromoOverrides() {
+  if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
+  const empty = !Object.keys(promoOverrides).length;
+  if (_promoOverrideRowId) {
+    if (empty) { const { error } = await db.from("lists").delete().eq("id", _promoOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } _promoOverrideRowId = null; }
+    else { const { error } = await db.from("lists").update({ color: JSON.stringify(promoOverrides) }).eq("id", _promoOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } }
+  } else if (!empty) {
+    const { data, error } = await db.from("lists").insert({ kind: "field", name: PROMO_COLORS_KEY, color: JSON.stringify(promoOverrides), position: 99999 }).select("id").single();
+    if (error) { toast("Save failed: " + error.message); return; }
+    _promoOverrideRowId = data.id;
+  }
+  afterListsChanged();
+}
+async function setPromoColor(name, color) { promoOverrides[name] = color; await savePromoOverrides(); }
+async function resetPromoColor(name) { if (!(name in promoOverrides)) return; delete promoOverrides[name]; await savePromoOverrides(); }
 async function setColor(item, color) {
   item.color = color;
   if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
@@ -2316,13 +2346,17 @@ function fillManagePromos() {
   promos.forEach(name => {
     const row = document.createElement("div"); row.className = "manage-row";
     const left = document.createElement("span"); left.className = "row-left";
-    const sw = document.createElement("span"); sw.className = "lane-dot"; sw.style.background = promoColor(name); sw.style.width = "14px"; sw.style.height = "14px";
+    const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = promoColor(name); sw.title = "Color";
+    sw.onchange = () => setPromoColor(name, sw.value);
     left.appendChild(sw); left.appendChild(document.createTextNode(name));
     const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
     const ed = document.createElement("button"); ed.textContent = "✎"; ed.className = "mv"; ed.title = "Rename";
     ed.onclick = () => { const nn = prompt("Rename promotion “" + name + "” to:", name); if (nn) renamePromo(name, nn); };
+    const reset = document.createElement("button"); reset.textContent = "↺"; reset.className = "mv"; reset.title = "Reset to auto color";
+    reset.style.display = promoOverrides[name] ? "" : "none";
+    reset.onclick = () => resetPromoColor(name);
     const rm = document.createElement("button"); rm.textContent = "Remove"; rm.onclick = () => removePromo(name);
-    ctrls.appendChild(ed); ctrls.appendChild(rm);
+    ctrls.appendChild(ed); ctrls.appendChild(reset); ctrls.appendChild(rm);
     row.appendChild(left); row.appendChild(ctrls); el.appendChild(row);
   });
 }
@@ -2335,17 +2369,19 @@ async function renamePromo(old, neu) {
   const affected = cards.filter(c => cardPromo(c) === old);
   const res = await Promise.all(affected.map(c => { const f = Object.assign({}, c.fields); f[PROMO_KEY] = neu; return db.from("deliverables").update({ fields: f }).eq("id", c.id); }));
   const err = res.find(r => r.error); if (err) { toast("Rename failed: " + err.error.message); return; }
+  if (old in promoOverrides) { promoOverrides[neu] = promoOverrides[old]; delete promoOverrides[old]; await savePromoOverrides(); }   // carry color override over
   await refetch(); if (manageOpen) renderManage();
 }
 async function removePromo(name) {
   if (!confirm('Remove promotion "' + name + '" from all deliverables that use it?')) return;
   if (!ONLINE) {
     cards.forEach(c => { if (cardPromo(c) === name && c.fields) delete c.fields[PROMO_KEY]; });
-    saveLocal(); afterListsChanged(); return;
+    delete promoOverrides[name]; saveLocal(); afterListsChanged(); return;
   }
   const affected = cards.filter(c => cardPromo(c) === name);
   const res = await Promise.all(affected.map(c => { const f = Object.assign({}, c.fields); delete f[PROMO_KEY]; return db.from("deliverables").update({ fields: f }).eq("id", c.id); }));
   const err = res.find(r => r.error); if (err) { toast("Remove failed: " + err.error.message); return; }
+  if (name in promoOverrides) { delete promoOverrides[name]; await savePromoOverrides(); }   // drop the override entry too
   await refetch(); if (manageOpen) renderManage();
 }
 function manageRow(kind, item, idx) {
