@@ -671,8 +671,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.70";
+const VERSION = "1.71";
 const CHANGELOG = [
+  "v1.71 — Expanded the auto-assigned color palette for channels (and any other list with auto colors) from 10 to 30 distinct hues, so colors no longer repeat with similar shades once you have more than a handful of channels.",
   "v1.70 — Updated the app favicon to the new calendar + SmarterPaw cat icon.",
   "v1.69 — Updated the app favicon to the new SmarterPaw planner icon.",
   "v1.68 — Consistent header: the ＋ Sprint picker and No-sprint toggle now show on every view (instead of being hidden on List), so the toolbar no longer reflows and the Filter & sort button stays in the same place when you switch views. Removed the duplicate sprint picker from the List header.",
@@ -745,7 +746,12 @@ const CHANGELOG = [
 const DEFAULT_STATUSES = ["Backlog", "In Progress", "Review", "Scheduled", "Live"];
 const STATUS_COLORS = { "Backlog": "#6b7280", "In Progress": "#3b82f6",
   "Review": "#a855f7", "Scheduled": "#f59e0b", "Live": "#22c55e" };
-const PALETTE = ["#6b7280","#3b82f6","#a855f7","#f59e0b","#22c55e","#ec4899","#06b6d4","#84cc16","#f43f5e","#14b8a6"];
+// 30 visually distinct hues (Tailwind-500/600 family) — spread around the color wheel so adjacent items don't read as the same color.
+const PALETTE = [
+  "#3b82f6","#22c55e","#ec4899","#f59e0b","#a855f7","#14b8a6","#ef4444","#06b6d4","#84cc16","#f97316",
+  "#6366f1","#eab308","#d946ef","#10b981","#f43f5e","#0ea5e9","#8b5cf6","#65a30d","#dc2626","#0891b2",
+  "#7c3aed","#ea580c","#16a34a","#be185d","#0369a1","#a16207","#4f46e5","#059669","#9333ea","#1e40af",
+];
 const COLOR_DIMS = [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "status", label: "Lane" }, { key: "priority", label: "Priority" }];
 // Promotion: a per-card tag stored in the fields blob (no schema change). Color is auto-derived from the name so it's identical for everyone.
 const PROMO_KEY = "__promotion";
