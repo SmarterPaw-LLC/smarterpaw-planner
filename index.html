@@ -671,8 +671,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.72";
+const VERSION = "1.73";
 const CHANGELOG = [
+  "v1.73 — Notes: pasting a URL now auto-hyperlinks it immediately (no more waiting for blur), and clicking a link inside the notes editor opens it in a new tab instead of just placing the cursor.",
   "v1.72 — You can now set a custom color for each promotion in Manage → Promotions (just like brands/channels/lanes). Picking a color stores an override; an ↺ button next to renamed/colored promos resets back to the auto color.",
   "v1.71 — Expanded the auto-assigned color palette for channels (and any other list with auto colors) from 10 to 30 distinct hues, so colors no longer repeat with similar shades once you have more than a handful of channels.",
   "v1.70 — Updated the app favicon to the new calendar + SmarterPaw cat icon.",
@@ -2703,6 +2704,20 @@ async function init() {
   document.getElementById("f_notesUnlink").addEventListener("mousedown", e => e.preventDefault());
   document.getElementById("f_notesUnlink").onclick = () => { notesEd().focus(); document.execCommand("unlink", false, null); };
   notesEd().addEventListener("blur", () => linkifyInto(notesEd()));   // turn typed/pasted URLs into links when you click away
+  // Clicking a link inside contenteditable normally just places the cursor — intercept and open it in a new tab.
+  notesEd().addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
+  // Auto-hyperlink URLs on paste — insert the clipboard text with <a> already wrapped around any http(s) URLs.
+  notesEd().addEventListener("paste", e => {
+    const cd = e.clipboardData || window.clipboardData; if (!cd) return;
+    const text = cd.getData("text/plain"); if (!text) return;
+    e.preventDefault();
+    const re = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
+    const html = text.split(re).map((p, i) => i % 2 === 1
+      ? `<a href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>`
+      : esc(p).replace(/\n/g, "<br>")
+    ).join("");
+    document.execCommand("insertHTML", false, html);
+  });
   document.getElementById("f_subAddBtn").onclick = addModalSub;
   document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addModalSub(); } });
   const exportOv = document.getElementById("exportOverlay");
