@@ -87,9 +87,10 @@
     border: 1px solid var(--line); border-radius: 8px; line-height: 1.5; }
   .rte:focus { outline: none; border-color: var(--accent); }
   .rte:empty::before { content: attr(data-ph); color: var(--muted); pointer-events: none; }
-  .rte a { color: var(--accent); }
   .rte ul, .rte ol { margin: 4px 0; padding-left: 22px; }
-  .card .notes a, .rte a { color: var(--accent); }
+  /* Links inside notes (editor + card preview): accent color and a pointer cursor (overrides the text cursor that contenteditable uses by default). */
+  .card .notes a, .rte a { color: var(--accent); cursor: pointer; }
+  .card .notes a:hover, .rte a:hover { text-decoration: underline; }
   .row2 { display: flex; gap: 12px; } .row2 > .field { flex: 1; }
   .ch-wrap { display: flex; gap: 6px; }
   .ch-wrap select { flex: 1; }
@@ -671,8 +672,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.73";
+const VERSION = "1.74";
 const CHANGELOG = [
+  "v1.74 — Links in notes now show a pointer cursor on hover (and underline) — they were keeping the default text cursor inside the editor, which made them look unclickable.",
   "v1.73 — Notes: pasting a URL now auto-hyperlinks it immediately (no more waiting for blur), and clicking a link inside the notes editor opens it in a new tab instead of just placing the cursor.",
   "v1.72 — You can now set a custom color for each promotion in Manage → Promotions (just like brands/channels/lanes). Picking a color stores an override; an ↺ button next to renamed/colored promos resets back to the auto color.",
   "v1.71 — Expanded the auto-assigned color palette for channels (and any other list with auto colors) from 10 to 30 distinct hues, so colors no longer repeat with similar shades once you have more than a handful of channels.",
