@@ -672,8 +672,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.74";
+const VERSION = "1.75";
 const CHANGELOG = [
+  "v1.75 — Calendar item size (Compact / Comfortable / Spacious) is now serialized into the URL, so it bookmarks and saves with views — applying a saved view that included size will reopen at that exact size.",
   "v1.74 — Links in notes now show a pointer cursor on hover (and underline) — they were keeping the default text cursor inside the editor, which made them look unclickable.",
   "v1.73 — Notes: pasting a URL now auto-hyperlinks it immediately (no more waiting for blur), and clicking a link inside the notes editor opens it in a new tab instead of just placing the cursor.",
   "v1.72 — You can now set a custom color for each promotion in Manage → Promotions (just like brands/channels/lanes). Picking a color stores an override; an ↺ button next to renamed/colored promos resets back to the auto color.",
@@ -2538,7 +2539,7 @@ function currentParams() {
   if (view === "list" && listSplit) p.set("split", listSplit);
   if (activeRules().length) p.set("rules", JSON.stringify(activeRules()));
   if (filterMatch !== "all") p.set("match", filterMatch);
-  if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); }
+  if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); const sz = displaySettings.calendar.eventSize; if (sz && sz !== "compact") p.set("size", sz); }
   if (view === "grid" && gridCols) p.set("gcols", gridCols.join(","));
   if (sortKey) p.set("sort", sortKey + ":" + (sortDir < 0 ? "d" : "a"));
   return p.toString();
@@ -2602,7 +2603,7 @@ function renderViews() {
 async function openViews() { await loadSharedViews(); renderViews(); document.getElementById("viewsOverlay").classList.add("show"); }
 // Apply a saved view's query params: reset state to defaults, parse params, sync controls.
 function applySavedView(params) {
-  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; sortKey = ""; sortDir = 1;
+  view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; sortKey = ""; sortDir = 1; displaySettings.calendar.eventSize = "compact";
   activeBrands = new Set(brandsList.map(b => b.name));
   try { history.replaceState(null, "", location.pathname + (params ? "?" + params : "")); } catch (e) {}
   readUrl();
@@ -2631,6 +2632,7 @@ function readUrl() {
   const mm = p.get("match"); if (mm === "any" || mm === "all") filterMatch = mm;
   const cm = p.get("calMode"); if (cm) calMode = cm;
   const cd = p.get("calDate"); if (cd) { const d = new Date(cd + "T00:00:00"); if (!isNaN(d.getTime())) calRef = d; }
+  const sz = p.get("size"); if (["compact","comfortable","spacious"].includes(sz)) displaySettings.calendar.eventSize = sz;
   const gc = p.get("gcols"); if (gc) gridCols = gc.split(",");
   const so = p.get("sort"); if (so) { const i = so.lastIndexOf(":"); const k = i > 0 ? so.slice(0, i) : so; const d = so.slice(i + 1); if (k) { sortKey = k; sortDir = d === "d" ? -1 : 1; } }
 }
