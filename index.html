@@ -672,8 +672,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.75";
+const VERSION = "1.76";
 const CHANGELOG = [
+  "v1.76 — The brand chips at the top of the page now behave like the rest of the “click to filter” controls: by default all brands are shown, clicking a brand focuses on just that brand (not removes it), and each active brand appears as a removable chip in the Filtering by row. Counts toward the Filter & sort badge too.",
   "v1.75 — Calendar item size (Compact / Comfortable / Spacious) is now serialized into the URL, so it bookmarks and saves with views — applying a saved view that included size will reopen at that exact size.",
   "v1.74 — Links in notes now show a pointer cursor on hover (and underline) — they were keeping the default text cursor inside the editor, which made them look unclickable.",
   "v1.73 — Notes: pasting a URL now auto-hyperlinks it immediately (no more waiting for blur), and clicking a link inside the notes editor opens it in a new tab instead of just placing the cursor.",
@@ -1003,7 +1004,7 @@ function sortCards(arr, sort) {
   if (!sort || !sort.key) return arr;
   return arr.slice().sort((a, b) => { const va = cardSortKey(a, sort.key), vb = cardSortKey(b, sort.key); return (va < vb ? -1 : va > vb ? 1 : 0) * sort.dir; });
 }
-let activeBrands = new Set(BRANDS.map(b => b.name));
+let activeBrands = new Set();   // empty = show all brands; non-empty = filter to just those (works like the legend "click to filter")
 let channelFilter = "", searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
@@ -1363,7 +1364,7 @@ function passesFilters(c) {
 }
 function visibleCards() {
   const q = searchText.trim().toLowerCase();
-  const out = cards.filter(c => activeBrands.has(c.brand) && (!channelFilter || c.channel === channelFilter) &&
+  const out = cards.filter(c => (activeBrands.size === 0 || activeBrands.has(c.brand)) && (!channelFilter || c.channel === channelFilter) &&
     (legendSel.size === 0 || legendSel.has(legendVal(c))) && passesFilters(c) &&
     (!q || (c.title + " " + (c.notes||"") + " " + (c.owner||"")).toLowerCase().includes(q)));
   return sortCards(out, { key: sortKey, dir: sortDir });   // unified sort flows into every view
@@ -1376,7 +1377,7 @@ function filterValues(key) {
   const name = key.slice(6);
   return [...new Set(cards.map(c => c.fields && c.fields[name]).filter(Boolean))].sort();
 }
-function filterCount() { return (filters.sprint ? filters.sprint.size : 0) + (filters.promotion ? filters.promotion.size : 0) + activeRules().length + (sortKey ? 1 : 0); }
+function filterCount() { return (filters.sprint ? filters.sprint.size : 0) + (filters.promotion ? filters.promotion.size : 0) + activeRules().length + (sortKey ? 1 : 0) + activeBrands.size; }
 function updateFilterBtn() {
   const n = filterCount(); const b = document.getElementById("filterBtn");
   b.textContent = "⚲ Filter & sort" + (n ? " (" + n + ")" : ""); b.classList.toggle("primary", n > 0);
@@ -1441,6 +1442,7 @@ function renderActiveFilters() {
   const pills = [];
   if (searchText.trim()) pills.push({ k: "Search", v: '“' + searchText.trim() + '”', remove: () => { searchText = ""; const s = document.getElementById("search"); if (s) s.value = ""; } });
   if (channelFilter) pills.push({ k: "Channel", v: channelFilter, remove: () => { channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = ""; } });
+  activeBrands.forEach(v => pills.push({ k: "Brand", v, remove: () => activeBrands.delete(v) }));
   const dimLabel = (COLOR_DIMS.find(d => d.key === colorBy) || COLOR_DIMS[0]).label;
   legendSel.forEach(v => pills.push({ k: dimLabel, v, remove: () => legendSel.delete(v) }));
   if (filters.sprint) filters.sprint.forEach(v => { const disp = v ? fmtSprint(v) + " · " + sprintRange(v) : "No sprint"; pills.push({ k: "Sprint", v: disp, remove: () => { filters.sprint.delete(v); if (!filters.sprint.size) delete filters.sprint; } }); });
@@ -1463,13 +1465,13 @@ function renderActiveFilters() {
   clear.onclick = () => {
     searchText = ""; const s = document.getElementById("search"); if (s) s.value = "";
     channelFilter = ""; const c = document.getElementById("channelFilter"); if (c) c.value = "";
-    legendSel.clear(); filters = {}; filterRules = []; filterMatch = "all"; sortKey = ""; sortDir = 1;
+    legendSel.clear(); filters = {}; filterRules = []; filterMatch = "all"; sortKey = ""; sortDir = 1; activeBrands.clear();
     updateFilterBtn(); render();
   };
   bar.appendChild(clear);
 }
 function render() {
-  writeUrl(); renderLegend(); renderActiveFilters(); renderSprintPicker();
+  writeUrl(); buildBrandFilters(); renderLegend(); renderActiveFilters(); renderSprintPicker();
   if (view === "calendar") renderCalendar();
   else if (view === "grid") renderGrid();
   else if (view === "list") renderList();
@@ -2033,11 +2035,14 @@ function renderCalendar() {
 /* ---------- filters / selects ---------- */
 function buildBrandFilters() {
   const bf = document.getElementById("brandFilters"); bf.innerHTML = "";
-  BRANDS.forEach(b => { const chip = document.createElement("span"); chip.className = "chip" + (activeBrands.has(b.name) ? "" : " off");
+  BRANDS.forEach(b => {
+    const sel = activeBrands.has(b.name);
+    const dim = !sel && activeBrands.size > 0;   // "off" look only when filtering and this one isn't picked
+    const chip = document.createElement("span"); chip.className = "chip" + (dim ? " off" : "");
     chip.innerHTML = `<span class="dot" style="background:${brandColor(b.name)}"></span>${esc(b.name)}`;
-    chip.onclick = () => { if (activeBrands.has(b.name)) activeBrands.delete(b.name); else activeBrands.add(b.name);
-      chip.classList.toggle("off", !activeBrands.has(b.name)); render(); };
-    bf.appendChild(chip); });
+    chip.onclick = () => { if (sel) activeBrands.delete(b.name); else activeBrands.add(b.name); updateFilterBtn(); render(); };
+    bf.appendChild(chip);
+  });
 }
 function buildChannelFilter() {
   const cf = document.getElementById("channelFilter"); const cur = cf.value;
@@ -2533,7 +2538,7 @@ function currentParams() {
   if (colorBy !== "brand") p.set("color", colorBy);
   if (searchText.trim()) p.set("q", searchText.trim());
   if (channelFilter) p.set("channel", channelFilter);
-  if (brandsList.length && activeBrands.size && activeBrands.size < brandsList.length) [...activeBrands].forEach(b => p.append("brand", b));
+  if (activeBrands.size) [...activeBrands].forEach(b => p.append("brand", b));
   [...legendSel].forEach(v => p.append("legend", v));
   Object.keys(filters).forEach(k => { const s = filters[k]; if (s) [...s].forEach(v => p.append("flt_" + k, v)); });
   if (view === "list" && listSplit) p.set("split", listSplit);
@@ -2604,7 +2609,7 @@ async function openViews() { await loadSharedViews(); renderViews(); document.ge
 // Apply a saved view's query params: reset state to defaults, parse params, sync controls.
 function applySavedView(params) {
   view = "board"; colorBy = "brand"; searchText = ""; channelFilter = ""; legendSel = new Set(); filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; sortKey = ""; sortDir = 1; displaySettings.calendar.eventSize = "compact";
-  activeBrands = new Set(brandsList.map(b => b.name));
+  activeBrands = new Set();
   try { history.replaceState(null, "", location.pathname + (params ? "?" + params : "")); } catch (e) {}
   readUrl();
   document.getElementById("search").value = searchText;
