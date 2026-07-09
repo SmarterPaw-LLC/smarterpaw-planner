@@ -484,9 +484,9 @@
         <div class="ch-wrap"><input id="f_end" type="date" /><button type="button" id="f_clearEnd" title="Remove end date">✕</button></div>
       </div>
     </div>
-    <div class="field"><label>Sprint week <span class="opt">— auto from date; for undated tasks pick any day in the week</span></label>
+    <div class="field"><label>Sprint week <span class="opt">— auto from due date; add a planning week here if you’ll start earlier</span></label>
+      <span id="f_sprintText" class="sprint-readonly" style="display:none;margin-bottom:6px"></span>
       <input id="f_sprint" type="date" onchange="renderSprintTrack()" />
-      <span id="f_sprintText" class="sprint-readonly" style="display:none"></span>
     </div>
     <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
@@ -672,8 +672,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.76";
+const VERSION = "1.77";
 const CHANGELOG = [
+  "v1.77 — You can now set a “planning” sprint week in addition to the auto-derived one from the due date — useful when you start work in an earlier sprint. The picker stays visible even for dated items; the planning week counts in Sprints tracked, in sprint filters, and puts the item under that sprint on the List view too. If you leave the picker matching the due date’s sprint, no extra planning sprint is stored.",
   "v1.76 — The brand chips at the top of the page now behave like the rest of the “click to filter” controls: by default all brands are shown, clicking a brand focuses on just that brand (not removes it), and each active brand appears as a removable chip in the Filtering by row. Counts toward the Filter & sort badge too.",
   "v1.75 — Calendar item size (Compact / Comfortable / Spacious) is now serialized into the URL, so it bookmarks and saves with views — applying a saved view that included size will reopen at that exact size.",
   "v1.74 — Links in notes now show a pointer cursor on hover (and underline) — they were keeping the default text cursor inside the editor, which made them look unclickable.",
@@ -835,21 +836,20 @@ function mergeSprintHistory(c, due, end) {
   weeks.forEach(w => { if (!merged.includes(w)) { merged.push(w); changed = true; } });
   return changed ? merged : null;
 }
-// All sprints a card touches: its recorded history ∪ the sprints its current date range spans
-// (or, for an undated task, its manually-set sprint) — so it shows even before any edit.
+// All sprints a card touches: recorded history ∪ every week its date range spans ∪ its manual planning sprint (if set).
+// Dated + manual can now coexist ("planning sprint": e.g., due July 31 but start working in Wk 27).
 function cardSprints(c) {
   const set = new Set(cardSprintHistory(c));
-  const weeks = sprintsInRange(c.due, c.end);
-  if (weeks.length) weeks.forEach(w => set.add(w));
-  else { const m = c.fields && c.fields[SPRINT_KEY]; if (m) set.add(m); }   // undated → manual sprint
+  sprintsInRange(c.due, c.end).forEach(w => set.add(w));
+  const m = c.fields && c.fields[SPRINT_KEY]; if (m) set.add(m);
   return [...set].sort();
 }
-// Sprints a saved card-data should contribute to the tracker: its date-range weeks, or (if undated) its manual sprint.
+// Sprints a saved card-data should contribute to the tracker: the date-range weeks plus the manual planning sprint (if any).
 function recordedSprints(d) {
-  const weeks = sprintsInRange(d.due, d.end);
-  if (weeks.length) return weeks;
+  const out = [...sprintsInRange(d.due, d.end)];
   const m = d.fields && d.fields[SPRINT_KEY];
-  return m ? [m] : [];
+  if (m && !out.includes(m)) out.push(m);
+  return out;
 }
 function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_KEY])) ? c.fields[SUBTASKS_KEY] : []; }
 function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
@@ -1045,7 +1045,7 @@ function ruleCardValues(c, field) {
   if (field === "status") return c.status ? [c.status] : [];
   if (field === "priority") return [cardPriority(c)];
   if (field === "promotion") { const p = cardPromo(c); return p ? [p] : []; }
-  if (field === "sprint") { const s = cardSprint(c); return s ? [s] : []; }
+  if (field === "sprint") return cardSprints(c);   // include planning sprint (dated + manual can coexist)
   if (field.indexOf("field:") === 0) { const n = field.slice(6); const v = (c.fields && c.fields[n]) || ""; if (!v) return []; const def = fieldByName(n); return (def && def.type === "multi") ? splitMulti(v) : [v]; }
   return [];
 }
@@ -1356,7 +1356,12 @@ function renderNotes(raw) {
 function notesToEditor(raw) { return raw ? (looksLikeHtml(raw) ? sanitizeNotes(raw) : esc(raw).replace(/\n/g, "<br>")) : ""; }
 function legendVal(c) { return colorBy === "channel" ? c.channel : colorBy === "status" ? c.status : colorBy === "priority" ? cardPriority(c) : c.brand; }
 function passesFilters(c) {
-  if (filters.sprint && filters.sprint.size && !filters.sprint.has(cardSprint(c))) return false;       // List header quick sprint filter
+  if (filters.sprint && filters.sprint.size) {
+    // A card matches a sprint filter if ANY of its sprints is picked (so a planning sprint counts) — or if it has none and "" (No sprint) is picked.
+    const cs = cardSprints(c);
+    const any = cs.length ? cs.some(s => filters.sprint.has(s)) : filters.sprint.has("");
+    if (!any) return false;
+  }
   if (filters.promotion && filters.promotion.size && !filters.promotion.has(cardPromo(c))) return false; // Promotions legend quick filter
   const rs = activeRules();
   if (rs.length) { const res = rs.map(r => ruleMatches(c, r)); if (!(filterMatch === "any" ? res.some(Boolean) : res.every(Boolean))) return false; }
@@ -1560,7 +1565,8 @@ function renderList() {
     keepScroll();
     return;
   }
-  const groups = {}; items.forEach(c => { const s = cardSprint(c); (groups[s] = groups[s] || []).push(c); });
+  // A card appears under every sprint it belongs to (its date range + any planning sprint). Cards with no sprint go under "".
+  const groups = {}; items.forEach(c => { const spr = cardSprints(c); if (!spr.length) { (groups[""] = groups[""] || []).push(c); } else spr.forEach(s => (groups[s] = groups[s] || []).push(c)); });
   const ordered = Object.keys(groups).filter(k => k).sort().concat(groups[""] ? [""] : []);
   ordered.forEach(sk => {
     const sec = document.createElement("div"); sec.className = "list-sec";
@@ -2067,12 +2073,14 @@ function defaultNewChannel() {
 function updateSprintField() {
   const due = document.getElementById("f_due").value;
   const end = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
-  const f = document.getElementById("f_sprint"); const txt = document.getElementById("f_sprintText");
+  const txt = document.getElementById("f_sprintText");
   const a = due || end, b = end || due;
-  if (a) {   // dated → sprint is derived; show it read-only
+  if (a) {   // dated → show the derived (primary) sprint above the picker; picker stays visible for an optional planning sprint
     const w = isoWeek(a < b ? a : b);
-    f.style.display = "none"; txt.style.display = ""; txt.textContent = fmtSprint(w) + " · " + sprintRange(w) + "  (from date)";
-  } else { f.style.display = ""; txt.style.display = "none"; }
+    txt.style.display = ""; txt.textContent = fmtSprint(w) + " · " + sprintRange(w) + "  (from date)";
+  } else {
+    txt.style.display = "none";
+  }
   renderSprintTrack();
 }
 // Live "Sprints tracked" preview from the modal's current state: saved history ∪ the sprint(s) this edit would record.
@@ -2243,7 +2251,8 @@ function saveModal() {
   const sprint = sprintDate ? isoWeek(sprintDate) : "";   // date input → ISO week
   const dueVal = document.getElementById("f_due").value;
   const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
-  if (sprint && !(dueVal || endVal)) fields[SPRINT_KEY] = sprint;   // dated items derive their sprint, so don't store a stale manual one
+  const derived = derivedSprintFor(dueVal, endVal);
+  if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
   const subs = modalSubs.map(s => ({ id: s.id, text: s.text.trim(), done: !!s.done })).filter(s => s.text);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
