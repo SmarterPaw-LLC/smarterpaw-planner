@@ -672,8 +672,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.77";
+const VERSION = "1.78";
 const CHANGELOG = [
+  "v1.78 — Sprints-tracked chips are now color-coded by month (12-color palette). Weeks that cross two months (e.g., Wk 31 = Jul 27 – Aug 2) get a gradient split at the exact day boundary between the two months’ colors, so a glance tells you which month a sprint belongs to.",
   "v1.77 — You can now set a “planning” sprint week in addition to the auto-derived one from the due date — useful when you start work in an earlier sprint. The picker stays visible even for dated items; the planning week counts in Sprints tracked, in sprint filters, and puts the item under that sprint on the List view too. If you leave the picker matching the due date’s sprint, no extra planning sprint is stored.",
   "v1.76 — The brand chips at the top of the page now behave like the rest of the “click to filter” controls: by default all brands are shown, clicking a brand focuses on just that brand (not removes it), and each active brand appears as a removable chip in the Filtering by row. Counts toward the Filter & sort badge too.",
   "v1.75 — Calendar item size (Compact / Comfortable / Spacious) is now serialized into the URL, so it bookmarks and saves with views — applying a saved view that included size will reopen at that exact size.",
@@ -811,6 +812,22 @@ function sprintRange(weekStr) {
   const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
   const f = d => MONTHS[d.getUTCMonth()].slice(0, 3) + " " + d.getUTCDate();
   return f(mon) + " – " + f(sun);
+}
+// 12-month color palette (Jan → Dec). Used to color-code the Sprints-tracked chips.
+const MONTH_COLORS = ["#3b82f6","#8b5cf6","#14b8a6","#22c55e","#84cc16","#eab308","#f97316","#ef4444","#ec4899","#a855f7","#64748b","#06b6d4"];
+function _hexRGBA(hex, a) { const n = parseInt(hex.slice(1), 16); return "rgba(" + ((n>>16)&255) + "," + ((n>>8)&255) + "," + (n&255) + "," + a + ")"; }
+// Inline style for a sprint chip: tinted bg + border colored by the week's month(s).
+// If the week crosses two months, the bg becomes a gradient split at the exact day boundary.
+function sprintChipStyle(weekStr) {
+  const mon = isoWeekStart(weekStr); if (!mon) return "";
+  const cA = MONTH_COLORS[mon.getUTCMonth()];
+  const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+  const cB = MONTH_COLORS[sun.getUTCMonth()];
+  if (cA === cB) return "background:" + _hexRGBA(cA, .22) + ";border-color:" + _hexRGBA(cA, .55);
+  let inA = 0, d = new Date(mon);
+  for (let i = 0; i < 7; i++) { if (d.getUTCMonth() === mon.getUTCMonth()) inA++; d.setUTCDate(d.getUTCDate() + 1); }
+  const pct = Math.round(inA / 7 * 100);
+  return "background:linear-gradient(to right," + _hexRGBA(cA,.24) + " 0," + _hexRGBA(cA,.24) + " " + pct + "%," + _hexRGBA(cB,.24) + " " + pct + "%," + _hexRGBA(cB,.24) + " 100%);border-color:" + _hexRGBA(cA,.55);
 }
 // Sprint is auto-derived from the deliverable's date (the first week a date range falls into).
 // Undated items fall back to a manually-set sprint (fields.__sprint).
@@ -2095,7 +2112,7 @@ function renderSprintTrack() {
   else { const sd = document.getElementById("f_sprint").value; if (sd) set.add(isoWeek(sd)); }   // undated → manual sprint
   const track = [...set].sort();
   document.getElementById("f_sprintTrackWrap").style.display = track.length ? "" : "none";
-  document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip">${esc(fmtSprintFull(w))}</span>`).join("");
+  document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip" style="${sprintChipStyle(w)}">${esc(fmtSprintFull(w))}</span>`).join("");
 }
 function buildStatusSelect() {
   const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
