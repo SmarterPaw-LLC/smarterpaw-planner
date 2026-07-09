@@ -374,10 +374,12 @@
     .col { width: 86vw; min-width: 86vw; }
     #grid, #list { padding: 12px; }
     .list-head-right { margin-left: 0; width: 100%; flex-wrap: wrap; }   /* sprint controls wrap instead of scrolling off-screen */
-    /* Calendar: unscheduled tray on top, grid scrolls horizontally (days stay legible) */
-    .cal-main { flex-direction: column; overflow: visible; }
-    .tray { width: 100%; min-width: 0; max-height: 120px; }
-    .cal-grid-wrap { min-height: 64vh; }
+    /* Calendar: unscheduled tray on top, grid fills the rest and scrolls both axes internally
+       (fixes: with the previous overflow:visible + min-height:64vh, tall weeks overflowed off-screen
+       with no way to scroll to the bottom). */
+    .cal-main { flex-direction: column; overflow: hidden; height: 100%; }
+    .tray { flex: 0 0 auto; width: 100%; min-width: 0; max-height: 120px; }
+    .cal-grid-wrap { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
     #calGrid .month-bars, #calGrid .dow-row { min-width: 600px; }
     .cal-controls { gap: 6px; }
     /* Modals: roomier on small screens, stacked pairs */
@@ -672,8 +674,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.78";
+const VERSION = "1.79";
 const CHANGELOG = [
+  "v1.79 — Fixed: on mobile you couldn’t scroll to the bottom of the calendar when a week had a lot of events. The calendar area now uses a proper flex layout so the grid fills the remaining space and scrolls internally (vertically and horizontally).",
   "v1.78 — Sprints-tracked chips are now color-coded by month (12-color palette). Weeks that cross two months (e.g., Wk 31 = Jul 27 – Aug 2) get a gradient split at the exact day boundary between the two months’ colors, so a glance tells you which month a sprint belongs to.",
   "v1.77 — You can now set a “planning” sprint week in addition to the auto-derived one from the due date — useful when you start work in an earlier sprint. The picker stays visible even for dated items; the planning week counts in Sprints tracked, in sprint filters, and puts the item under that sprint on the List view too. If you leave the picker matching the due date’s sprint, no extra planning sprint is stored.",
   "v1.76 — The brand chips at the top of the page now behave like the rest of the “click to filter” controls: by default all brands are shown, clicking a brand focuses on just that brand (not removes it), and each active brand appears as a removable chip in the Filtering by row. Counts toward the Filter & sort badge too.",
