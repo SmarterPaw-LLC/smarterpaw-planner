@@ -27,6 +27,8 @@
   .status-dot.live .d { background: var(--ok); box-shadow:0 0 6px var(--ok); }
   .status-dot.local .d { background: var(--scheduled); }
   .toolbar, .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /* Brand-filter chips sit inside the main filters row so the header wraps as a unit (prevents chips from jumping to the far edge when the Filter button's count changes width). Small right divider keeps them visually distinct. */
+  .brand-chips { padding-right: 8px; border-right: 1px solid var(--line); }
   button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel-2);
     color: var(--text); padding: 7px 12px; border-radius: 8px; transition: .12s; }
   button:hover { border-color: var(--accent); }
@@ -420,8 +422,8 @@
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
   <button id="headerCollapse" title="Show/hide controls">⌃ Controls</button>
   <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button></div>
-  <div class="filters" id="brandFilters"></div>
   <div class="filters">
+    <div id="brandFilters" class="filters brand-chips"></div>
     <select id="channelFilter"><option value="">All channels</option></select>
     <select id="colorBy" title="Color cards by"></select>
     <input class="search" id="search" placeholder="Search…" />
@@ -674,8 +676,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.79";
+const VERSION = "1.80";
 const CHANGELOG = [
+  "v1.80 — Fixed: clicking a brand chip no longer bumps the chips to the top-right of the header. The brand chips now live inside the same filter row as the other controls, so when the Filter button widens with a count, the whole row wraps together instead of leaving the brand chips isolated.",
   "v1.79 — Fixed: on mobile you couldn’t scroll to the bottom of the calendar when a week had a lot of events. The calendar area now uses a proper flex layout so the grid fills the remaining space and scrolls internally (vertically and horizontally).",
   "v1.78 — Sprints-tracked chips are now color-coded by month (12-color palette). Weeks that cross two months (e.g., Wk 31 = Jul 27 – Aug 2) get a gradient split at the exact day boundary between the two months’ colors, so a glance tells you which month a sprint belongs to.",
   "v1.77 — You can now set a “planning” sprint week in addition to the auto-derived one from the due date — useful when you start work in an earlier sprint. The picker stays visible even for dated items; the planning week counts in Sprints tracked, in sprint filters, and puts the item under that sprint on the List view too. If you leave the picker matching the due date’s sprint, no extra planning sprint is stored.",
