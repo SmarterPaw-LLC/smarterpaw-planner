@@ -83,6 +83,8 @@
   .seclabel { text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
   .field input, .field select, .field textarea { width: 100%; }
   .field textarea { resize: vertical; min-height: 64px; }
+  /* Title textarea: looks like a single-line input on desktop, but wraps + auto-grows so long titles are always fully visible (fixes mobile clipping). */
+  #f_title { resize: none; min-height: 0; overflow: hidden; line-height: 1.35; }
   .rte-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
   .rte-btn { padding: 4px 10px; font-size: 13px; }
   .rte { min-height: 150px; max-height: 320px; overflow-y: auto; padding: 9px 11px; background: var(--panel-2);
@@ -472,7 +474,7 @@
     <button class="modal-x" id="modalX" title="Close">✕</button>
     <h2 id="modalTitle">New deliverable</h2>
     <input type="hidden" id="f_id" />
-    <div class="field"><label>Title</label><input id="f_title" placeholder="e.g. July sale carousel" /></div>
+    <div class="field"><label>Title</label><textarea id="f_title" rows="1" placeholder="e.g. July sale carousel"></textarea></div>
     <div class="row2">
       <div class="field"><label>Brand</label><select id="f_brand"></select></div>
       <div class="field"><label>Channel</label>
@@ -676,8 +678,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.80";
+const VERSION = "1.81";
 const CHANGELOG = [
+  "v1.81 — Long deliverable titles now wrap in the editor (the title field is an auto-growing textarea) instead of being clipped — fixes the mobile issue where you couldn’t read past the end of a long title. Enter still saves the modal like before.",
   "v1.80 — Fixed: clicking a brand chip no longer bumps the chips to the top-right of the header. The brand chips now live inside the same filter row as the other controls, so when the Filter button widens with a count, the whole row wraps together instead of leaving the brand chips isolated.",
   "v1.79 — Fixed: on mobile you couldn’t scroll to the bottom of the calendar when a week had a lot of events. The calendar area now uses a proper flex layout so the grid fills the remaining space and scrolls internally (vertically and horizontally).",
   "v1.78 — Sprints-tracked chips are now color-coded by month (12-color palette). Weeks that cross two months (e.g., Wk 31 = Jul 27 – Aug 2) get a gradient split at the exact day boundary between the two months’ colors, so a glance tells you which month a sprint belongs to.",
@@ -2230,6 +2233,7 @@ function openModal(card, prefill) {
   document.getElementById("modalTitle").textContent = card ? "Edit deliverable" : "New deliverable";
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
+  autoResizeTitle();   // fit the textarea's height to its content (single line by default, grows for long titles)
   document.getElementById("f_brand").value = card ? card.brand : BRANDS[0].name;
   buildChannelSelect(); buildStatusSelect();
   const chSel = document.getElementById("f_channel");
@@ -2260,6 +2264,8 @@ function openModal(card, prefill) {
   if (!card) document.getElementById("f_title").focus();   // only auto-focus when creating; editing just opens the card
 }
 function closeModal() { modalOpen = false; document.getElementById("overlay").classList.remove("show"); }
+// Grow the title textarea to fit its contents (so long titles wrap and remain fully visible, esp. on mobile).
+function autoResizeTitle() { const t = document.getElementById("f_title"); if (!t) return; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
 function saveModal() {
   const id = document.getElementById("f_id").value;
   const title = document.getElementById("f_title").value.trim();
@@ -2715,6 +2721,15 @@ async function init() {
   document.getElementById("cancelBtn").onclick = closeModal;
   document.getElementById("deleteBtn").onclick = deleteCard;
   document.getElementById("duplicateBtn").onclick = duplicateCard;
+  // Title textarea: auto-resize on input, and treat Enter as save (not newline) so it behaves like the old <input>.
+  const titleEl = document.getElementById("f_title");
+  titleEl.addEventListener("input", autoResizeTitle);
+  titleEl.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveModal(); } });
+  titleEl.addEventListener("paste", e => {
+    const cd = e.clipboardData || window.clipboardData; if (!cd) return;
+    const txt = cd.getData("text/plain"); if (!/[\r\n]/.test(txt)) return;   // let normal paste through when there's nothing to strip
+    e.preventDefault(); document.execCommand("insertText", false, txt.replace(/[\r\n]+/g, " "));
+  });
   // Click outside the deliverable modal saves your changes (closes & discards only if there's no title to save).
   document.getElementById("overlay").onclick = e => { if (e.target.id !== "overlay") return; if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
   document.getElementById("modalX").onclick = () => { if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
