@@ -688,8 +688,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.84";
+const VERSION = "1.85";
 const CHANGELOG = [
+  "v1.85 — Two fixes: (1) selecting text inside a deliverable modal and releasing the mouse outside no longer closes the modal — the click-to-save-and-close only fires when the press ALSO started on the backdrop. (2) Opening and closing a task on the List (and Board) no longer resets the column scroll to the top — a suppress flag prevents the programmatic scroll-restore from getting overwritten by the clamped scroll event when scrollHeight isn't measured yet.",
   "v1.84 — Search bar moved to the top-row center between the left group (title/view/deliverable) and the right toolbar; on narrow screens it wraps left-aligned with the toolbar. New “＋ Add here” button at the bottom of every column (Board lanes and List split-columns) opens a new deliverable pre-filled with the column’s split value AND any single-value quick filters that are active (channel, brand, promotion, priority, status, sprint).",
   "v1.83 — Header cleanup: view toggle sits next to Live·synced; + Deliverable moved to the top with an orange highlight. Views/Display/Manage/Export/⋯ locked to the top-right. Display now uses a distinct ⚏ icon (Manage keeps ⚙). Removed the All-channels dropdown, ＋ Sprint quick picker, and No-sprint button (all covered by Filter & sort). The color/search/filter controls moved into the quick-filter section. Brand chips (Meowi/Doggi/Kitty) are now a proper quick-filter row like Channel & Promotions; you can pick which quick-filter rows appear from ⚏ Display (default: Brand + Channel + Promotions).",
   "v1.82 — Fixed: the title field was collapsing on mobile because the auto-resize ran before the modal was visible (scrollHeight = 0). It now measures after the modal renders and enforces a sensible minimum height as a safety net.",
@@ -1604,10 +1605,17 @@ function renderList() {
   right.appendChild(splitSel);
   head.appendChild(right); root.appendChild(head);   // sprint quick-pick lives in the shared toolbar (consistent across views)
   const body = document.createElement("div"); body.className = "list-body" + (listSplit ? " split" : ""); root.appendChild(body);
-  body.addEventListener("scroll", () => { listScroll = body.scrollTop; }, { passive: true });   // remember real user scrolling
-  // Restore the prior scroll. Sync covers the backgrounded-tab case; the rAF retry covers layout that
-  // isn't measured yet at the sync moment (which would otherwise clamp scrollTop to 0 → "jump to top").
-  const keepScroll = () => { if (!target) return; body.scrollTop = target; requestAnimationFrame(() => { body.scrollTop = target; }); };
+  // Remember real user scrolling. Suppress updates during programmatic scroll restore so a clamped set (when scrollHeight isn't measured yet) doesn't reset listScroll to 0.
+  let _suppress = false;
+  body.addEventListener("scroll", () => { if (!_suppress) listScroll = body.scrollTop; }, { passive: true });
+  // Restore the prior scroll. Sync + rAF + timeout covers all layout-not-ready cases; the suppress flag keeps the listener quiet through the window.
+  const keepScroll = () => {
+    if (!target) return;
+    _suppress = true;
+    body.scrollTop = target;
+    requestAnimationFrame(() => { body.scrollTop = target; });
+    setTimeout(() => { body.scrollTop = target; _suppress = false; }, 80);
+  };
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
   if (!items.length) { const e = document.createElement("div"); e.className = "empty list-empty"; e.textContent = "No tasks here. Add one above."; body.appendChild(e); return; }
@@ -1731,7 +1739,8 @@ function renderBoard() {
     addBtn.title = "New deliverable in this lane (uses current filters)";
     addBtn.onclick = () => openModal(null, splitColumnPrefill("status", st.name));
     body.appendChild(addBtn);
-    body.addEventListener("scroll", () => { colScroll[st.name] = body.scrollTop; }, { passive: true });
+    let _colSuppress = false;   // suppress listener during programmatic restore (below) so a clamped set doesn't zero out colScroll[st.name]
+    body.addEventListener("scroll", () => { if (!_colSuppress) colScroll[st.name] = body.scrollTop; }, { passive: true });
     body.addEventListener("dragover", e => { e.preventDefault(); body.classList.add("drag-over"); });
     body.addEventListener("dragleave", () => body.classList.remove("drag-over"));
     body.addEventListener("drop", e => { e.preventDefault(); body.classList.remove("drag-over");
@@ -1741,7 +1750,12 @@ function renderBoard() {
     // Restore this lane's scroll AFTER the column is in the DOM — otherwise the body is detached (0 height)
     // and the set is silently dropped. Now it's laid out, so the sync set sticks (rAF is just a backup).
     const vTarget = colScroll[st.name] || 0;
-    if (vTarget) { body.scrollTop = vTarget; requestAnimationFrame(() => { body.scrollTop = vTarget; }); }
+    if (vTarget) {
+      _colSuppress = true;
+      body.scrollTop = vTarget;
+      requestAnimationFrame(() => { body.scrollTop = vTarget; });
+      setTimeout(() => { body.scrollTop = vTarget; _colSuppress = false; }, 80);
+    }
   });
   if (xTarget) { board.scrollLeft = xTarget; requestAnimationFrame(() => { board.scrollLeft = xTarget; }); }
 }
@@ -2755,7 +2769,18 @@ async function init() {
     e.preventDefault(); document.execCommand("insertText", false, txt.replace(/[\r\n]+/g, " "));
   });
   // Click outside the deliverable modal saves your changes (closes & discards only if there's no title to save).
-  document.getElementById("overlay").onclick = e => { if (e.target.id !== "overlay") return; if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
+  // Track where the mouse/touch was pressed. If a "click" ends on the overlay backdrop, only treat it as
+  // click-outside-to-save when the press ALSO started on the backdrop. This prevents modals from closing
+  // when the user was selecting text inside and released the button outside the modal.
+  let _overlayPressTarget = null;
+  document.getElementById("overlay").addEventListener("pointerdown", e => { _overlayPressTarget = e.target; }, true);
+  document.getElementById("overlay").onclick = e => {
+    if (e.target.id !== "overlay") { _overlayPressTarget = null; return; }
+    const startedOnBackdrop = _overlayPressTarget && _overlayPressTarget.id === "overlay";
+    _overlayPressTarget = null;
+    if (!startedOnBackdrop) return;   // press started inside the modal (text selection drag) → ignore
+    if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal();
+  };
   document.getElementById("modalX").onclick = () => { if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
   document.getElementById("f_channelAdd").onclick = async () => {
     const name = (prompt("New channel name:") || "").trim(); if (!name) return;
