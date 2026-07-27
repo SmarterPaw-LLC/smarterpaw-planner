@@ -688,8 +688,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.85";
+const VERSION = "1.86";
 const CHANGELOG = [
+  "v1.86 — Stronger fix for the List column scroll-to-top when a task opens/closes. The renderer now reads the previous body's live scrollTop as the authoritative target, and restores it via sync + double-rAF + a settled timeout so it survives the layout race that clamped the sync set to 0.",
   "v1.85 — Two fixes: (1) selecting text inside a deliverable modal and releasing the mouse outside no longer closes the modal — the click-to-save-and-close only fires when the press ALSO started on the backdrop. (2) Opening and closing a task on the List (and Board) no longer resets the column scroll to the top — a suppress flag prevents the programmatic scroll-restore from getting overwritten by the clamped scroll event when scrollHeight isn't measured yet.",
   "v1.84 — Search bar moved to the top-row center between the left group (title/view/deliverable) and the right toolbar; on narrow screens it wraps left-aligned with the toolbar. New “＋ Add here” button at the bottom of every column (Board lanes and List split-columns) opens a new deliverable pre-filled with the column’s split value AND any single-value quick filters that are active (channel, brand, promotion, priority, status, sprint).",
   "v1.83 — Header cleanup: view toggle sits next to Live·synced; + Deliverable moved to the top with an orange highlight. Views/Display/Manage/Export/⋯ locked to the top-right. Display now uses a distinct ⚏ icon (Manage keeps ⚙). Removed the All-channels dropdown, ＋ Sprint quick picker, and No-sprint button (all covered by Filter & sort). The color/search/filter controls moved into the quick-filter section. Brand chips (Meowi/Doggi/Kitty) are now a proper quick-filter row like Channel & Promotions; you can pick which quick-filter rows appear from ⚏ Display (default: Brand + Channel + Promotions).",
@@ -1588,7 +1589,8 @@ function orderedSplitValues(key, groups) {
 }
 function renderList() {
   const root = document.getElementById("list");
-  const target = listScroll;   // last known scroll (maintained by the body's scroll listener; survives modal close / rebuilds)
+  const prevBody = root.querySelector(".list-body");
+  const target = prevBody ? prevBody.scrollTop : listScroll;   // live scroll from the visible body is authoritative; fallback to persisted value on first render
   root.innerHTML = "";
   // header: add-task (opens the deliverable modal) + sprint filter
   const head = document.createElement("div"); head.className = "list-head";
@@ -1605,16 +1607,19 @@ function renderList() {
   right.appendChild(splitSel);
   head.appendChild(right); root.appendChild(head);   // sprint quick-pick lives in the shared toolbar (consistent across views)
   const body = document.createElement("div"); body.className = "list-body" + (listSplit ? " split" : ""); root.appendChild(body);
-  // Remember real user scrolling. Suppress updates during programmatic scroll restore so a clamped set (when scrollHeight isn't measured yet) doesn't reset listScroll to 0.
+  // Track scroll as a fallback for the very first render (when there's no prevBody to read from).
   let _suppress = false;
   body.addEventListener("scroll", () => { if (!_suppress) listScroll = body.scrollTop; }, { passive: true });
-  // Restore the prior scroll. Sync + rAF + timeout covers all layout-not-ready cases; the suppress flag keeps the listener quiet through the window.
+  // Restore the prior scroll. Sync + double-rAF + timeout — the browser hasn't measured scrollHeight yet
+  // on the sync pass, so the set clamps to 0. Double-rAF fires AFTER paint (when layout is final), and the
+  // timeout is a last safety net for very slow layouts.
   const keepScroll = () => {
     if (!target) return;
     _suppress = true;
-    body.scrollTop = target;
-    requestAnimationFrame(() => { body.scrollTop = target; });
-    setTimeout(() => { body.scrollTop = target; _suppress = false; }, 80);
+    const set = () => { body.scrollTop = target; };
+    set();
+    requestAnimationFrame(() => { set(); requestAnimationFrame(set); });
+    setTimeout(() => { set(); _suppress = false; }, 150);
   };
   // grouped tasks (by sprint, chronological; "No sprint" last)
   const items = visibleCards();
