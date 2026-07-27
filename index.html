@@ -23,7 +23,9 @@
   .brand-title { font-size: 17px; font-weight: 700; letter-spacing: .2px; }
   .brand-title span { color: var(--accent); }
   .status-dot { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
-  header > .toolbar { margin-left: auto; }   /* the top toolbar (Views/Display/Manage/Export/⋯) sits right-aligned on the top row */
+  /* Two flex spacers around the top-row search center it between the left group (title/view/deliverable) and the right group (Views/Display/Manage/Export/⋯). */
+  header .header-spacer { flex: 1 1 0; min-width: 0; }
+  header > .search { flex: 0 1 380px; min-width: 240px; }
   .status-dot .d { width:9px; height:9px; border-radius:50%; background:var(--muted); }
   .status-dot.live .d { background: var(--ok); box-shadow:0 0 6px var(--ok); }
   .status-dot.local .d { background: var(--scheduled); }
@@ -39,7 +41,6 @@
   /* Quick filter section: color/search/filter row on top, then per-dimension click-to-filter rows (Brand, Channel, Promotions). All left-aligned. */
   #quickFilters { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 20px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
   #quickFilters .qf-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; }
-  #quickFilters .search { flex: 1; min-width: 180px; max-width: 400px; }
   .qf-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .qf-row .lg-title { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
   .qf-row .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); cursor: pointer; user-select: none; }
@@ -71,6 +72,9 @@
   .col-head .count { margin-left: auto; background: var(--panel-2); color: var(--muted);
     border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 600; }
   .col-body { padding: 10px; overflow-y: auto; flex: 1; min-height: 60px; display: flex; flex-direction: column; gap: 10px; }
+  /* Add-here button at the bottom of every column (Board lane / List split column). Pre-fills the column's split value + any active filters. */
+  .col-add-btn { color: var(--muted); background: transparent; border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; }
+  .col-add-btn:hover { color: var(--text); border-color: var(--accent); border-style: solid; }
   .col-body.drag-over { background: rgba(109,93,252,.08); }
   .card { background: var(--panel-2); border: 1px solid var(--line); border-left-width: 4px;
     border-radius: 10px; padding: 11px 12px; cursor: grab; position: relative; }
@@ -374,8 +378,9 @@
     #viewToggle { flex: 1 0 100%; }   /* view switcher gets its own full-width row so all 4 fit */
     #viewToggle button { flex: 1; }
     #addBtn { width: 100%; }
+    header .header-spacer { display: none; }   /* collapse the centering spacers so search wraps left-aligned with the toolbar */
+    header > .search { flex: 1 1 100%; min-width: 0; max-width: none; }
     #quickFilters { padding: 8px 12px; gap: 8px; }
-    #quickFilters .search { max-width: none; }
     #activeFilters { padding: 8px 12px; }
     /* Board: one column per screen, swipe horizontally */
     .board { padding: 12px; gap: 12px; }
@@ -427,6 +432,9 @@
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
   <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button></div>
   <button class="primary orange" id="addBtn">+ Deliverable</button>
+  <div class="header-spacer"></div>
+  <input class="search" id="search" placeholder="Search…" />
+  <div class="header-spacer"></div>
   <button id="headerCollapse" title="Show/hide controls">⌃ Controls</button>
   <div class="toolbar">
     <button id="viewsBtn" title="Saved views">★ Views</button>
@@ -440,7 +448,6 @@
 <div id="quickFilters">
   <div class="qf-controls">
     <select id="colorBy" title="Color cards by"></select>
-    <input class="search" id="search" placeholder="Search…" />
     <button id="filterBtn">⚲ Filter &amp; sort</button>
   </div>
   <div id="quickFilterRows"></div>
@@ -681,8 +688,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.83";
+const VERSION = "1.84";
 const CHANGELOG = [
+  "v1.84 — Search bar moved to the top-row center between the left group (title/view/deliverable) and the right toolbar; on narrow screens it wraps left-aligned with the toolbar. New “＋ Add here” button at the bottom of every column (Board lanes and List split-columns) opens a new deliverable pre-filled with the column’s split value AND any single-value quick filters that are active (channel, brand, promotion, priority, status, sprint).",
   "v1.83 — Header cleanup: view toggle sits next to Live·synced; + Deliverable moved to the top with an orange highlight. Views/Display/Manage/Export/⋯ locked to the top-right. Display now uses a distinct ⚏ icon (Manage keeps ⚙). Removed the All-channels dropdown, ＋ Sprint quick picker, and No-sprint button (all covered by Filter & sort). The color/search/filter controls moved into the quick-filter section. Brand chips (Meowi/Doggi/Kitty) are now a proper quick-filter row like Channel & Promotions; you can pick which quick-filter rows appear from ⚏ Display (default: Brand + Channel + Promotions).",
   "v1.82 — Fixed: the title field was collapsing on mobile because the auto-resize ran before the modal was visible (scrollHeight = 0). It now measures after the modal renders and enforces a sensible minimum height as a safety net.",
   "v1.81 — Long deliverable titles now wrap in the editor (the title field is an auto-growing textarea) instead of being clipped — fixes the mobile issue where you couldn’t read past the end of a long title. Enter still saves the modal like before.",
@@ -1537,6 +1545,32 @@ function splitVals(c, key) {
   if (key.indexOf("field:") === 0) return [(c.fields && c.fields[key.slice(6)]) || ""];
   return [""];
 }
+// Build a prefill object from the currently active quick-filter/sprint filters (single-value ones only) —
+// used by the split-column "+" button to pre-populate a new deliverable with the column's context.
+function prefillFromFilters() {
+  const out = {};
+  const one = k => (filters[k] && filters[k].size === 1) ? [...filters[k]][0] : null;
+  const b = one("brand"); if (b) out.brand = b;
+  const c = one("channel"); if (c) out.channel = c;
+  const p = one("promotion"); if (p) out.promotion = p;
+  const pr = one("priority"); if (pr) out.priority = pr;
+  const st = one("status"); if (st) out.status = st;
+  // Sprint: pre-fill the manual planning sprint if exactly one week is selected (skip "" = No sprint).
+  if (filters.sprint && filters.sprint.size === 1) { const s = [...filters.sprint][0]; if (s) out.sprint = s; }
+  return out;
+}
+// A "+" button pre-fills the split column's value into the new deliverable, plus any active single-value filters.
+function splitColumnPrefill(splitKey, colVal) {
+  const pref = prefillFromFilters();
+  if (splitKey === "owner") pref.owner = colVal || "";
+  else if (splitKey === "status") pref.status = colVal || "";
+  else if (splitKey === "brand" && BRANDS.some(b => b.name === colVal)) pref.brand = colVal;
+  else if (splitKey === "channel") pref.channel = colVal || "";
+  else if (splitKey === "priority") pref.priority = colVal || "No Priority";
+  else if (splitKey === "promotion" && colVal) pref.promotion = colVal;
+  // Custom fields: prefill via card.fields on save is not currently supported by openModal — skip for now.
+  return pref;
+}
 function orderedSplitValues(key, groups) {
   let order = [];
   if (key === "owner") order = peopleList.map(p => p.name);
@@ -1588,6 +1622,11 @@ function renderList() {
       h.innerHTML = `<span class="ls-name">${val ? esc(val) : "(None)"}</span><span class="ls-count">${cmap.get(val).length}</span>`;
       col.appendChild(h);
       cmap.get(val).forEach(c => col.appendChild(listTaskEl(c)));
+      // Column "+" button: opens the deliverable modal pre-filled with this column's split value AND any single-value quick filters currently active.
+      const addBtn = document.createElement("button"); addBtn.className = "col-add-btn"; addBtn.type = "button"; addBtn.textContent = "＋ Add here";
+      addBtn.title = "New deliverable in this column (uses current filters)";
+      addBtn.onclick = () => openModal(null, splitColumnPrefill(listSplit, val));
+      col.appendChild(addBtn);
       // drop target: dropping a task here sets its split-dimension value to this column's value
       col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drag-over"); });
       col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
@@ -1687,6 +1726,11 @@ function renderBoard() {
     col.appendChild(head); col.appendChild(body);
     if (colCards.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Drop here"; body.appendChild(e); }
     else colCards.forEach(c => body.appendChild(cardEl(c)));
+    // Lane "+" button: opens a new deliverable in this lane, pre-filled with the lane's status + any single-value quick filters currently active.
+    const addBtn = document.createElement("button"); addBtn.className = "col-add-btn"; addBtn.type = "button"; addBtn.textContent = "＋ Add here";
+    addBtn.title = "New deliverable in this lane (uses current filters)";
+    addBtn.onclick = () => openModal(null, splitColumnPrefill("status", st.name));
+    body.appendChild(addBtn);
     body.addEventListener("scroll", () => { colScroll[st.name] = body.scrollTop; }, { passive: true });
     body.addEventListener("dragover", e => { e.preventDefault(); body.classList.add("drag-over"); });
     body.addEventListener("dragleave", () => body.classList.remove("drag-over"));
@@ -2217,12 +2261,13 @@ function openModal(card, prefill) {
   document.getElementById("modalTitle").textContent = card ? "Edit deliverable" : "New deliverable";
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
-  document.getElementById("f_brand").value = card ? card.brand : BRANDS[0].name;
+  document.getElementById("f_brand").value = card ? card.brand : ((prefill && prefill.brand && BRANDS.some(b => b.name === prefill.brand)) ? prefill.brand : BRANDS[0].name);
   buildChannelSelect(); buildStatusSelect();
   const chSel = document.getElementById("f_channel");
   if (card && card.channel && !channelsList.some(c => c.name === card.channel)) { const o = document.createElement("option"); o.value = card.channel; o.textContent = card.channel; chSel.insertBefore(o, chSel.firstChild); }
-  chSel.value = card ? (card.channel || "") : defaultNewChannel();
-  modalOwners = new Set((card && card.owner ? card.owner.split(",") : []).map(s => s.trim()).filter(Boolean));
+  chSel.value = card ? (card.channel || "") : ((prefill && prefill.channel) || defaultNewChannel());
+  const prefOwners = (prefill && prefill.owner ? String(prefill.owner).split(",") : []).map(s => s.trim()).filter(Boolean);
+  modalOwners = new Set((card && card.owner ? card.owner.split(",") : prefOwners).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
   document.getElementById("f_due").value = card ? (card.due||"") : (prefill && prefill.due ? prefill.due : "");
   const hasEnd = !!(card && card.end);
@@ -2239,7 +2284,7 @@ function openModal(card, prefill) {
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
-  stSel.value = card ? card.status : (statusList[0] ? statusList[0].name : "Backlog");
+  stSel.value = card ? card.status : ((prefill && prefill.status && statusList.some(s => s.name === prefill.status)) ? prefill.status : (statusList[0] ? statusList[0].name : "Backlog"));
   document.getElementById("f_notes").innerHTML = card ? notesToEditor(card.notes) : "";
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
   document.getElementById("duplicateBtn").style.display = card ? "" : "none";   // only existing cards can be duplicated
