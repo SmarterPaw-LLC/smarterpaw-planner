@@ -136,12 +136,19 @@
   .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
   .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
   .subs-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-  .sub-row { display: flex; align-items: center; gap: 8px; }
+  .sub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .sub-row input[type=checkbox] { width: 16px; height: 16px; flex: none; margin: 0; cursor: pointer; }
-  .sub-text { flex: 1; padding: 5px 9px; }
+  .sub-text { flex: 1 1 180px; padding: 5px 9px; min-width: 0; }
   .sub-text.done { text-decoration: line-through; color: var(--muted); }
+  .sub-owner { flex: 0 0 120px; padding: 4px 6px; font-size: 12px; }
+  .sub-due { flex: 0 0 130px; padding: 4px 6px; font-size: 12px; }
+  .sub-convert { flex: none; padding: 4px 8px; font-size: 12px; color: var(--accent); border-color: transparent; background: transparent; }
+  .sub-convert:hover { border-color: var(--accent); }
   .sub-rm { flex: none; padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
   .sub-rm:hover { border-color: var(--danger); }
+  @media (max-width: 600px) {
+    .sub-owner, .sub-due { flex-basis: 40%; }
+  }
   .progress { height: 6px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
   .progress > i { display: block; height: 100%; background: var(--ok); border-radius: 999px; transition: width .15s; }
   .progress.full > i { background: var(--ok); }
@@ -688,8 +695,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.86";
+const VERSION = "1.87";
 const CHANGELOG = [
+  "v1.87 — Subtasks can now carry an owner and a due date each. A new ➜ Convert action turns a subtask into a full deliverable — it uses the subtask's title, owner and due date, inherits the parent card's brand / channel / promotion, starts in the first lane (Backlog), and is removed from the subtask list.",
   "v1.86 — Stronger fix for the List column scroll-to-top when a task opens/closes. The renderer now reads the previous body's live scrollTop as the authoritative target, and restores it via sync + double-rAF + a settled timeout so it survives the layout race that clamped the sync set to 0.",
   "v1.85 — Two fixes: (1) selecting text inside a deliverable modal and releasing the mouse outside no longer closes the modal — the click-to-save-and-close only fires when the press ALSO started on the backdrop. (2) Opening and closing a task on the List (and Board) no longer resets the column scroll to the top — a suppress flag prevents the programmatic scroll-restore from getting overwritten by the clamped scroll event when scrollHeight isn't measured yet.",
   "v1.84 — Search bar moved to the top-row center between the left group (title/view/deliverable) and the right toolbar; on narrow screens it wraps left-aligned with the toolbar. New “＋ Add here” button at the bottom of every column (Board lanes and List split-columns) opens a new deliverable pre-filled with the column’s split value AND any single-value quick filters that are active (channel, brand, promotion, priority, status, sprint).",
@@ -2231,10 +2239,50 @@ function renderSubsEdit() {
     cb.onchange = () => { s.done = cb.checked; renderSubsEdit(); };
     const inp = document.createElement("input"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.value = s.text;
     inp.oninput = () => { s.text = inp.value; };
+    // Optional owner picker — single person from peopleList; "" = unassigned.
+    const own = document.createElement("select"); own.className = "sub-owner"; own.title = "Owner (used if converted to a deliverable)";
+    const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "— owner —"; own.appendChild(noneOpt);
+    peopleList.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; own.appendChild(o); });
+    if (s.owner && !peopleList.some(p => p.name === s.owner)) { const o = document.createElement("option"); o.value = s.owner; o.textContent = s.owner; own.appendChild(o); }
+    own.value = s.owner || "";
+    own.onchange = () => { s.owner = own.value; };
+    // Optional due date — used as the deliverable's due date on convert.
+    const due = document.createElement("input"); due.type = "date"; due.className = "sub-due"; due.value = s.due || ""; due.title = "Due date (used if converted to a deliverable)";
+    due.onchange = () => { s.due = due.value; };
+    // Convert this subtask to a full deliverable (inherits brand/channel/promotion from the current card).
+    const conv = document.createElement("button"); conv.type = "button"; conv.className = "sub-convert"; conv.textContent = "➜ Convert"; conv.title = "Convert this subtask to a new deliverable";
+    conv.onclick = () => convertSubtaskToDeliverable(s);
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
     rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
-    row.appendChild(cb); row.appendChild(inp); row.appendChild(rm); box.appendChild(row);
+    row.appendChild(cb); row.appendChild(inp); row.appendChild(own); row.appendChild(due); row.appendChild(conv); row.appendChild(rm); box.appendChild(row);
   });
+}
+// Turn a subtask row into a full deliverable card. Uses the subtask's text/owner/due, inherits the parent card's brand/channel/promotion.
+function convertSubtaskToDeliverable(s) {
+  const text = (s.text || "").trim();
+  if (!text) { toast("Add a title before converting."); return; }
+  if (!confirm(`Convert "${text}" to a new deliverable? It will be removed from this list of subtasks.`)) return;
+  // Inherit context from the currently-open card (parent).
+  const parentBrand = document.getElementById("f_brand").value;
+  const parentChannel = document.getElementById("f_channel").value;
+  const parentPromo = document.getElementById("f_promo").value;
+  const fields = {};
+  if (parentPromo && parentPromo !== "__add_promo__") fields[PROMO_KEY] = parentPromo;
+  createCard({
+    title: text,
+    brand: parentBrand,
+    channel: parentChannel,
+    owner: s.owner || "",
+    due: s.due || "",
+    end: "",
+    status: statusList[0] ? statusList[0].name : "Backlog",
+    notes: "",
+    fields,
+  });
+  // Drop this subtask from the working copy and refresh the list.
+  modalSubs = modalSubs.filter(x => x !== s);
+  renderSubsEdit();
+  toast(`Converted "${text}" to a new deliverable.`);
 }
 function addModalSub() {
   const inp = document.getElementById("f_subAdd"); const t = inp.value.trim(); if (!t) return;
@@ -2299,7 +2347,7 @@ function openModal(card, prefill) {
   const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
   updateSprintField();   // also renders the Sprints-tracked preview
-  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done })) : [];
+  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "" })) : [];
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
@@ -2335,7 +2383,7 @@ function saveModal() {
   const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
   const derived = derivedSprintFor(dueVal, endVal);
   if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
-  const subs = modalSubs.map(s => ({ id: s.id, text: s.text.trim(), done: !!s.done })).filter(s => s.text);
+  const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; return o; }).filter(s => s.text);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const notesEl = document.getElementById("f_notes");
@@ -2353,7 +2401,7 @@ function duplicateCard() {
   const orig = cards.find(c => c.id === id); if (!orig) return;
   const fields = JSON.parse(JSON.stringify(orig.fields || {}));
   delete fields[SPRINTHIST_KEY];   // the copy rebuilds its own sprint history from its dates/sprint
-  if (Array.isArray(fields[SUBTASKS_KEY])) fields[SUBTASKS_KEY] = fields[SUBTASKS_KEY].map(s => ({ id: subId(), text: s.text, done: !!s.done }));
+  if (Array.isArray(fields[SUBTASKS_KEY])) fields[SUBTASKS_KEY] = fields[SUBTASKS_KEY].map(s => { const o = { id: subId(), text: s.text, done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; return o; });
   createCard({ title: orig.title + " (copy)", brand: orig.brand, channel: orig.channel, owner: orig.owner || "",
     due: orig.due || "", end: orig.end || "", status: orig.status, notes: orig.notes || "", fields });
   closeModal();
