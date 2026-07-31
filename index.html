@@ -695,8 +695,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.87";
+const VERSION = "1.88";
 const CHANGELOG = [
+  "v1.88 — Filter & sort now supports relative-date filters that stay accurate over time. Sprint gets “This week / Next week / Last week / This month” as picker values (before the concrete week list). A new “Due date” field offers “Today / This week / Next week / Last week / This month / Next month / Overdue / No due date”. Save a view with these and it always shows the current period — no need to update the saved sprint week.",
   "v1.87 — Subtasks can now carry an owner and a due date each. A new ➜ Convert action turns a subtask into a full deliverable — it uses the subtask's title, owner and due date, inherits the parent card's brand / channel / promotion, starts in the first lane (Backlog), and is removed from the subtask list.",
   "v1.86 — Stronger fix for the List column scroll-to-top when a task opens/closes. The renderer now reads the previous body's live scrollTop as the authoritative target, and restores it via sync + double-rAF + a settled timeout so it survives the layout race that clamped the sync set to 0.",
   "v1.85 — Two fixes: (1) selecting text inside a deliverable modal and releasing the mouse outside no longer closes the modal — the click-to-save-and-close only fires when the press ALSO started on the backdrop. (2) Opening and closing a task on the List (and Board) no longer resets the column scroll to the top — a suppress flag prevents the programmatic scroll-restore from getting overwritten by the clamped scroll event when scrollHeight isn't measured yet.",
@@ -1093,10 +1094,41 @@ let filters = {};   // quick sprint filter from the List header: { sprint: Set }
 let filterRules = [];      // advanced Filter panel: [{ field, op:'is'|'isnot'|'empty'|'notempty', values:[] }]
 let filterMatch = "all";   // "all" (AND) | "any" (OR)
 function ruleFields() {
-  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "priority", label: "Priority" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
+  return [{ key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owner" }, { key: "status", label: "Status / Lane" }, { key: "priority", label: "Priority" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }, { key: "date", label: "Due date" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
 }
 function ruleFieldLabel(key) { const f = ruleFields().find(x => x.key === key); return f ? f.label : key; }
+// Relative-date sentinels — resolved at MATCH time so a saved "This week" filter always means the current week.
+const SPRINT_SENT = { "__thisweek": "This week", "__nextweek": "Next week", "__lastweek": "Last week", "__thismonth": "This month" };
+const DATE_SENT = { "__today": "Today", "__thisweek": "This week", "__nextweek": "Next week", "__lastweek": "Last week", "__thismonth": "This month", "__nextmonth": "Next month", "__overdue": "Overdue", "__nodate": "No due date" };
+function _mondayUTC(d) { const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dow = (dt.getUTCDay() + 6) % 7; dt.setUTCDate(dt.getUTCDate() - dow); return dt; }
+function sprintSentinelWeeks(k) {
+  const now = new Date();
+  if (k === "__thisweek") return [isoWeek(ymd(now))];
+  if (k === "__nextweek") return [isoWeek(ymd(addDays(now, 7)))];
+  if (k === "__lastweek") return [isoWeek(ymd(addDays(now, -7)))];
+  if (k === "__thismonth") { const s = new Date(now.getFullYear(), now.getMonth(), 1); const e = new Date(now.getFullYear(), now.getMonth() + 1, 0); return sprintsInRange(ymd(s), ymd(e)); }
+  return [];
+}
+function dateSentinelMatches(k, due) {
+  const now = new Date(); const today = ymd(now);
+  if (k === "__nodate") return !due;
+  if (!due) return false;
+  if (k === "__today") return due === today;
+  if (k === "__overdue") return due < today;
+  if (k === "__thisweek" || k === "__nextweek" || k === "__lastweek") {
+    const shift = k === "__nextweek" ? 7 : k === "__lastweek" ? -7 : 0;
+    const s = _mondayUTC(addDays(now, shift)); const e = new Date(s); e.setUTCDate(s.getUTCDate() + 6);
+    return due >= ymd(s) && due <= ymd(e);
+  }
+  if (k === "__thismonth" || k === "__nextmonth") {
+    const shift = k === "__nextmonth" ? 1 : 0;
+    const s = new Date(now.getFullYear(), now.getMonth() + shift, 1);
+    const e = new Date(now.getFullYear(), now.getMonth() + shift + 1, 0);
+    return due >= ymd(s) && due <= ymd(e);
+  }
+  return false;
+}
 function ruleCardValues(c, field) {
   if (field === "owner") return splitOwners(c.owner);
   if (field === "brand") return c.brand ? [c.brand] : [];
@@ -1105,6 +1137,7 @@ function ruleCardValues(c, field) {
   if (field === "priority") return [cardPriority(c)];
   if (field === "promotion") { const p = cardPromo(c); return p ? [p] : []; }
   if (field === "sprint") return cardSprints(c);   // include planning sprint (dated + manual can coexist)
+  if (field === "date") return c.due ? [c.due] : [];
   if (field.indexOf("field:") === 0) { const n = field.slice(6); const v = (c.fields && c.fields[n]) || ""; if (!v) return []; const def = fieldByName(n); return (def && def.type === "multi") ? splitMulti(v) : [v]; }
   return [];
 }
@@ -1115,18 +1148,36 @@ function ruleFieldValues(field) {
   if (field === "status") return statusList.map(s => s.name);
   if (field === "priority") return PRIORITIES.map(p => p.name);
   if (field === "promotion") return allPromos();
-  if (field === "sprint") return allSprints();
+  if (field === "sprint") return [...Object.keys(SPRINT_SENT), ...allSprints()];   // "This week" / "Next week" first, then concrete sprints
+  if (field === "date") return Object.keys(DATE_SENT);   // date field only offers relative sentinels (Today, This week, Overdue, …)
   if (field.indexOf("field:") === 0) { const n = field.slice(6); const def = fieldByName(n);
     if (def && fieldHasOptions(def)) { const set = new Set(def.options || []); cards.forEach(c => { const v = c.fields && c.fields[n]; if (v) (def.type === "multi" ? splitMulti(v) : [v]).forEach(x => set.add(x)); }); return [...set].sort(); }
     return [...new Set(cards.map(c => c.fields && c.fields[n]).filter(Boolean))].sort(); }
   return [];
 }
-function ruleValueLabel(field, v) { return field === "sprint" ? fmtSprintFull(v) : v; }
+function ruleValueLabel(field, v) {
+  if (field === "sprint") return SPRINT_SENT[v] || fmtSprintFull(v);
+  if (field === "date") return DATE_SENT[v] || v;
+  return v;
+}
 function ruleMatches(c, r) {
+  // Due-date rules only work with sentinels; match by resolving each sentinel against the card's due date.
+  if (r.field === "date") {
+    if (r.op === "empty") return !c.due;
+    if (r.op === "notempty") return !!c.due;
+    const vals = r.values || []; const any = vals.some(v => dateSentinelMatches(v, c.due));
+    return r.op === "isnot" ? !any : any;
+  }
   const vals = ruleCardValues(c, r.field);
   if (r.op === "empty") return vals.length === 0;
   if (r.op === "notempty") return vals.length > 0;
-  const set = new Set(r.values || []);
+  // Sprint rules may include relative sentinels — expand them to the current ISO week(s) before matching.
+  let rvals = r.values || [];
+  if (r.field === "sprint" && rvals.some(v => SPRINT_SENT[v])) {
+    const expanded = []; rvals.forEach(v => { if (SPRINT_SENT[v]) sprintSentinelWeeks(v).forEach(w => expanded.push(w)); else expanded.push(v); });
+    rvals = expanded;
+  }
+  const set = new Set(rvals);
   if (r.op === "isnot") return !vals.some(v => set.has(v));
   return vals.some(v => set.has(v));   // "is"
 }
