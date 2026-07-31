@@ -695,8 +695,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.88";
+const VERSION = "1.89";
 const CHANGELOG = [
+  "v1.89 — Fixed: with a Sprint filter active (e.g. “This week”), the List view no longer also lists a matching card under its other spanned weeks — a card whose date range covers Wk 27–31 now shows only under Wk 30 when the filter is “This week”. Cards that pass the filter via a different rule (match=any) keep all their sprint groups.",
   "v1.88 — Filter & sort now supports relative-date filters that stay accurate over time. Sprint gets “This week / Next week / Last week / This month” as picker values (before the concrete week list). A new “Due date” field offers “Today / This week / Next week / Last week / This month / Next month / Overdue / No due date”. Save a view with these and it always shows the current period — no need to update the saved sprint week.",
   "v1.87 — Subtasks can now carry an owner and a due date each. A new ➜ Convert action turns a subtask into a full deliverable — it uses the subtask's title, owner and due date, inherits the parent card's brand / channel / promotion, starts in the first lane (Backlog), and is removed from the subtask list.",
   "v1.86 — Stronger fix for the List column scroll-to-top when a task opens/closes. The renderer now reads the previous body's live scrollTop as the authoritative target, and restores it via sync + double-rAF + a settled timeout so it survives the layout race that clamped the sync set to 0.",
@@ -1464,6 +1465,16 @@ function renderNotes(raw) {
 }
 // HTML to load into the editor (sanitized; legacy plain text → line breaks).
 function notesToEditor(raw) { return raw ? (looksLikeHtml(raw) ? sanitizeNotes(raw) : esc(raw).replace(/\n/g, "<br>")) : ""; }
+// The concrete ISO weeks currently in focus via any sprint filter (quick filter Set + advanced "is" rules).
+// Used by the List view's grouping to hide non-matching sprints from a card that spans many weeks.
+function activeSprintFilterWeeks() {
+  const out = new Set();
+  if (filters.sprint) filters.sprint.forEach(v => { if (SPRINT_SENT[v]) sprintSentinelWeeks(v).forEach(w => out.add(w)); else if (v) out.add(v); });
+  filterRules.filter(r => r.field === "sprint" && r.op === "is" && r.values && r.values.length).forEach(r => {
+    r.values.forEach(v => { if (SPRINT_SENT[v]) sprintSentinelWeeks(v).forEach(w => out.add(w)); else if (v) out.add(v); });
+  });
+  return out;
+}
 function passesFilters(c) {
   if (filters.sprint && filters.sprint.size) {
     // A card matches a sprint filter if ANY of its sprints is picked (so a planning sprint counts) — or if it has none and "" (No sprint) is picked.
@@ -1709,8 +1720,16 @@ function renderList() {
     keepScroll();
     return;
   }
-  // A card appears under every sprint it belongs to (its date range + any planning sprint). Cards with no sprint go under "".
-  const groups = {}; items.forEach(c => { const spr = cardSprints(c); if (!spr.length) { (groups[""] = groups[""] || []).push(c); } else spr.forEach(s => (groups[s] = groups[s] || []).push(c)); });
+  // A card appears under every sprint it belongs to (its date range + any planning sprint). When a sprint filter
+  // is active (e.g., "This week"), narrow the display to just the matching sprint(s) so a Jul-spanning card doesn't
+  // clutter every past week's group. Cards with no sprint go under "".
+  const focus = activeSprintFilterWeeks();
+  const groups = {}; items.forEach(c => {
+    let spr = cardSprints(c);
+    if (focus.size && spr.some(s => focus.has(s))) spr = spr.filter(s => focus.has(s));
+    if (!spr.length) (groups[""] = groups[""] || []).push(c);
+    else spr.forEach(s => (groups[s] = groups[s] || []).push(c));
+  });
   const ordered = Object.keys(groups).filter(k => k).sort().concat(groups[""] ? [""] : []);
   ordered.forEach(sk => {
     const sec = document.createElement("div"); sec.className = "list-sec";
