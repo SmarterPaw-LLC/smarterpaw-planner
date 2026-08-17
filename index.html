@@ -213,7 +213,12 @@
   .sprint-readonly { display: block; padding: 8px 11px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); }
   /* Dedicated custom-fields editor */
   .fields-editor { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
-  .fe-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel-2); }
+  .fe-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel-2); position: relative; }
+  .fe-grip { flex: none; cursor: grab; color: var(--muted); font-size: 14px; letter-spacing: -2px; user-select: none; padding: 0 4px; }
+  .fe-grip:hover { color: var(--text); }
+  .fe-card.dragging { opacity: .4; }
+  .fe-card.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
+  .fe-card.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
   .fe-top { display: flex; gap: 8px; align-items: center; }
   .fe-name { flex: 1; min-width: 0; font-weight: 600; }
   .fe-type { width: 168px; flex: none; }
@@ -438,6 +443,22 @@
   .disp-dims { display: flex; flex-direction: column; gap: 10px; }
   .disp-dims .disp-opt { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; margin: 0; color: var(--text); font-weight: 400; text-transform: none; letter-spacing: 0; }
   .disp-dims .disp-opt input[type=checkbox] { width: 16px; height: 16px; margin: 0; flex: none; }
+  /* Show-these-on-each-item: ordered draggable rows on top, available chips below. */
+  .disp-shown { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .disp-avail { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .disp-sub-label { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; margin-bottom: 3px; }
+  .disp-sub-empty { font-size: 12px; color: var(--muted); font-style: italic; padding: 4px 0; }
+  .disp-shown-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+  .disp-shown-row.dragging { opacity: .4; }
+  .disp-shown-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
+  .disp-shown-row.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
+  .disp-grip { flex: none; cursor: grab; color: var(--muted); font-size: 13px; letter-spacing: -2px; user-select: none; padding: 0 2px; }
+  .disp-grip:hover { color: var(--text); }
+  .disp-shown-name { flex: 1; font-size: 13px; }
+  .disp-shown-rm { flex: none; padding: 2px 8px; font-size: 13px; color: var(--muted); border-color: transparent; background: transparent; }
+  .disp-shown-rm:hover { color: var(--danger); border-color: var(--danger); }
+  .disp-avail-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; color: var(--muted); background: transparent; border: 1px dashed var(--line); }
+  .disp-avail-chip:hover { color: var(--text); border-color: var(--accent); border-style: solid; }
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 4px 0; }
   #activeFilters { display: none; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 20px; border-bottom: 1px solid var(--line); background: rgba(109,93,252,.07); }
   #activeFilters .af-label { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
@@ -777,8 +798,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.98";
+const VERSION = "1.99";
 const CHANGELOG = [
+  "v1.99 — Two reorder additions. (1) Custom fields are drag-to-reorder in Manage → Edit custom fields (⋮⋮ grip on each card); the new order sticks everywhere the field appears — the editor, the Grid, filter dropdowns. (2) The Display menu's “Show these on each item” is now split into an ordered draggable list (⋮⋮ grip, ✕ hides) plus a chip row of available dimensions (+ Add), so you can reorder card chips per view (Board/Calendar/List independent).",
   "v1.98 — New “Notes” view in the top toggle. A chronological reading journal of every deliverable's notes text, grouped by sprint week (dated or manual), with the due date + owner/brand/channel/promo shown as a compact meta line. ▾ Expand all / ▸ Collapse all lets you show just titles while searching, then open just the one you want. Uses the same Filter & Sort + Search so scoping is instant.",
   "v1.97 — Bulk edit now handles multi-select custom fields properly. Instead of a single-choice dropdown, it shows a chip picker with a Replace / Add / Remove mode toggle — so you can e.g. add “Chewy” to Platform on 20 cards without wiping the platforms they already have.",
   "v1.96 — Grid view gets multi-select + bulk edit. A checkbox column appears on the left (with a select-all-visible checkbox in the header); when any rows are checked a toolbar appears with “Set [field] to [value]” — apply to all selected — plus Delete and Clear. Supports Brand / Channel / Owners / Status / Priority / Promotion / Due / End / any custom field.",
@@ -2384,16 +2406,45 @@ function renderDispSettings() {
   if (grid) return renderDispGrid();
   const ds = curDisp();
   const box = document.getElementById("dispDims"); box.innerHTML = "";
-  availableDims().forEach(d => {
-    const lab = document.createElement("label"); lab.className = "disp-opt";
-    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = ds.dims.includes(d.key);
-    cb.onchange = () => {
-      if (cb.checked) { if (!ds.dims.includes(d.key)) ds.dims.push(d.key); }
-      else ds.dims = ds.dims.filter(k => k !== d.key);
-      saveDisplay(); render();
-    };
-    lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + d.label)); box.appendChild(lab);
+  const all = availableDims();
+  // Section 1 — shown-on-card list in ds.dims order. Drag to reorder.
+  const shownWrap = document.createElement("div"); shownWrap.className = "disp-shown";
+  const shownLabel = document.createElement("div"); shownLabel.className = "disp-sub-label"; shownLabel.textContent = "Shown on each item (drag to reorder)";
+  shownWrap.appendChild(shownLabel);
+  ds.dims.forEach((key, idx) => {
+    const d = all.find(x => x.key === key); if (!d) return;
+    const row = document.createElement("div"); row.className = "disp-shown-row"; row.dataset.idx = String(idx);
+    const grip = document.createElement("span"); grip.className = "disp-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
+    grip.addEventListener("mousedown", () => { row.draggable = true; });
+    grip.addEventListener("mouseup", () => { row.draggable = false; });
+    row.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; row.classList.add("dragging"); });
+    row.addEventListener("dragend", () => { row.classList.remove("dragging"); row.draggable = false; document.querySelectorAll(".disp-shown-row.drag-over-top,.disp-shown-row.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+    row.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = row.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; row.classList.toggle("drag-over-top", above); row.classList.toggle("drag-over-bot", !above); });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over-top", "drag-over-bot"));
+    row.addEventListener("drop", e => {
+      e.preventDefault(); const from = +e.dataTransfer.getData("text/plain"); const r = row.getBoundingClientRect(); let to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1);
+      row.classList.remove("drag-over-top", "drag-over-bot"); if (isNaN(from) || from === to || from === to - 1) return;
+      const [moved] = ds.dims.splice(from, 1); if (from < to) to--; ds.dims.splice(to, 0, moved); saveDisplay(); renderDispSettings(); render();
+    });
+    const name = document.createElement("span"); name.className = "disp-shown-name"; name.textContent = d.label;
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "disp-shown-rm"; rm.textContent = "✕"; rm.title = "Hide this dimension";
+    rm.onclick = () => { ds.dims = ds.dims.filter(k => k !== key); saveDisplay(); renderDispSettings(); render(); };
+    row.appendChild(grip); row.appendChild(name); row.appendChild(rm); shownWrap.appendChild(row);
   });
+  if (!ds.dims.length) { const e = document.createElement("div"); e.className = "disp-sub-empty"; e.textContent = "Nothing shown — pick from below."; shownWrap.appendChild(e); }
+  box.appendChild(shownWrap);
+  // Section 2 — dimensions not currently shown. Click to append at the end of the shown list.
+  const availWrap = document.createElement("div"); availWrap.className = "disp-avail";
+  const availLabel = document.createElement("div"); availLabel.className = "disp-sub-label"; availLabel.textContent = "Available (click to show)";
+  availWrap.appendChild(availLabel);
+  const rest = all.filter(d => !ds.dims.includes(d.key));
+  if (!rest.length) { const e = document.createElement("div"); e.className = "disp-sub-empty"; e.textContent = "All dimensions are shown."; availWrap.appendChild(e); }
+  rest.forEach(d => {
+    const chip = document.createElement("button"); chip.type = "button"; chip.className = "disp-avail-chip"; chip.textContent = "+ " + d.label;
+    chip.onclick = () => { ds.dims.push(d.key); saveDisplay(); renderDispSettings(); render(); };
+    availWrap.appendChild(chip);
+  });
+  box.appendChild(availWrap);
   document.querySelectorAll("#dispStyle button").forEach(b => b.classList.toggle("active", (b.dataset.s === "badge") === ds.badge));
   // Calendar item size — Calendar only.
   const calSizeField = document.getElementById("dispCalSizeField");
@@ -2998,18 +3049,37 @@ function closeFields() { document.getElementById("fieldsOverlay").classList.remo
 function renderFieldsEditor() {
   const box = document.getElementById("fieldsEditor"); box.innerHTML = "";
   if (!fieldsList.length) { const e = document.createElement("div"); e.className = "fe-none"; e.textContent = "No custom fields yet. Add one below."; box.appendChild(e); return; }
-  fieldsList.forEach(f => box.appendChild(fieldEditorCard(f)));
+  fieldsList.forEach((f, i) => box.appendChild(fieldEditorCard(f, i)));
 }
-function fieldEditorCard(f) {
-  const card = document.createElement("div"); card.className = "fe-card";
+// Reorder custom fields in place (drag-and-drop). Persists via lists.position so the order sticks everywhere the field appears.
+async function reorderField(fromIdx, toIdx) {
+  if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= fieldsList.length) return;
+  const [moved] = fieldsList.splice(fromIdx, 1);
+  if (fromIdx < toIdx) toIdx--;
+  fieldsList.splice(toIdx, 0, moved);
+  if (!ONLINE) { saveListsLocal(); afterListsChanged(); renderFieldsEditor(); return; }
+  await Promise.all(fieldsList.map((f, i) => db.from("lists").update({ position: i + 1 }).eq("id", f.id)));
+  await reloadListsAndUI(); renderFieldsEditor();
+}
+function fieldEditorCard(f, idx) {
+  const card = document.createElement("div"); card.className = "fe-card"; card.dataset.idx = String(idx);
   const top = document.createElement("div"); top.className = "fe-top";
+  // Drag handle — grab here to reorder among all custom fields.
+  const grip = document.createElement("span"); grip.className = "fe-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
+  grip.addEventListener("mousedown", () => { card.draggable = true; });
+  grip.addEventListener("mouseup", () => { card.draggable = false; });
+  card.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
+  card.addEventListener("dragend", () => { card.classList.remove("dragging"); card.draggable = false; document.querySelectorAll(".fe-card.drag-over-top,.fe-card.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+  card.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = card.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; card.classList.toggle("drag-over-top", above); card.classList.toggle("drag-over-bot", !above); });
+  card.addEventListener("dragleave", () => card.classList.remove("drag-over-top", "drag-over-bot"));
+  card.addEventListener("drop", e => { e.preventDefault(); const from = +e.dataTransfer.getData("text/plain"); const r = card.getBoundingClientRect(); const to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1); card.classList.remove("drag-over-top", "drag-over-bot"); if (!isNaN(from)) reorderField(from, to); });
   const name = document.createElement("input"); name.className = "fe-name"; name.value = f.name; name.title = "Field name";
   name.onchange = () => { const nn = name.value.trim(); if (nn && nn !== f.name) renameList("field", f, nn); else name.value = f.name; };
   const type = document.createElement("select"); type.className = "fe-type"; type.title = "Field type";
   FIELD_TYPES.forEach(t => { const o = document.createElement("option"); o.value = t.v; o.textContent = t.label; type.appendChild(o); });
   type.value = f.type || "text";
   const del = document.createElement("button"); del.className = "fe-del"; del.textContent = "Remove"; del.onclick = () => removeList("field", f);
-  top.appendChild(name); top.appendChild(type); top.appendChild(del); card.appendChild(top);
+  top.appendChild(grip); top.appendChild(name); top.appendChild(type); top.appendChild(del); card.appendChild(top);
 
   const opts = document.createElement("div"); opts.className = "fe-opts"; opts.style.display = fieldHasOptions(f) ? "" : "none";
   const lab = document.createElement("div"); lab.className = "fe-opts-lab"; lab.textContent = "Options";
