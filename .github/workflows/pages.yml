@@ -1,0 +1,46 @@
+# Custom GitHub Pages deploy — replaces the auto-generated "pages build and deployment" workflow.
+# Why: the auto workflow's deploy step hit a 429 (Too Many Requests) on the deploy-pages artifact
+# download when several pushes landed close together, because burst runs raced each other's
+# artifact fetches. This workflow uses a `pages` concurrency group with cancel-in-progress:false,
+# so runs queue and finish one at a time instead of stampeding — which sidesteps the 429.
+# It also pins to current action versions (v4/v5) so the "Node 20 deprecated" warning goes away.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
