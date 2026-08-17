@@ -136,7 +136,13 @@
   .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
   .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
   .subs-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-  .sub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; }
+  .sub-drag { flex: none; cursor: grab; color: var(--muted); font-size: 14px; letter-spacing: -2px; user-select: none; padding: 0 2px; }
+  .sub-drag:hover { color: var(--text); }
+  .sub-row.dragging { opacity: .4; }
+  /* Drop indicator: a colored line at the top or bottom of the target row while dragging. */
+  .sub-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
+  .sub-row.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
   .sub-row input[type=checkbox] { width: 16px; height: 16px; flex: none; margin: 0; cursor: pointer; }
   .sub-text { flex: 1 1 180px; padding: 5px 9px; min-width: 0; }
   .sub-text.done { text-decoration: line-through; color: var(--muted); }
@@ -719,8 +725,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.93";
+const VERSION = "1.94";
 const CHANGELOG = [
+  "v1.94 — Subtasks are now drag-to-reorder. Each row has a ⋮⋮ grip on the left — grab it and drag up or down; a blue line shows exactly where the row will land. Save the card to persist the new order.",
   "v1.93 — Moved ▾ Expand all / ▸ Collapse all out of the Display menu — they now live in a small toolbar above the Grid whenever grouping is active, alongside a “Grouped by X › Y › Z” breadcrumb.",
   "v1.92 — Grid grouping is now nested (Airtable-style). Add multiple grouping levels in ⚏ Display → “Group rows by” (e.g., Owner → then Channel → then Sprint); headers indent by depth and each level collapses independently. Bonus: ▾ Expand all / ▸ Collapse all buttons that operate on every level. URL param is now ggroup=owner,channel,sprint.",
   "v1.91 — Grid view can now be grouped by any dimension (Brand / Channel / Owner / Status / Priority / Promotion / Sprint / custom fields). Groups render Airtable-style — a collapsible header row per group value spanning all columns, with the cards listed below. Choose the grouping in ⚏ Display, and it saves with bookmarks and saved views (URL param ggroup=…).",
@@ -2464,8 +2471,29 @@ function renderSubsEdit() {
   const box = document.getElementById("f_subs"); box.innerHTML = "";
   const done = modalSubs.filter(s => s.done).length;
   document.getElementById("f_subProg").textContent = modalSubs.length ? "(" + done + "/" + modalSubs.length + ")" : "";
-  modalSubs.forEach(s => {
-    const row = document.createElement("div"); row.className = "sub-row";
+  modalSubs.forEach((s, idx) => {
+    const row = document.createElement("div"); row.className = "sub-row"; row.dataset.idx = String(idx);
+    // Drag handle — grab here to reorder. Whole row participates in drag (handle sets draggable via mousedown).
+    const grip = document.createElement("span"); grip.className = "sub-drag"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
+    grip.addEventListener("mousedown", () => { row.draggable = true; });
+    grip.addEventListener("mouseup", () => { row.draggable = false; });
+    row.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; row.classList.add("dragging"); });
+    row.addEventListener("dragend", () => { row.classList.remove("dragging"); row.draggable = false; document.querySelectorAll(".sub-row.drag-over-top,.sub-row.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+    row.addEventListener("dragover", e => {
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+      const r = row.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
+      row.classList.toggle("drag-over-top", above); row.classList.toggle("drag-over-bot", !above);
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over-top", "drag-over-bot"));
+    row.addEventListener("drop", e => {
+      e.preventDefault(); const from = +e.dataTransfer.getData("text/plain"); const r = row.getBoundingClientRect();
+      let to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1);
+      if (isNaN(from) || from === to || from === to - 1) { row.classList.remove("drag-over-top", "drag-over-bot"); return; }
+      const [moved] = modalSubs.splice(from, 1);
+      if (from < to) to--;   // list shrank by one before the insertion point
+      modalSubs.splice(to, 0, moved);
+      renderSubsEdit();
+    });
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
     cb.onchange = () => { s.done = cb.checked; renderSubsEdit(); };
     const inp = document.createElement("input"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.value = s.text;
@@ -2485,7 +2513,7 @@ function renderSubsEdit() {
     conv.onclick = () => convertSubtaskToDeliverable(s);
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
     rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
-    row.appendChild(cb); row.appendChild(inp); row.appendChild(own); row.appendChild(due); row.appendChild(conv); row.appendChild(rm); box.appendChild(row);
+    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(own); row.appendChild(due); row.appendChild(conv); row.appendChild(rm); box.appendChild(row);
   });
 }
 // Turn a subtask row into a full deliverable card. Uses the subtask's text/owner/due, inherits the parent card's brand/channel/promotion.
