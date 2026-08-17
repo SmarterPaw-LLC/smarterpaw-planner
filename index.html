@@ -317,6 +317,10 @@
   #gridTable tr.grid-group-hdr .gg-chev { display: inline-block; width: 12px; color: var(--muted); }
   #gridTable tr.grid-group-hdr .gg-name { color: var(--text); font-weight: 700; text-transform: none; letter-spacing: 0; margin-right: 6px; }
   #gridTable tr.grid-group-hdr .gg-count { color: var(--muted); font-weight: 500; }
+  /* Grid toolbar (above the table) — shown only when grouping is active; hosts Expand/Collapse-all. */
+  .grid-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0 10px; }
+  .grid-toolbar .gt-label { flex: 1; font-size: 12px; color: var(--muted); }
+  .grid-toolbar .gt-btn { font-size: 12px; padding: 5px 10px; }
   .gg-list { display: flex; flex-direction: column; gap: 6px; }
   .gg-list .gg-item { display: flex; gap: 6px; align-items: center; }
   .gg-list .gg-item select { flex: 1; }
@@ -494,7 +498,7 @@
   </div>
 </div>
 
-<div id="grid"><div class="grid-wrap"><table id="gridTable"></table></div></div>
+<div id="grid"><div id="gridToolbar" class="grid-toolbar" style="display:none"></div><div class="grid-wrap"><table id="gridTable"></table></div></div>
 
 <div id="list"></div>
 
@@ -685,7 +689,7 @@
         <span class="seclabel">Group rows by (nest by adding more)</span>
         <div id="dispGridGroupList" class="gg-list"></div>
         <div class="ch-wrap" style="margin-top:8px"><button type="button" id="dispGridGroupAdd">＋ Add group level</button></div>
-        <div class="ch-wrap" style="margin-top:8px" id="dispGridExpandRow"><button type="button" id="dispGridExpandAll">▾ Expand all</button><button type="button" id="dispGridCollapseAll">▸ Collapse all</button></div>
+        <div class="hint" id="dispGridExpandHint" style="display:none">Use ▾ Expand all / ▸ Collapse all above the grid.</div>
       </div>
     </div>
     <div class="field"><span class="seclabel">Quick filter rows (shown above the board)</span><div id="dispQfRows" class="disp-dims"></div></div>
@@ -715,8 +719,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.92";
+const VERSION = "1.93";
 const CHANGELOG = [
+  "v1.93 — Moved ▾ Expand all / ▸ Collapse all out of the Display menu — they now live in a small toolbar above the Grid whenever grouping is active, alongside a “Grouped by X › Y › Z” breadcrumb.",
   "v1.92 — Grid grouping is now nested (Airtable-style). Add multiple grouping levels in ⚏ Display → “Group rows by” (e.g., Owner → then Channel → then Sprint); headers indent by depth and each level collapses independently. Bonus: ▾ Expand all / ▸ Collapse all buttons that operate on every level. URL param is now ggroup=owner,channel,sprint.",
   "v1.91 — Grid view can now be grouped by any dimension (Brand / Channel / Owner / Status / Priority / Promotion / Sprint / custom fields). Groups render Airtable-style — a collapsible header row per group value spanning all columns, with the cards listed below. Choose the grouping in ⚏ Display, and it saves with bookmarks and saved views (URL param ggroup=…).",
   "v1.90 — Tracked sprint chips are now removable — each history-only chip in “Sprints tracked” shows a ✕ to drop it. Chips that come from the current due-date range or manual sprint stay non-removable (the date implies them; changing the date is how you remove those).",
@@ -2009,6 +2014,20 @@ function gridValue(c, key) {
 function renderGrid() {
   const cols = gridColumns();
   const rows = visibleCards();   // already sorted by the global Filter & Sort setting
+  // Toolbar above the grid — shows the grouping context and expand/collapse-all buttons when grouped.
+  const toolbar = document.getElementById("gridToolbar");
+  if (toolbar) {
+    const grouped = Array.isArray(gridGroup) && gridGroup.some(Boolean);
+    toolbar.style.display = grouped ? "" : "none";
+    toolbar.innerHTML = "";
+    if (grouped) {
+      const label = document.createElement("span"); label.className = "gt-label";
+      label.textContent = "Grouped by " + gridGroup.map(k => (gridGroupDims().find(d => d.key === k) || {}).label || k).join(" › ");
+      const exp = document.createElement("button"); exp.type = "button"; exp.className = "gt-btn"; exp.textContent = "▾ Expand all"; exp.onclick = () => { gridCollapsed = new Set(); render(); };
+      const col = document.createElement("button"); col.type = "button"; col.className = "gt-btn"; col.textContent = "▸ Collapse all"; col.onclick = () => { gridCollapsed = allGridGroupPaths(); render(); };
+      toolbar.appendChild(label); toolbar.appendChild(exp); toolbar.appendChild(col);
+    }
+  }
   const table = document.getElementById("gridTable"); table.innerHTML = "";
   const thead = document.createElement("thead"); const trh = document.createElement("tr");
   cols.forEach(col => {
@@ -2142,9 +2161,7 @@ function renderDispGridGroups() {
   const nextAvail = dims.find(d => !used.has(d.key));
   addBtn.disabled = !nextAvail; addBtn.style.opacity = nextAvail ? "1" : ".5";
   addBtn.onclick = () => { const n = dims.find(d => !new Set(gridGroup).has(d.key)); if (!n) return; gridGroup.push(n.key); gridCollapsed = new Set(); render(); renderDispGridGroups(); };
-  document.getElementById("dispGridExpandRow").style.display = gridGroup.length ? "" : "none";
-  document.getElementById("dispGridExpandAll").onclick = () => { gridCollapsed = new Set(); render(); };
-  document.getElementById("dispGridCollapseAll").onclick = () => { gridCollapsed = allGridGroupPaths(); render(); };
+  document.getElementById("dispGridExpandHint").style.display = gridGroup.length ? "" : "none";
 }
 // Every ancestry path currently visible in the Grid — used to collapse all groups at once.
 function allGridGroupPaths() {
