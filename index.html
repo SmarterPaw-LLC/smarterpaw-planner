@@ -167,6 +167,28 @@
   .progress.full > i { background: var(--ok); }
   /* List / task view */
   #list { display: none; flex-direction: column; padding: 16px 20px; overflow: hidden; }
+  /* Notes view: chronological reading journal. Grouped by sprint week; each entry has a collapsible body. */
+  #notes { display: none; flex-direction: column; padding: 16px 20px; overflow: auto; gap: 20px; }
+  .notes-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .notes-count { flex: 1; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
+  .notes-btn { font-size: 12px; padding: 5px 10px; }
+  .notes-sec { display: flex; flex-direction: column; gap: 10px; }
+  .notes-sec-head { display: flex; align-items: baseline; gap: 12px; padding: 6px 0 8px; border-bottom: 1px solid var(--line); }
+  .notes-sec-name { font-size: 15px; font-weight: 700; color: var(--text); }
+  .notes-sec-range { font-size: 12px; color: var(--muted); }
+  .notes-sec-count { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--panel-2); border-radius: 999px; padding: 2px 10px; }
+  .notes-entry { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 10px; padding: 10px 14px; }
+  .notes-entry-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .notes-chev { flex: none; padding: 0 4px; font-size: 12px; color: var(--muted); background: transparent; border: none; cursor: pointer; }
+  .notes-chev:hover { color: var(--text); }
+  .notes-entry-title { flex: 1; font-weight: 700; font-size: 14px; cursor: pointer; min-width: 200px; }
+  .notes-entry-title:hover { color: var(--accent); }
+  .notes-entry-meta { flex: none; font-size: 11px; color: var(--muted); }
+  .notes-entry-body { margin-top: 8px; font-size: 13.5px; line-height: 1.55; color: var(--text); }
+  .notes-entry.collapsed .notes-entry-body { display: none; }
+  .notes-entry-body a { color: var(--accent); cursor: pointer; }
+  .notes-entry-body a:hover { text-decoration: underline; }
+  .notes-empty { color: var(--muted); font-style: italic; font-size: 12px; }
   .list-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
   .list-body.split { gap: 0; }
   .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; flex: none; }
@@ -490,7 +512,7 @@
   <div class="brand-title">Smarter<span>Paw</span> · Channel Planner</div>
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
-  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button></div>
+  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button><button data-v="notes">Notes</button></div>
   <button class="primary orange" id="addBtn">+ Deliverable</button>
   <div class="header-spacer"></div>
   <input class="search" id="search" placeholder="Search…" />
@@ -536,6 +558,7 @@
 <div id="grid"><div id="gridToolbar" class="grid-toolbar" style="display:none"></div><div id="gridBulkBar" class="grid-bulk-bar" style="display:none"></div><div class="grid-wrap"><table id="gridTable"></table></div></div>
 
 <div id="list"></div>
+<div id="notes"></div>
 
 <!-- Add / Edit deliverable -->
 <div class="overlay" id="overlay">
@@ -754,8 +777,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.97";
+const VERSION = "1.98";
 const CHANGELOG = [
+  "v1.98 — New “Notes” view in the top toggle. A chronological reading journal of every deliverable's notes text, grouped by sprint week (dated or manual), with the due date + owner/brand/channel/promo shown as a compact meta line. ▾ Expand all / ▸ Collapse all lets you show just titles while searching, then open just the one you want. Uses the same Filter & Sort + Search so scoping is instant.",
   "v1.97 — Bulk edit now handles multi-select custom fields properly. Instead of a single-choice dropdown, it shows a chip picker with a Replace / Add / Remove mode toggle — so you can e.g. add “Chewy” to Platform on 20 cards without wiping the platforms they already have.",
   "v1.96 — Grid view gets multi-select + bulk edit. A checkbox column appears on the left (with a select-all-visible checkbox in the header); when any rows are checked a toolbar appears with “Set [field] to [value]” — apply to all selected — plus Delete and Clear. Supports Brand / Channel / Owners / Status / Priority / Promotion / Due / End / any custom field.",
   "v1.95 — Converting a subtask to a deliverable now keeps the subtask in place as a clickable 🔗 link to the new card (shows its title + status). Clicking the link opens the linked card. Removing the link (✕) only unlinks — it does not delete the deliverable.",
@@ -1674,6 +1698,7 @@ function render() {
   if (view === "calendar") renderCalendar();
   else if (view === "grid") renderGrid();
   else if (view === "list") renderList();
+  else if (view === "notes") renderNotesView();
   else renderBoard();
 }
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
@@ -1732,6 +1757,66 @@ function orderedSplitValues(key, groups) {
   [...groups.keys()].filter(k => k !== "" && !seen.has(k)).sort().forEach(v => result.push(v));
   if (groups.has("")) result.push("");   // "(None)" column last
   return result;
+}
+// Notes view — a chronological journal of each deliverable's notes text, grouped by sprint week (from date or manual).
+// Each entry can be collapsed to its title. A toolbar has Expand all / Collapse all for skimming while searching.
+let notesCollapsed = new Set();   // card ids whose body is collapsed; toggled per card or via Collapse all
+let notesAllCollapsed = false;    // remembers whether the user last hit "Collapse all" so newly-loaded cards inherit that state
+function renderNotesView() {
+  const root = document.getElementById("notes"); root.innerHTML = "";
+  // Toolbar: entry count + expand/collapse all + a hint about search behaviour.
+  const items = visibleCards();
+  const head = document.createElement("div"); head.className = "notes-head";
+  const count = document.createElement("span"); count.className = "notes-count"; count.textContent = items.length + " entr" + (items.length === 1 ? "y" : "ies");
+  const expAll = document.createElement("button"); expAll.type = "button"; expAll.className = "notes-btn"; expAll.textContent = "▾ Expand all";
+  expAll.onclick = () => { notesCollapsed = new Set(); notesAllCollapsed = false; renderNotesView(); };
+  const colAll = document.createElement("button"); colAll.type = "button"; colAll.className = "notes-btn"; colAll.textContent = "▸ Collapse all";
+  colAll.onclick = () => { notesCollapsed = new Set(items.map(c => c.id)); notesAllCollapsed = true; renderNotesView(); };
+  head.appendChild(count); head.appendChild(expAll); head.appendChild(colAll); root.appendChild(head);
+  if (!items.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No entries here. Adjust the search or filters."; root.appendChild(empty); return; }
+  // Group by sprint week (chronological); "No sprint" last. Within a group, sort by due date then title.
+  const groups = {};
+  items.forEach(c => { const s = cardSprint(c); (groups[s] = groups[s] || []).push(c); });
+  Object.keys(groups).forEach(k => groups[k].sort((a, b) => (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99") || (a.title || "").localeCompare(b.title || "")));
+  const ordered = Object.keys(groups).filter(k => k).sort().concat(groups[""] ? [""] : []);
+  ordered.forEach(sk => {
+    const sec = document.createElement("div"); sec.className = "notes-sec";
+    const h = document.createElement("div"); h.className = "notes-sec-head";
+    h.innerHTML = `<span class="notes-sec-name">${sk ? esc(fmtSprint(sk)) : "No sprint"}</span>${sk ? `<span class="notes-sec-range">${esc(sprintRange(sk))}</span>` : ""}<span class="notes-sec-count">${groups[sk].length}</span>`;
+    sec.appendChild(h);
+    groups[sk].forEach(c => {
+      const collapsed = notesCollapsed.has(c.id) || (notesAllCollapsed && !notesCollapsed.has("__open:" + c.id));
+      const entry = document.createElement("div"); entry.className = "notes-entry" + (collapsed ? " collapsed" : "");
+      entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
+      const bar = document.createElement("div"); bar.className = "notes-entry-head";
+      const chev = document.createElement("button"); chev.type = "button"; chev.className = "notes-chev"; chev.textContent = collapsed ? "▸" : "▾";
+      chev.onclick = e => { e.stopPropagation();
+        if (notesAllCollapsed) { if (notesCollapsed.has("__open:" + c.id)) notesCollapsed.delete("__open:" + c.id); else notesCollapsed.add("__open:" + c.id); }
+        else { if (notesCollapsed.has(c.id)) notesCollapsed.delete(c.id); else notesCollapsed.add(c.id); }
+        renderNotesView();
+      };
+      bar.appendChild(chev);
+      const title = document.createElement("span"); title.className = "notes-entry-title"; title.textContent = c.title;
+      title.onclick = () => openModal(c); bar.appendChild(title);
+      const meta = document.createElement("span"); meta.className = "notes-entry-meta";
+      const parts = [];
+      const dueTxt = c.due ? fmtRange(c.due, c.end) : (sk ? fmtSprint(sk) : "");
+      if (dueTxt) parts.push(dueTxt);
+      if (c.owner) parts.push(c.owner);
+      if (c.brand) parts.push(c.brand);
+      if (c.channel) parts.push(c.channel);
+      const promo = cardPromo(c); if (promo) parts.push("◆ " + promo);
+      const prio = cardPriority(c); if (prio && prio !== "No Priority") parts.push("! " + prio);
+      meta.textContent = parts.join(" · "); bar.appendChild(meta);
+      entry.appendChild(bar);
+      const body = document.createElement("div"); body.className = "notes-entry-body";
+      if (c.notes) body.innerHTML = renderNotes(c.notes);
+      else { const p = document.createElement("span"); p.className = "notes-empty"; p.textContent = "— no notes yet —"; body.appendChild(p); }
+      entry.appendChild(body);
+      sec.appendChild(entry);
+    });
+    root.appendChild(sec);
+  });
 }
 function renderList() {
   const root = document.getElementById("list");
@@ -1953,6 +2038,7 @@ function setView(v) {
   document.getElementById("calendar").style.display = v === "calendar" ? "flex" : "none";
   document.getElementById("grid").style.display = v === "grid" ? "flex" : "none";
   document.getElementById("list").style.display = v === "list" ? "flex" : "none";
+  document.getElementById("notes").style.display = v === "notes" ? "flex" : "none";
   document.getElementById("calSettingsBtn").style.display = "";   // Display config exists for every view (cards on Board/Cal/List, columns on Grid)
   document.querySelectorAll("#viewToggle button").forEach(b => b.classList.toggle("active", b.dataset.v === v));
   render();
@@ -3143,7 +3229,7 @@ function renderChangelog() {
   CHANGELOG.forEach((line, i) => { const d = document.createElement("div"); d.className = "cl" + (i === 0 ? " new" : ""); d.textContent = line; box.appendChild(d); });
 }
 // ── URL state (bookmarkable filtered views) ─────────────────────────
-const VIEW_KEYS = ["board", "calendar", "grid", "list"];
+const VIEW_KEYS = ["board", "calendar", "grid", "list", "notes"];
 function currentParams() {
   const p = new URLSearchParams();
   if (view !== "board") p.set("view", view);
