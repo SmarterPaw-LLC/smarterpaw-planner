@@ -167,28 +167,39 @@
   .progress.full > i { background: var(--ok); }
   /* List / task view */
   #list { display: none; flex-direction: column; padding: 16px 20px; overflow: hidden; }
-  /* Notes view: chronological reading journal. Grouped by sprint week; each entry has a collapsible body. */
-  #notes { display: none; flex-direction: column; padding: 16px 20px; overflow: auto; gap: 20px; }
-  .notes-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  /* Notes view — notepad style: flat list of entries, each with a red date pill next to the title. */
+  #notes { display: none; flex-direction: column; padding: 16px 20px; overflow: auto; gap: 8px; }
+  .notes-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
   .notes-count { flex: 1; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
   .notes-btn { font-size: 12px; padding: 5px 10px; }
-  .notes-sec { display: flex; flex-direction: column; gap: 10px; }
-  .notes-sec-head { display: flex; align-items: baseline; gap: 12px; padding: 6px 0 8px; border-bottom: 1px solid var(--line); }
-  .notes-sec-name { font-size: 15px; font-weight: 700; color: var(--text); }
-  .notes-sec-range { font-size: 12px; color: var(--muted); }
-  .notes-sec-count { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--panel-2); border-radius: 999px; padding: 2px 10px; }
   .notes-entry { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 10px; padding: 10px 14px; }
   .notes-entry-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .notes-chev { flex: none; padding: 0 4px; font-size: 12px; color: var(--muted); background: transparent; border: none; cursor: pointer; }
   .notes-chev:hover { color: var(--text); }
+  /* Red date pill next to each entry — the notepad's date-in-margin. */
+  .notes-date { flex: none; font-size: 12px; font-weight: 700; color: var(--danger); letter-spacing: .2px; white-space: nowrap; padding: 1px 8px; border: 1px solid rgba(239,68,68,.35); border-radius: 6px; background: rgba(239,68,68,.08); }
   .notes-entry-title { flex: 1; font-weight: 700; font-size: 14px; cursor: pointer; min-width: 200px; }
   .notes-entry-title:hover { color: var(--accent); }
   .notes-entry-meta { flex: none; font-size: 11px; color: var(--muted); }
   .notes-entry-body { margin-top: 8px; font-size: 13.5px; line-height: 1.55; color: var(--text); }
   .notes-entry.collapsed .notes-entry-body { display: none; }
-  .notes-entry-body a { color: var(--accent); cursor: pointer; }
-  .notes-entry-body a:hover { text-decoration: underline; }
-  .notes-empty { color: var(--muted); font-style: italic; font-size: 12px; }
+  /* Inline-editable note area — cursor changes to text on hover; placeholder shows when empty. */
+  .notes-editable { min-height: 30px; padding: 6px 8px; border-radius: 6px; cursor: text; outline: none; }
+  .notes-editable:hover { background: rgba(255,255,255,.02); }
+  .notes-editable:focus { background: rgba(255,255,255,.03); box-shadow: inset 0 0 0 1px var(--accent); }
+  .notes-editable:empty::before { content: attr(data-ph); color: var(--muted); font-style: italic; pointer-events: none; }
+  .notes-editable a { color: var(--accent); cursor: pointer; }
+  .notes-editable a:hover { text-decoration: underline; }
+  .notes-editable ul, .notes-editable ol { margin: 4px 0; padding-left: 22px; }
+  /* Subtasks inline in the notepad — checkbox + text (strikethrough when done). */
+  .notes-subs { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 4px; }
+  .notes-sub { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .notes-sub input[type=checkbox] { width: 14px; height: 14px; margin: 0; cursor: pointer; }
+  .notes-sub-text { flex: 1; }
+  .notes-sub-text.done { text-decoration: line-through; color: var(--muted); }
+  .notes-sub-link { color: var(--accent); cursor: pointer; }
+  .notes-sub-link:hover { text-decoration: underline; }
+  .notes-sub-meta { color: var(--muted); font-size: 12px; }
   .list-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
   .list-body.split { gap: 0; }
   .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; flex: none; }
@@ -798,8 +809,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.99";
+const VERSION = "2.00";
 const CHANGELOG = [
+  "v2.00 — Notes view rebuilt as a notepad. No more sprint-week section headers — each entry is a flat row with a red date pill (due date → sprint week's Monday → created-at fallback), title, and compact meta. Default sort is date newest → oldest; the global Filter & Sort still wins when set. The notes body is inline-editable — click and type directly, blur to save. Subtasks appear inline too, with strikethrough when checked and their checkbox toggles right there.",
   "v1.99 — Two reorder additions. (1) Custom fields are drag-to-reorder in Manage → Edit custom fields (⋮⋮ grip on each card); the new order sticks everywhere the field appears — the editor, the Grid, filter dropdowns. (2) The Display menu's “Show these on each item” is now split into an ordered draggable list (⋮⋮ grip, ✕ hides) plus a chip row of available dimensions (+ Add), so you can reorder card chips per view (Board/Calendar/List independent).",
   "v1.98 — New “Notes” view in the top toggle. A chronological reading journal of every deliverable's notes text, grouped by sprint week (dated or manual), with the due date + owner/brand/channel/promo shown as a compact meta line. ▾ Expand all / ▸ Collapse all lets you show just titles while searching, then open just the one you want. Uses the same Filter & Sort + Search so scoping is instant.",
   "v1.97 — Bulk edit now handles multi-select custom fields properly. Instead of a single-choice dropdown, it shows a chip picker with a Replace / Add / Remove mode toggle — so you can e.g. add “Chewy” to Platform on 20 cards without wiping the platforms they already have.",
@@ -1313,7 +1325,7 @@ async function refetch() {
   if (error) { toast("Load failed: " + error.message); return; }
   cards = data.map(r => ({ id: r.id, title: r.title, brand: r.brand, channel: r.channel,
     owner: r.owner || "", due: r.due || "", end: r.end_date || "", status: r.status, notes: r.notes || "",
-    fields: r.fields || {} }));
+    fields: r.fields || {}, createdAt: r.created_at || "" }));
   render();
 }
 function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
@@ -1784,60 +1796,122 @@ function orderedSplitValues(key, groups) {
 // Each entry can be collapsed to its title. A toolbar has Expand all / Collapse all for skimming while searching.
 let notesCollapsed = new Set();   // card ids whose body is collapsed; toggled per card or via Collapse all
 let notesAllCollapsed = false;    // remembers whether the user last hit "Collapse all" so newly-loaded cards inherit that state
+// The date shown next to each Notes entry — due date takes precedence, then the sprint week's Monday, then created_at as a last resort.
+function noteEntryDate(c) {
+  if (c.due) return c.due;
+  const sp = cardSprint(c); if (sp) { const d = isoWeekStart(sp); if (d) return ymdUTC(d); }
+  if (c.createdAt) return c.createdAt.slice(0, 10);   // YYYY-MM-DD from ISO timestamp
+  return "";
+}
+// Save the inline-editable notes body back to the card + DB (blur handler).
+async function saveInlineNote(cardId, editorEl) {
+  const c = cards.find(x => x.id === cardId); if (!c) return;
+  const next = editorEl.textContent.trim() ? sanitizeNotes(editorEl.innerHTML) : "";
+  if (next === (c.notes || "")) return;
+  c.notes = next;
+  if (!ONLINE) { saveLocal(); return; }
+  const { error } = await db.from("deliverables").update({ notes: next }).eq("id", cardId);
+  if (error) toast("Save failed: " + error.message);
+}
+// Toggle a subtask's done state without opening the modal (Notes view checkbox).
+async function toggleInlineSubtask(cardId, subId, done) {
+  const c = cards.find(x => x.id === cardId); if (!c) return;
+  const subs = cardSubtasks(c).map(s => s.id === subId ? Object.assign({}, s, { done }) : s);
+  const fields = Object.assign({}, c.fields || {}); fields[SUBTASKS_KEY] = subs; c.fields = fields;
+  if (!ONLINE) { saveLocal(); render(); return; }
+  const { error } = await db.from("deliverables").update({ fields }).eq("id", cardId);
+  if (error) toast("Save failed: " + error.message); else render();
+}
 function renderNotesView() {
   const root = document.getElementById("notes"); root.innerHTML = "";
-  // Toolbar: entry count + expand/collapse all + a hint about search behaviour.
   const items = visibleCards();
+  // Default sort is date newest → oldest (undated at the bottom). Global sortKey wins when set.
+  const rows = sortKey ? items : [...items].sort((a, b) => {
+    const av = noteEntryDate(a) || "0000-00-00", bv = noteEntryDate(b) || "0000-00-00";
+    if (av === bv) return (a.title || "").localeCompare(b.title || "");
+    return bv.localeCompare(av);
+  });
+  // Toolbar: count + expand/collapse-all.
   const head = document.createElement("div"); head.className = "notes-head";
-  const count = document.createElement("span"); count.className = "notes-count"; count.textContent = items.length + " entr" + (items.length === 1 ? "y" : "ies");
+  const count = document.createElement("span"); count.className = "notes-count"; count.textContent = rows.length + " entr" + (rows.length === 1 ? "y" : "ies") + (sortKey ? "" : " · newest first");
   const expAll = document.createElement("button"); expAll.type = "button"; expAll.className = "notes-btn"; expAll.textContent = "▾ Expand all";
   expAll.onclick = () => { notesCollapsed = new Set(); notesAllCollapsed = false; renderNotesView(); };
   const colAll = document.createElement("button"); colAll.type = "button"; colAll.className = "notes-btn"; colAll.textContent = "▸ Collapse all";
-  colAll.onclick = () => { notesCollapsed = new Set(items.map(c => c.id)); notesAllCollapsed = true; renderNotesView(); };
+  colAll.onclick = () => { notesCollapsed = new Set(rows.map(c => c.id)); notesAllCollapsed = true; renderNotesView(); };
   head.appendChild(count); head.appendChild(expAll); head.appendChild(colAll); root.appendChild(head);
-  if (!items.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No entries here. Adjust the search or filters."; root.appendChild(empty); return; }
-  // Group by sprint week (chronological); "No sprint" last. Within a group, sort by due date then title.
-  const groups = {};
-  items.forEach(c => { const s = cardSprint(c); (groups[s] = groups[s] || []).push(c); });
-  Object.keys(groups).forEach(k => groups[k].sort((a, b) => (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99") || (a.title || "").localeCompare(b.title || "")));
-  const ordered = Object.keys(groups).filter(k => k).sort().concat(groups[""] ? [""] : []);
-  ordered.forEach(sk => {
-    const sec = document.createElement("div"); sec.className = "notes-sec";
-    const h = document.createElement("div"); h.className = "notes-sec-head";
-    h.innerHTML = `<span class="notes-sec-name">${sk ? esc(fmtSprint(sk)) : "No sprint"}</span>${sk ? `<span class="notes-sec-range">${esc(sprintRange(sk))}</span>` : ""}<span class="notes-sec-count">${groups[sk].length}</span>`;
-    sec.appendChild(h);
-    groups[sk].forEach(c => {
-      const collapsed = notesCollapsed.has(c.id) || (notesAllCollapsed && !notesCollapsed.has("__open:" + c.id));
-      const entry = document.createElement("div"); entry.className = "notes-entry" + (collapsed ? " collapsed" : "");
-      entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
-      const bar = document.createElement("div"); bar.className = "notes-entry-head";
-      const chev = document.createElement("button"); chev.type = "button"; chev.className = "notes-chev"; chev.textContent = collapsed ? "▸" : "▾";
-      chev.onclick = e => { e.stopPropagation();
-        if (notesAllCollapsed) { if (notesCollapsed.has("__open:" + c.id)) notesCollapsed.delete("__open:" + c.id); else notesCollapsed.add("__open:" + c.id); }
-        else { if (notesCollapsed.has(c.id)) notesCollapsed.delete(c.id); else notesCollapsed.add(c.id); }
-        renderNotesView();
-      };
-      bar.appendChild(chev);
-      const title = document.createElement("span"); title.className = "notes-entry-title"; title.textContent = c.title;
-      title.onclick = () => openModal(c); bar.appendChild(title);
-      const meta = document.createElement("span"); meta.className = "notes-entry-meta";
-      const parts = [];
-      const dueTxt = c.due ? fmtRange(c.due, c.end) : (sk ? fmtSprint(sk) : "");
-      if (dueTxt) parts.push(dueTxt);
-      if (c.owner) parts.push(c.owner);
-      if (c.brand) parts.push(c.brand);
-      if (c.channel) parts.push(c.channel);
-      const promo = cardPromo(c); if (promo) parts.push("◆ " + promo);
-      const prio = cardPriority(c); if (prio && prio !== "No Priority") parts.push("! " + prio);
-      meta.textContent = parts.join(" · "); bar.appendChild(meta);
-      entry.appendChild(bar);
-      const body = document.createElement("div"); body.className = "notes-entry-body";
-      if (c.notes) body.innerHTML = renderNotes(c.notes);
-      else { const p = document.createElement("span"); p.className = "notes-empty"; p.textContent = "— no notes yet —"; body.appendChild(p); }
-      entry.appendChild(body);
-      sec.appendChild(entry);
+  if (!rows.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No entries here. Adjust the search or filters."; root.appendChild(empty); return; }
+  // Notepad layout — one flat entry per card. Date pill in red, editable body inline.
+  rows.forEach(c => {
+    const collapsed = notesAllCollapsed ? !notesCollapsed.has("__open:" + c.id) : notesCollapsed.has(c.id);
+    const entry = document.createElement("div"); entry.className = "notes-entry" + (collapsed ? " collapsed" : "");
+    entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
+    // Header row
+    const bar = document.createElement("div"); bar.className = "notes-entry-head";
+    const chev = document.createElement("button"); chev.type = "button"; chev.className = "notes-chev"; chev.textContent = collapsed ? "▸" : "▾";
+    chev.onclick = e => { e.stopPropagation();
+      if (notesAllCollapsed) { if (notesCollapsed.has("__open:" + c.id)) notesCollapsed.delete("__open:" + c.id); else notesCollapsed.add("__open:" + c.id); }
+      else { if (notesCollapsed.has(c.id)) notesCollapsed.delete(c.id); else notesCollapsed.add(c.id); }
+      renderNotesView();
+    };
+    bar.appendChild(chev);
+    const d = noteEntryDate(c);
+    const date = document.createElement("span"); date.className = "notes-date"; date.textContent = d ? fmtDue(d) : "—";
+    if (d && c.end && c.end !== c.due) date.textContent = fmtDue(c.due) + " → " + fmtDue(c.end);
+    bar.appendChild(date);
+    const title = document.createElement("span"); title.className = "notes-entry-title"; title.textContent = c.title;
+    title.onclick = () => openModal(c);
+    bar.appendChild(title);
+    // Compact meta (no date — that's in the red pill)
+    const meta = document.createElement("span"); meta.className = "notes-entry-meta";
+    const parts = [];
+    const sp = cardSprint(c); if (sp) parts.push(fmtSprint(sp));
+    if (c.owner) parts.push(c.owner); if (c.brand) parts.push(c.brand); if (c.channel) parts.push(c.channel);
+    const pr = cardPromo(c); if (pr) parts.push("◆ " + pr);
+    const pri = cardPriority(c); if (pri && pri !== "No Priority") parts.push("! " + pri);
+    meta.textContent = parts.join(" · "); bar.appendChild(meta);
+    entry.appendChild(bar);
+    // Body: inline-editable notes + subtasks
+    const body = document.createElement("div"); body.className = "notes-entry-body";
+    // Inline-editable notes area — cursor changes to text on hover; typing saves on blur.
+    const editor = document.createElement("div"); editor.className = "notes-editable"; editor.setAttribute("contenteditable", "true"); editor.setAttribute("data-ph", "Click to write a note…");
+    editor.innerHTML = c.notes ? sanitizeNotes(c.notes) : "";
+    editor.addEventListener("blur", () => saveInlineNote(c.id, editor));
+    editor.addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
+    editor.addEventListener("paste", e => {
+      const cd = e.clipboardData || window.clipboardData; if (!cd) return;
+      const text = cd.getData("text/plain"); if (!text) return;
+      e.preventDefault();
+      const re = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
+      const html = text.split(re).map((p, i) => i % 2 === 1 ? `<a href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>` : esc(p).replace(/\n/g, "<br>")).join("");
+      document.execCommand("insertHTML", false, html);
     });
-    root.appendChild(sec);
+    body.appendChild(editor);
+    // Subtasks appear as part of the note — checkboxes work inline; done items strike through.
+    const subs = cardSubtasks(c);
+    if (subs.length) {
+      const sbox = document.createElement("div"); sbox.className = "notes-subs";
+      subs.forEach(s => {
+        const row = document.createElement("div"); row.className = "notes-sub";
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
+        cb.onclick = e => { e.stopPropagation(); toggleInlineSubtask(c.id, s.id, cb.checked); };
+        row.appendChild(cb);
+        const txt = document.createElement("span"); txt.className = "notes-sub-text" + (s.done ? " done" : "");
+        if (s.linkedCardId) {
+          const linked = cards.find(x => x.id === s.linkedCardId);
+          if (linked) { const a = document.createElement("a"); a.className = "notes-sub-link"; a.textContent = "🔗 " + linked.title; a.onclick = e => { e.stopPropagation(); openModal(linked); }; txt.appendChild(a); }
+          else txt.textContent = (s.text || "(deleted)") + " (deleted)";
+        } else txt.textContent = s.text || "(untitled)";
+        row.appendChild(txt);
+        const bits = [];
+        if (s.owner) bits.push(s.owner);
+        if (s.due) bits.push(fmtDue(s.due));
+        if (bits.length) { const m = document.createElement("span"); m.className = "notes-sub-meta"; m.textContent = "— " + bits.join(" · "); row.appendChild(m); }
+        sbox.appendChild(row);
+      });
+      body.appendChild(sbox);
+    }
+    entry.appendChild(body);
+    root.appendChild(entry);
   });
 }
 function renderList() {
