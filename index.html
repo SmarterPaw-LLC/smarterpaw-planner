@@ -317,6 +317,11 @@
   #gridTable tr.grid-group-hdr .gg-chev { display: inline-block; width: 12px; color: var(--muted); }
   #gridTable tr.grid-group-hdr .gg-name { color: var(--text); font-weight: 700; text-transform: none; letter-spacing: 0; margin-right: 6px; }
   #gridTable tr.grid-group-hdr .gg-count { color: var(--muted); font-weight: 500; }
+  .gg-list { display: flex; flex-direction: column; gap: 6px; }
+  .gg-list .gg-item { display: flex; gap: 6px; align-items: center; }
+  .gg-list .gg-item select { flex: 1; }
+  .gg-list .gg-rm { flex: none; padding: 4px 9px; color: var(--danger); border-color: transparent; background: transparent; }
+  .gg-list .gg-rm:hover { border-color: var(--danger); }
   #gridTable tr.grid-group-hdr.collapsed .gg-chev { color: var(--text); }
   .gdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
   /* spanning-bar calendar */
@@ -676,7 +681,12 @@
     </div>
     <div id="dispGridSec" style="display:none">
       <div class="field"><span class="seclabel">Columns to show</span><div id="dispGridCols" class="disp-dims"></div></div>
-      <div class="field"><span class="seclabel">Group rows by</span><select id="dispGridGroup"></select></div>
+      <div class="field">
+        <span class="seclabel">Group rows by (nest by adding more)</span>
+        <div id="dispGridGroupList" class="gg-list"></div>
+        <div class="ch-wrap" style="margin-top:8px"><button type="button" id="dispGridGroupAdd">＋ Add group level</button></div>
+        <div class="ch-wrap" style="margin-top:8px" id="dispGridExpandRow"><button type="button" id="dispGridExpandAll">▾ Expand all</button><button type="button" id="dispGridCollapseAll">▸ Collapse all</button></div>
+      </div>
     </div>
     <div class="field"><span class="seclabel">Quick filter rows (shown above the board)</span><div id="dispQfRows" class="disp-dims"></div></div>
     <div class="modal-actions"><div class="spacer"></div><button id="dispClose">Done</button></div>
@@ -705,8 +715,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.91";
+const VERSION = "1.92";
 const CHANGELOG = [
+  "v1.92 — Grid grouping is now nested (Airtable-style). Add multiple grouping levels in ⚏ Display → “Group rows by” (e.g., Owner → then Channel → then Sprint); headers indent by depth and each level collapses independently. Bonus: ▾ Expand all / ▸ Collapse all buttons that operate on every level. URL param is now ggroup=owner,channel,sprint.",
   "v1.91 — Grid view can now be grouped by any dimension (Brand / Channel / Owner / Status / Priority / Promotion / Sprint / custom fields). Groups render Airtable-style — a collapsible header row per group value spanning all columns, with the cards listed below. Choose the grouping in ⚏ Display, and it saves with bookmarks and saved views (URL param ggroup=…).",
   "v1.90 — Tracked sprint chips are now removable — each history-only chip in “Sprints tracked” shows a ✕ to drop it. Chips that come from the current due-date range or manual sprint stay non-removable (the date implies them; changing the date is how you remove those).",
   "v1.89 — Fixed: with a Sprint filter active (e.g. “This week”), the List view no longer also lists a matching card under its other spanned weeks — a card whose date range covers Wk 27–31 now shows only under Wk 30 when the filter is “This week”. Cards that pass the filter via a different rule (match=any) keep all their sprint groups.",
@@ -1084,8 +1095,8 @@ let view = "board", calMode = "month", calRef = new Date();
 let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
 let sortKey = "", sortDir = 1;   // unified sort across all views (Filter & Sort panel); "" = manual/creation order
 let gridCols = null;   // null = show all columns; else an ordered array of visible column keys
-let gridGroup = "";                        // dimension key to group Grid rows by ("" = flat table, no grouping)
-let gridCollapsed = new Set();             // group values (grouping-dim-scoped) currently collapsed
+let gridGroup = [];                        // ORDERED list of dimensions to group Grid rows by (nested); empty = flat table
+let gridCollapsed = new Set();             // ancestry-path strings for currently-collapsed group headers
 // Quick filter rows: which dimensions get their own "click to filter" row in the quick-filter section (below the header).
 // Configured in Display; each dimension has its own filter state in `filters[dim]`.
 let quickFilterRows = (() => { try { const raw = JSON.parse(localStorage.getItem("planner-quick-rows") || "null"); return Array.isArray(raw) ? new Set(raw) : new Set(["brand","channel","promotion"]); } catch (e) { return new Set(["brand","channel","promotion"]); } })();
@@ -2022,24 +2033,30 @@ function renderGrid() {
     });
     return tr;
   };
-  if (!gridGroup) {
-    rows.forEach(c => tbody.appendChild(buildRow(c)));
-  } else {
-    // Airtable-style: one collapsible header row per group value, followed by that group's cards.
+  // Nested grouping: recurse over the ordered dimensions in `gridGroup`. Each level gets its own collapsible
+  // header row (indented by depth); path-scoped collapse keys keep "Jason > Blog" separate from "Miles > Blog".
+  const dims = Array.isArray(gridGroup) ? gridGroup.filter(Boolean) : (gridGroup ? [gridGroup] : []);
+  const renderGroup = (list, remaining, ancestry) => {
+    if (!remaining.length) { list.forEach(c => tbody.appendChild(buildRow(c))); return; }
+    const key = remaining[0], rest = remaining.slice(1);
+    const depth = ancestry.split("|").filter(Boolean).length;
     const map = new Map();
-    rows.forEach(c => { const v = gridGroupOf(c, gridGroup); if (!map.has(v)) map.set(v, []); map.get(v).push(c); });
-    gridOrderedGroups(gridGroup, map).forEach(v => {
-      const list = map.get(v);
-      const groupKey = gridGroup + ":" + v;
-      const collapsed = gridCollapsed.has(groupKey);
+    list.forEach(c => { const v = gridGroupOf(c, key); if (!map.has(v)) map.set(v, []); map.get(v).push(c); });
+    gridOrderedGroups(key, map).forEach(v => {
+      const sub = map.get(v);
+      const path = ancestry + "|" + key + "=" + v;
+      const collapsed = gridCollapsed.has(path);
       const header = document.createElement("tr"); header.className = "grid-group-hdr" + (collapsed ? " collapsed" : "");
       const th = document.createElement("th"); th.colSpan = cols.length; th.className = "grid-group-cell";
-      th.innerHTML = `<span class="gg-chev">${collapsed ? "▸" : "▾"}</span> <span class="gg-name">${esc(gridGroupLabel(gridGroup, v))}</span> <span class="gg-count">${list.length}</span>`;
-      th.onclick = () => { if (gridCollapsed.has(groupKey)) gridCollapsed.delete(groupKey); else gridCollapsed.add(groupKey); render(); };
+      th.style.paddingLeft = (12 + depth * 22) + "px";
+      th.innerHTML = `<span class="gg-chev">${collapsed ? "▸" : "▾"}</span> <span class="gg-name">${esc(gridGroupLabel(key, v))}</span> <span class="gg-count">${sub.length}</span>`;
+      th.onclick = () => { if (gridCollapsed.has(path)) gridCollapsed.delete(path); else gridCollapsed.add(path); render(); };
       header.appendChild(th); tbody.appendChild(header);
-      if (!collapsed) list.forEach(c => tbody.appendChild(buildRow(c)));
+      if (!collapsed) renderGroup(sub, rest, path);
     });
-  }
+  };
+  if (!dims.length) rows.forEach(c => tbody.appendChild(buildRow(c)));
+  else renderGroup(rows, dims, "");
   table.appendChild(tbody);
 }
 function setCalMode(m) {
@@ -2103,11 +2120,46 @@ function renderDispGrid() {
     };
     lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + col.label)); box.appendChild(lab);
   });
-  // Group by (Airtable-style row grouping) — persists in URL + saved views.
-  const gsel = document.getElementById("dispGridGroup"); gsel.innerHTML = "";
-  gridGroupDims().forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = d.label; gsel.appendChild(o); });
-  gsel.value = gridGroup;
-  gsel.onchange = () => { gridGroup = gsel.value; gridCollapsed = new Set(); render(); };
+  renderDispGridGroups();
+}
+// Nested group list — one dropdown per grouping level, in order. First is outermost group.
+function renderDispGridGroups() {
+  const list = document.getElementById("dispGridGroupList"); list.innerHTML = "";
+  const dims = gridGroupDims().filter(d => d.key);
+  gridGroup.forEach((k, i) => {
+    const row = document.createElement("div"); row.className = "gg-item";
+    const sel = document.createElement("select");
+    const none = document.createElement("option"); none.value = ""; none.textContent = "— pick a dimension —"; sel.appendChild(none);
+    dims.forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = (i === 0 ? "Group by " : "Then by ") + d.label; sel.appendChild(o); });
+    sel.value = k || "";
+    sel.onchange = () => { if (!sel.value) gridGroup.splice(i, 1); else gridGroup[i] = sel.value; gridCollapsed = new Set(); render(); renderDispGridGroups(); };
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "gg-rm"; rm.textContent = "✕"; rm.title = "Remove this grouping level";
+    rm.onclick = () => { gridGroup.splice(i, 1); gridCollapsed = new Set(); render(); renderDispGridGroups(); };
+    row.appendChild(sel); row.appendChild(rm); list.appendChild(row);
+  });
+  const addBtn = document.getElementById("dispGridGroupAdd");
+  const used = new Set(gridGroup);
+  const nextAvail = dims.find(d => !used.has(d.key));
+  addBtn.disabled = !nextAvail; addBtn.style.opacity = nextAvail ? "1" : ".5";
+  addBtn.onclick = () => { const n = dims.find(d => !new Set(gridGroup).has(d.key)); if (!n) return; gridGroup.push(n.key); gridCollapsed = new Set(); render(); renderDispGridGroups(); };
+  document.getElementById("dispGridExpandRow").style.display = gridGroup.length ? "" : "none";
+  document.getElementById("dispGridExpandAll").onclick = () => { gridCollapsed = new Set(); render(); };
+  document.getElementById("dispGridCollapseAll").onclick = () => { gridCollapsed = allGridGroupPaths(); render(); };
+}
+// Every ancestry path currently visible in the Grid — used to collapse all groups at once.
+function allGridGroupPaths() {
+  const paths = new Set();
+  const dims = gridGroup.filter(Boolean); if (!dims.length) return paths;
+  const rows = visibleCards();
+  const walk = (list, remaining, ancestry) => {
+    if (!remaining.length) return;
+    const key = remaining[0], rest = remaining.slice(1);
+    const map = new Map();
+    list.forEach(c => { const v = gridGroupOf(c, key); if (!map.has(v)) map.set(v, []); map.get(v).push(c); });
+    map.forEach((sub, v) => { const path = ancestry + "|" + key + "=" + v; paths.add(path); walk(sub, rest, path); });
+  };
+  walk(rows, dims, "");
+  return paths;
 }
 function openDisp() {
   const grid = view === "grid";
@@ -2846,7 +2898,7 @@ function currentParams() {
   if (filterMatch !== "all") p.set("match", filterMatch);
   if (view === "calendar") { if (calMode !== "month") p.set("calMode", calMode); p.set("calDate", ymd(calRef)); const sz = displaySettings.calendar.eventSize; if (sz && sz !== "compact") p.set("size", sz); }
   if (view === "grid" && gridCols) p.set("gcols", gridCols.join(","));
-  if (view === "grid" && gridGroup) p.set("ggroup", gridGroup);
+  if (view === "grid" && gridGroup.length) p.set("ggroup", gridGroup.join(","));
   if (sortKey) p.set("sort", sortKey + ":" + (sortDir < 0 ? "d" : "a"));
   return p.toString();
 }
@@ -2909,7 +2961,7 @@ function renderViews() {
 async function openViews() { await loadSharedViews(); renderViews(); document.getElementById("viewsOverlay").classList.add("show"); }
 // Apply a saved view's query params: reset state to defaults, parse params, sync controls.
 function applySavedView(params) {
-  view = "board"; colorBy = "brand"; searchText = ""; filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; gridGroup = ""; gridCollapsed = new Set(); sortKey = ""; sortDir = 1; displaySettings.calendar.eventSize = "compact";
+  view = "board"; colorBy = "brand"; searchText = ""; filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; gridGroup = []; gridCollapsed = new Set(); sortKey = ""; sortDir = 1; displaySettings.calendar.eventSize = "compact";
   try { history.replaceState(null, "", location.pathname + (params ? "?" + params : "")); } catch (e) {}
   readUrl();
   document.getElementById("search").value = searchText;
@@ -2937,7 +2989,7 @@ function readUrl() {
   const cd = p.get("calDate"); if (cd) { const d = new Date(cd + "T00:00:00"); if (!isNaN(d.getTime())) calRef = d; }
   const sz = p.get("size"); if (["compact","comfortable","spacious"].includes(sz)) displaySettings.calendar.eventSize = sz;
   const gc = p.get("gcols"); if (gc) gridCols = gc.split(",");
-  const gg = p.get("ggroup"); if (gg) gridGroup = gg;
+  const gg = p.get("ggroup"); if (gg) gridGroup = gg.split(",").filter(Boolean);
   const so = p.get("sort"); if (so) { const i = so.lastIndexOf(":"); const k = i > 0 ? so.slice(0, i) : so; const d = so.slice(i + 1); if (k) { sortKey = k; sortDir = d === "d" ? -1 : 1; } }
 }
 async function init() {
