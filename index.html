@@ -199,7 +199,9 @@
   .mp-chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 13px; }
   .mp-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   .sprint-track { display: flex; flex-wrap: wrap; gap: 6px; }
-  .track-chip { font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 3px 10px; }
+  .track-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 3px 6px 3px 10px; }
+  .track-chip-x { border: none; background: transparent; color: currentColor; opacity: .55; cursor: pointer; padding: 0 4px; font-size: 12px; line-height: 1; }
+  .track-chip-x:hover { opacity: 1; color: var(--danger); }
   .list-sprint-sel { padding: 7px 9px; }
   .list-empty { padding: 30px; text-align: center; }
   .list-cols { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
@@ -695,8 +697,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.89";
+const VERSION = "1.90";
 const CHANGELOG = [
+  "v1.90 — Tracked sprint chips are now removable — each history-only chip in “Sprints tracked” shows a ✕ to drop it. Chips that come from the current due-date range or manual sprint stay non-removable (the date implies them; changing the date is how you remove those).",
   "v1.89 — Fixed: with a Sprint filter active (e.g. “This week”), the List view no longer also lists a matching card under its other spanned weeks — a card whose date range covers Wk 27–31 now shows only under Wk 30 when the filter is “This week”. Cards that pass the filter via a different rule (match=any) keep all their sprint groups.",
   "v1.88 — Filter & sort now supports relative-date filters that stay accurate over time. Sprint gets “This week / Next week / Last week / This month” as picker values (before the concrete week list). A new “Due date” field offers “Today / This week / Next week / Last week / This month / Next month / Overdue / No due date”. Save a view with these and it always shows the current period — no need to update the saved sprint week.",
   "v1.87 — Subtasks can now carry an owner and a due date each. A new ➜ Convert action turns a subtask into a full deliverable — it uses the subtask's title, owner and due date, inherits the parent card's brand / channel / promotion, starts in the first lane (Backlog), and is removed from the subtask list.",
@@ -1067,6 +1070,7 @@ let searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
 let modalSubs = [];   // working copy of the open card's subtasks
+let modalSprintHist = [];   // working copy of the open card's tracked-sprint history (editable via ✕ chips)
 let view = "board", calMode = "month", calRef = new Date();
 let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
 let sortKey = "", sortDir = 1;   // unified sort across all views (Filter & Sort panel); "" = manual/creation order
@@ -1210,9 +1214,12 @@ async function createCard(d) {
 }
 async function updateCard(id, d) {
   const existing = cards.find(c => c.id === id);
-  const merged = [...cardSprintHistory(existing)];   // preserve prior sprints, then add this save's sprint(s)
+  // Start from the explicit history the modal saved (respects user removals via the ✕ chips); fall back to the in-memory card for direct callers.
+  const base = (d.fields && Array.isArray(d.fields[SPRINTHIST_KEY])) ? d.fields[SPRINTHIST_KEY].slice() : cardSprintHistory(existing);
+  const merged = [...base];
   recordedSprints(d).forEach(w => { if (!merged.includes(w)) merged.push(w); });
   if (merged.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = merged; }
+  else if (d.fields) delete d.fields[SPRINTHIST_KEY];
   if (!ONLINE) { Object.assign(cards.find(c => c.id === id), d); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").update(dbObj(d)).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
@@ -2236,17 +2243,29 @@ function updateSprintField() {
 }
 // Live "Sprints tracked" preview from the modal's current state: saved history ∪ the sprint(s) this edit would record.
 function renderSprintTrack() {
-  const id = document.getElementById("f_id").value;
-  const existing = id ? cards.find(c => c.id === id) : null;
-  const set = new Set(existing ? cardSprintHistory(existing) : []);
+  // Derived weeks come from the current date range (or manual sprint for undated). These aren't user-removable — the chip
+  // would just come back next render since the date implies it. Only history-only entries (in modalSprintHist AND not
+  // derived) show the ✕ button.
   const due = document.getElementById("f_due").value;
   const end = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
-  const weeks = sprintsInRange(due, end);
-  if (weeks.length) weeks.forEach(w => set.add(w));
-  else { const sd = document.getElementById("f_sprint").value; if (sd) set.add(isoWeek(sd)); }   // undated → manual sprint
-  const track = [...set].sort();
-  document.getElementById("f_sprintTrackWrap").style.display = track.length ? "" : "none";
-  document.getElementById("f_sprintTrack").innerHTML = track.map(w => `<span class="track-chip" style="${sprintChipStyle(w)}">${esc(fmtSprintFull(w))}</span>`).join("");
+  const derived = new Set(sprintsInRange(due, end));
+  if (!derived.size) { const sd = document.getElementById("f_sprint").value; if (sd) derived.add(isoWeek(sd)); }
+  const all = new Set([...modalSprintHist, ...derived]);
+  const track = [...all].sort();
+  const wrap = document.getElementById("f_sprintTrackWrap");
+  const box = document.getElementById("f_sprintTrack");
+  wrap.style.display = track.length ? "" : "none";
+  box.innerHTML = "";
+  track.forEach(w => {
+    const chip = document.createElement("span"); chip.className = "track-chip"; chip.style.cssText = sprintChipStyle(w);
+    chip.appendChild(document.createTextNode(fmtSprintFull(w)));
+    if (!derived.has(w)) {   // history-only → let the user remove it
+      const x = document.createElement("button"); x.type = "button"; x.className = "track-chip-x"; x.textContent = "✕"; x.title = "Remove from Sprints tracked";
+      x.onclick = () => { modalSprintHist = modalSprintHist.filter(s => s !== w); renderSprintTrack(); };
+      chip.appendChild(x);
+    }
+    box.appendChild(chip);
+  });
 }
 function buildStatusSelect() {
   const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
@@ -2418,6 +2437,7 @@ function openModal(card, prefill) {
   document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
   updateSprintField();   // also renders the Sprints-tracked preview
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "" })) : [];
+  modalSprintHist = card ? cardSprintHistory(card).slice() : [];   // working copy for the Sprints-tracked chips (editable)
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
@@ -2455,6 +2475,7 @@ function saveModal() {
   if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
   const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; return o; }).filter(s => s.text);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
+  fields[SPRINTHIST_KEY] = modalSprintHist.slice();   // user's edited history (may be empty); updateCard will add this save's recorded sprints on top
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const notesEl = document.getElementById("f_notes");
   const notes = notesEl.textContent.trim() ? sanitizeNotes(notesEl.innerHTML) : "";   // empty editor → no notes
