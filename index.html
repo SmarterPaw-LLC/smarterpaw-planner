@@ -334,6 +334,20 @@
   .grid-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0 10px; }
   .grid-toolbar .gt-label { flex: 1; font-size: 12px; color: var(--muted); }
   .grid-toolbar .gt-btn { font-size: 12px; padding: 5px 10px; }
+  /* Bulk-edit toolbar — shown when at least one Grid row is checked. */
+  .grid-bulk-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 8px; background: var(--panel-2); border: 1px solid var(--accent); border-radius: 10px; }
+  .grid-bulk-bar .gbb-count { font-weight: 700; color: var(--accent); margin-right: 8px; }
+  .grid-bulk-bar .gbb-field, .grid-bulk-bar .gbb-input { padding: 6px 9px; font-size: 13px; }
+  .grid-bulk-bar .gbb-input { min-width: 160px; }
+  .grid-bulk-bar .gbb-del { color: var(--danger); border-color: var(--danger); }
+  .grid-bulk-bar .gbb-del:hover { background: var(--danger); color: #fff; }
+  .grid-bulk-bar .gbb-clr { color: var(--muted); border-color: transparent; background: transparent; }
+  .grid-bulk-bar .gbb-clr:hover { color: var(--text); border-color: var(--line); }
+  /* Grid select column + selected-row tint. */
+  #gridTable .grid-sel-cell { width: 32px; padding: 6px 8px; text-align: center; }
+  #gridTable .grid-sel-cell input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; margin: 0; }
+  #gridTable tbody tr.grid-sel { background: rgba(109,93,252,.08); }
+  #gridTable tbody tr.grid-sel:hover { background: rgba(109,93,252,.14); }
   .gg-list { display: flex; flex-direction: column; gap: 6px; }
   .gg-list .gg-item { display: flex; gap: 6px; align-items: center; }
   .gg-list .gg-item select { flex: 1; }
@@ -511,7 +525,7 @@
   </div>
 </div>
 
-<div id="grid"><div id="gridToolbar" class="grid-toolbar" style="display:none"></div><div class="grid-wrap"><table id="gridTable"></table></div></div>
+<div id="grid"><div id="gridToolbar" class="grid-toolbar" style="display:none"></div><div id="gridBulkBar" class="grid-bulk-bar" style="display:none"></div><div class="grid-wrap"><table id="gridTable"></table></div></div>
 
 <div id="list"></div>
 
@@ -732,8 +746,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.95";
+const VERSION = "1.96";
 const CHANGELOG = [
+  "v1.96 — Grid view gets multi-select + bulk edit. A checkbox column appears on the left (with a select-all-visible checkbox in the header); when any rows are checked a toolbar appears with “Set [field] to [value]” — apply to all selected — plus Delete and Clear. Supports Brand / Channel / Owners / Status / Priority / Promotion / Due / End / any custom field.",
   "v1.95 — Converting a subtask to a deliverable now keeps the subtask in place as a clickable 🔗 link to the new card (shows its title + status). Clicking the link opens the linked card. Removing the link (✕) only unlinks — it does not delete the deliverable.",
   "v1.94 — Subtasks are now drag-to-reorder. Each row has a ⋮⋮ grip on the left — grab it and drag up or down; a blue line shows exactly where the row will land. Save the card to persist the new order.",
   "v1.93 — Moved ▾ Expand all / ▸ Collapse all out of the Display menu — they now live in a small toolbar above the Grid whenever grouping is active, alongside a “Grouped by X › Y › Z” breadcrumb.",
@@ -1117,6 +1132,7 @@ let sortKey = "", sortDir = 1;   // unified sort across all views (Filter & Sort
 let gridCols = null;   // null = show all columns; else an ordered array of visible column keys
 let gridGroup = [];                        // ORDERED list of dimensions to group Grid rows by (nested); empty = flat table
 let gridCollapsed = new Set();             // ancestry-path strings for currently-collapsed group headers
+let gridSelected = new Set();              // card ids currently checked in the Grid view (for bulk edit / delete)
 // Quick filter rows: which dimensions get their own "click to filter" row in the quick-filter section (below the header).
 // Configured in Display; each dimension has its own filter state in `filters[dim]`.
 let quickFilterRows = (() => { try { const raw = JSON.parse(localStorage.getItem("planner-quick-rows") || "null"); return Array.isArray(raw) ? new Set(raw) : new Set(["brand","channel","promotion"]); } catch (e) { return new Set(["brand","channel","promotion"]); } })();
@@ -2045,8 +2061,21 @@ function renderGrid() {
       toolbar.appendChild(label); toolbar.appendChild(exp); toolbar.appendChild(col);
     }
   }
+  // Prune selected ids that are no longer visible (e.g., filter narrowed the set).
+  const visibleIds = new Set(rows.map(c => c.id));
+  gridSelected.forEach(id => { if (!visibleIds.has(id)) gridSelected.delete(id); });
+  const totalColSpan = cols.length + 1;   // +1 for the leading select column
   const table = document.getElementById("gridTable"); table.innerHTML = "";
   const thead = document.createElement("thead"); const trh = document.createElement("tr");
+  // Header select-all checkbox: reflects/toggles selection over the current visible rows.
+  const thSel = document.createElement("th"); thSel.className = "grid-sel-cell";
+  const selAll = document.createElement("input"); selAll.type = "checkbox";
+  const visCount = rows.length; const selCount = rows.filter(c => gridSelected.has(c.id)).length;
+  selAll.checked = visCount > 0 && selCount === visCount;
+  selAll.indeterminate = selCount > 0 && selCount < visCount;
+  selAll.title = "Select all visible";
+  selAll.onclick = e => { e.stopPropagation(); if (selAll.checked) rows.forEach(c => gridSelected.add(c.id)); else rows.forEach(c => gridSelected.delete(c.id)); render(); };
+  thSel.appendChild(selAll); trh.appendChild(thSel);
   cols.forEach(col => {
     const th = document.createElement("th");
     th.textContent = col.label + (sortKey === col.key ? (sortDir > 0 ? " ▲" : " ▼") : "");
@@ -2056,7 +2085,15 @@ function renderGrid() {
   thead.appendChild(trh); table.appendChild(thead);
   const tbody = document.createElement("tbody");
   const buildRow = c => {
-    const tr = document.createElement("tr"); tr.onclick = () => openModal(c);
+    const tr = document.createElement("tr"); if (gridSelected.has(c.id)) tr.classList.add("grid-sel");
+    // Leading select cell — click doesn't open the modal.
+    const tdSel = document.createElement("td"); tdSel.className = "grid-sel-cell";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = gridSelected.has(c.id);
+    cb.onclick = e => { e.stopPropagation(); if (cb.checked) gridSelected.add(c.id); else gridSelected.delete(c.id); render(); };
+    tdSel.appendChild(cb);
+    tdSel.addEventListener("click", e => e.stopPropagation());   // clicking anywhere in the cell shouldn't open the row
+    tr.appendChild(tdSel);
+    tr.onclick = () => openModal(c);
     cols.forEach(col => {
       const td = document.createElement("td");
       if (col.key === "brand") { const dot = document.createElement("span"); dot.className = "gdot"; dot.style.background = brandColor(c.brand); td.appendChild(dot); td.appendChild(document.createTextNode(c.brand)); }
@@ -2083,7 +2120,7 @@ function renderGrid() {
       const path = ancestry + "|" + key + "=" + v;
       const collapsed = gridCollapsed.has(path);
       const header = document.createElement("tr"); header.className = "grid-group-hdr" + (collapsed ? " collapsed" : "");
-      const th = document.createElement("th"); th.colSpan = cols.length; th.className = "grid-group-cell";
+      const th = document.createElement("th"); th.colSpan = totalColSpan; th.className = "grid-group-cell";
       th.style.paddingLeft = (12 + depth * 22) + "px";
       th.innerHTML = `<span class="gg-chev">${collapsed ? "▸" : "▾"}</span> <span class="gg-name">${esc(gridGroupLabel(key, v))}</span> <span class="gg-count">${sub.length}</span>`;
       th.onclick = () => { if (gridCollapsed.has(path)) gridCollapsed.delete(path); else gridCollapsed.add(path); render(); };
@@ -2094,6 +2131,99 @@ function renderGrid() {
   if (!dims.length) rows.forEach(c => tbody.appendChild(buildRow(c)));
   else renderGroup(rows, dims, "");
   table.appendChild(tbody);
+  renderGridBulkBar();
+}
+// The bulk-edit fields we support. `type` drives which value input to build; how to write is in bulkApplyPatch.
+function bulkEditFields() {
+  return [
+    { key: "brand", label: "Brand", type: "select", options: () => brandsList.map(b => b.name) },
+    { key: "channel", label: "Channel", type: "select", options: () => channelsList.map(c => c.name) },
+    { key: "owner", label: "Owners (comma-separated)", type: "text" },
+    { key: "status", label: "Status / Lane", type: "select", options: () => statusList.map(s => s.name) },
+    { key: "priority", label: "Priority", type: "select", options: () => PRIORITIES.map(p => p.name) },
+    { key: "promotion", label: "Promotion", type: "select", options: () => ["", ...allPromos()], labels: v => v || "— none —" },
+    { key: "due", label: "Due date", type: "date" },
+    { key: "end", label: "End date", type: "date" },
+  ].concat(fieldsList.map(f => ({
+    key: "field:" + f.name, label: f.name,
+    type: fieldHasOptions(f) ? "select" : (f.type === "date" ? "date" : f.type === "number" ? "number" : "text"),
+    options: fieldHasOptions(f) ? () => ["", ...(f.options || [])] : null,
+    labels: v => v || "— clear —",
+  })));
+}
+// Show the bulk toolbar when at least one card is checked.
+function renderGridBulkBar() {
+  const bar = document.getElementById("gridBulkBar"); if (!bar) return;
+  bar.style.display = gridSelected.size ? "" : "none";
+  bar.innerHTML = "";
+  if (!gridSelected.size) return;
+  const n = gridSelected.size;
+  const count = document.createElement("span"); count.className = "gbb-count"; count.textContent = n + " selected";
+  bar.appendChild(count);
+  const fieldSel = document.createElement("select"); fieldSel.className = "gbb-field";
+  bulkEditFields().forEach(f => { const o = document.createElement("option"); o.value = f.key; o.textContent = f.label; fieldSel.appendChild(o); });
+  bar.appendChild(fieldSel);
+  const valWrap = document.createElement("span"); valWrap.className = "gbb-val"; bar.appendChild(valWrap);
+  const rebuildVal = () => {
+    valWrap.innerHTML = "";
+    const f = bulkEditFields().find(x => x.key === fieldSel.value); if (!f) return;
+    if (f.type === "select") {
+      const s = document.createElement("select"); s.className = "gbb-input";
+      (f.options ? f.options() : []).forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = f.labels ? f.labels(v) : v; s.appendChild(o); });
+      valWrap.appendChild(s);
+    } else {
+      const i = document.createElement("input"); i.className = "gbb-input"; i.type = f.type; if (f.type === "text") i.placeholder = "New value";
+      valWrap.appendChild(i);
+    }
+  };
+  fieldSel.onchange = rebuildVal; rebuildVal();
+  const apply = document.createElement("button"); apply.type = "button"; apply.className = "primary"; apply.textContent = "Apply";
+  apply.onclick = () => { const input = valWrap.querySelector(".gbb-input"); bulkApply(fieldSel.value, input ? input.value : ""); };
+  bar.appendChild(apply);
+  const del = document.createElement("button"); del.type = "button"; del.className = "gbb-del"; del.textContent = "🗑 Delete";
+  del.onclick = () => bulkDelete();
+  bar.appendChild(del);
+  const clr = document.createElement("button"); clr.type = "button"; clr.className = "gbb-clr"; clr.textContent = "✕ Clear";
+  clr.onclick = () => { gridSelected = new Set(); render(); };
+  bar.appendChild(clr);
+}
+// Build a per-card patch for the requested bulk edit (handles top-level columns AND the fields jsonb).
+function bulkBuildPatch(c, key, value) {
+  const patch = {}; const setField = mutator => { const f = Object.assign({}, c.fields || {}); mutator(f); patch.fields = f; };
+  if (["brand","channel","owner","status","title","notes"].includes(key)) patch[key] = value;
+  else if (key === "due") patch.due = value || null;
+  else if (key === "end") patch.end_date = value || null;
+  else if (key === "priority") setField(f => { if (value && value !== "No Priority") f[PRIORITY_KEY] = value; else delete f[PRIORITY_KEY]; });
+  else if (key === "promotion") setField(f => { if (value) f[PROMO_KEY] = value; else delete f[PROMO_KEY]; });
+  else if (key.indexOf("field:") === 0) { const n = key.slice(6); setField(f => { if (value) f[n] = value; else delete f[n]; }); }
+  return patch;
+}
+// Apply the same edit to every selected card (with a confirmation).
+async function bulkApply(key, value) {
+  const ids = [...gridSelected]; if (!ids.length) return;
+  const f = bulkEditFields().find(x => x.key === key);
+  if (!confirm(`Update "${f ? f.label : key}" on ${ids.length} deliverable${ids.length === 1 ? "" : "s"}?`)) return;
+  const targets = ids.map(id => cards.find(c => c.id === id)).filter(Boolean);
+  const updates = targets.map(c => ({ id: c.id, patch: bulkBuildPatch(c, key, value) }));
+  // Mirror the change locally so the UI reflects it immediately (before the network round-trip settles).
+  updates.forEach(u => { const c = cards.find(x => x.id === u.id); if (!c) return;
+    for (const k of Object.keys(u.patch)) { if (k === "end_date") c.end = u.patch[k] || ""; else if (k === "due") c.due = u.patch[k] || ""; else c[k] = u.patch[k]; }
+  });
+  if (!ONLINE) { saveLocal(); render(); toast("Updated " + ids.length + " deliverables."); return; }
+  const res = await Promise.all(updates.map(u => db.from("deliverables").update(u.patch).eq("id", u.id)));
+  const err = res.find(r => r.error); if (err) { toast("Bulk update failed: " + err.error.message); await refetch(); return; }
+  toast("Updated " + ids.length + " deliverables.");
+  await refetch();
+}
+async function bulkDelete() {
+  const ids = [...gridSelected]; if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} deliverable${ids.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+  if (!ONLINE) { cards = cards.filter(c => !gridSelected.has(c.id)); gridSelected = new Set(); saveLocal(); render(); toast("Deleted " + ids.length + " deliverables."); return; }
+  const res = await Promise.all(ids.map(id => db.from("deliverables").delete().eq("id", id)));
+  const err = res.find(r => r.error); if (err) { toast("Bulk delete failed: " + err.error.message); await refetch(); return; }
+  gridSelected = new Set();
+  toast("Deleted " + ids.length + " deliverables.");
+  await refetch();
 }
 function setCalMode(m) {
   calMode = m;
