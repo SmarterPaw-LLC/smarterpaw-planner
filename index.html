@@ -148,6 +148,13 @@
   .sub-text.done { text-decoration: line-through; color: var(--muted); }
   .sub-owner { flex: 0 0 120px; padding: 4px 6px; font-size: 12px; }
   .sub-due { flex: 0 0 130px; padding: 4px 6px; font-size: 12px; }
+  /* Linked subtask pill: shows the target deliverable's title + status, click to open it. */
+  .sub-link { flex: 1 1 220px; display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; font-size: 13px; text-align: left; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); cursor: pointer; min-width: 0; }
+  .sub-link:hover { border-color: var(--accent); }
+  .sub-link.done .sub-link-title { text-decoration: line-through; color: var(--muted); }
+  .sub-link .sub-link-icon { flex: none; opacity: .7; }
+  .sub-link .sub-link-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .sub-link .sub-link-status { flex: none; font-size: 10px; padding: 2px 8px; border-radius: 999px; color: #fff; font-weight: 600; letter-spacing: .2px; }
   .sub-convert { flex: none; padding: 4px 8px; font-size: 12px; color: var(--accent); border-color: transparent; background: transparent; }
   .sub-convert:hover { border-color: var(--accent); }
   .sub-rm { flex: none; padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
@@ -725,8 +732,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "1.94";
+const VERSION = "1.95";
 const CHANGELOG = [
+  "v1.95 — Converting a subtask to a deliverable now keeps the subtask in place as a clickable 🔗 link to the new card (shows its title + status). Clicking the link opens the linked card. Removing the link (✕) only unlinks — it does not delete the deliverable.",
   "v1.94 — Subtasks are now drag-to-reorder. Each row has a ⋮⋮ grip on the left — grab it and drag up or down; a blue line shows exactly where the row will land. Save the card to persist the new order.",
   "v1.93 — Moved ▾ Expand all / ▸ Collapse all out of the Display menu — they now live in a small toolbar above the Grid whenever grouping is active, alongside a “Grouped by X › Y › Z” breadcrumb.",
   "v1.92 — Grid grouping is now nested (Airtable-style). Add multiple grouping levels in ⚏ Display → “Group rows by” (e.g., Owner → then Channel → then Sprint); headers indent by depth and each level collapses independently. Bonus: ▾ Expand all / ▸ Collapse all buttons that operate on every level. URL param is now ggroup=owner,channel,sprint.",
@@ -1242,9 +1250,11 @@ function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel,
 async function createCard(d) {
   const weeks = recordedSprints(d);
   if (weeks.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = weeks; }
-  if (!ONLINE) { cards.push(Object.assign({ id: uid() }, d)); saveLocal(); render(); return; }
-  const { error } = await db.from("deliverables").insert(dbObj(d));
-  if (error) toast("Save failed: " + error.message); else refetch();
+  if (!ONLINE) { const id = uid(); cards.push(Object.assign({ id }, d)); saveLocal(); render(); return id; }
+  const { data, error } = await db.from("deliverables").insert(dbObj(d)).select("id").single();
+  if (error) { toast("Save failed: " + error.message); return null; }
+  refetch();
+  return data && data.id;
 }
 async function updateCard(id, d) {
   const existing = cards.find(c => c.id === id);
@@ -2496,6 +2506,24 @@ function renderSubsEdit() {
     });
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
     cb.onchange = () => { s.done = cb.checked; renderSubsEdit(); };
+    // If this subtask was already converted, render as a link pill to the target deliverable (opens it on click).
+    if (s.linkedCardId) {
+      const linked = cards.find(c => c.id === s.linkedCardId);
+      const link = document.createElement("button"); link.type = "button"; link.className = "sub-link" + (s.done ? " done" : "");
+      if (linked) {
+        link.innerHTML = `<span class="sub-link-icon">🔗</span> <span class="sub-link-title">${esc(linked.title)}</span> <span class="sub-link-status" style="background:${statusColor(linked.status)}">${esc(linked.status)}</span>`;
+        link.title = "Open the linked deliverable";
+        link.onclick = () => { closeModal(); setTimeout(() => openModal(linked), 40); };
+      } else {
+        link.innerHTML = `<span class="sub-link-icon">🔗</span> <span class="sub-link-title">${esc(s.text || "(deleted)")}</span> <span class="sub-link-status" style="background:var(--muted)">deleted</span>`;
+        link.title = "The linked deliverable no longer exists";
+        link.disabled = true;
+      }
+      const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove this linked subtask (does not delete the deliverable)";
+      rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
+      row.appendChild(grip); row.appendChild(cb); row.appendChild(link); row.appendChild(rm); box.appendChild(row);
+      return;
+    }
     const inp = document.createElement("input"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.value = s.text;
     inp.oninput = () => { s.text = inp.value; };
     // Optional owner picker — single person from peopleList; "" = unassigned.
@@ -2517,29 +2545,23 @@ function renderSubsEdit() {
   });
 }
 // Turn a subtask row into a full deliverable card. Uses the subtask's text/owner/due, inherits the parent card's brand/channel/promotion.
-function convertSubtaskToDeliverable(s) {
+async function convertSubtaskToDeliverable(s) {
   const text = (s.text || "").trim();
   if (!text) { toast("Add a title before converting."); return; }
-  if (!confirm(`Convert "${text}" to a new deliverable? It will be removed from this list of subtasks.`)) return;
+  if (!confirm(`Convert "${text}" to a new deliverable? The subtask will be replaced with a link to the new card.`)) return;
   // Inherit context from the currently-open card (parent).
   const parentBrand = document.getElementById("f_brand").value;
   const parentChannel = document.getElementById("f_channel").value;
   const parentPromo = document.getElementById("f_promo").value;
   const fields = {};
   if (parentPromo && parentPromo !== "__add_promo__") fields[PROMO_KEY] = parentPromo;
-  createCard({
-    title: text,
-    brand: parentBrand,
-    channel: parentChannel,
-    owner: s.owner || "",
-    due: s.due || "",
-    end: "",
-    status: statusList[0] ? statusList[0].name : "Backlog",
-    notes: "",
-    fields,
+  const newId = await createCard({
+    title: text, brand: parentBrand, channel: parentChannel, owner: s.owner || "",
+    due: s.due || "", end: "", status: statusList[0] ? statusList[0].name : "Backlog", notes: "", fields,
   });
-  // Drop this subtask from the working copy and refresh the list.
-  modalSubs = modalSubs.filter(x => x !== s);
+  if (!newId) return;   // createCard already toasted the error
+  // Replace the subtask in place with a link to the new card — text/owner/due kept as a fallback snapshot.
+  s.linkedCardId = newId;
   renderSubsEdit();
   toast(`Converted "${text}" to a new deliverable.`);
 }
@@ -2606,7 +2628,7 @@ function openModal(card, prefill) {
   const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
   updateSprintField();   // also renders the Sprints-tracked preview
-  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "" })) : [];
+  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "" })) : [];
   modalSprintHist = card ? cardSprintHistory(card).slice() : [];   // working copy for the Sprints-tracked chips (editable)
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
@@ -2643,7 +2665,7 @@ function saveModal() {
   const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
   const derived = derivedSprintFor(dueVal, endVal);
   if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
-  const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; return o; }).filter(s => s.text);
+  const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; return o; }).filter(s => s.text || s.linkedCardId);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   fields[SPRINTHIST_KEY] = modalSprintHist.slice();   // user's edited history (may be empty); updateCard will add this save's recorded sprints on top
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
@@ -2662,7 +2684,7 @@ function duplicateCard() {
   const orig = cards.find(c => c.id === id); if (!orig) return;
   const fields = JSON.parse(JSON.stringify(orig.fields || {}));
   delete fields[SPRINTHIST_KEY];   // the copy rebuilds its own sprint history from its dates/sprint
-  if (Array.isArray(fields[SUBTASKS_KEY])) fields[SUBTASKS_KEY] = fields[SUBTASKS_KEY].map(s => { const o = { id: subId(), text: s.text, done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; return o; });
+  if (Array.isArray(fields[SUBTASKS_KEY])) fields[SUBTASKS_KEY] = fields[SUBTASKS_KEY].map(s => { const o = { id: subId(), text: s.text, done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; return o; });
   createCard({ title: orig.title + " (copy)", brand: orig.brand, channel: orig.channel, owner: orig.owner || "",
     due: orig.due || "", end: orig.end || "", status: orig.status, notes: orig.notes || "", fields });
   closeModal();
