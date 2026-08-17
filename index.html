@@ -167,8 +167,11 @@
   .progress.full > i { background: var(--ok); }
   /* List / task view */
   #list { display: none; flex-direction: column; padding: 16px 20px; overflow: hidden; }
-  /* Notes view — notepad style: flat list of entries, each with a red date pill next to the title. */
-  #notes { display: none; flex-direction: column; padding: 16px 20px; overflow: auto; gap: 8px; }
+  /* Notes view — notepad style: flat list of entries, each with a red date pill next to the title.
+     Only vertical scroll; hard-clip x so long content can't cause iOS rubber-band horizontal bounce. */
+  #notes { display: none; flex-direction: column; padding: 16px 20px; overflow-y: auto; overflow-x: hidden; overscroll-behavior-x: none; -webkit-overflow-scrolling: touch; gap: 8px; }
+  #notes * { min-width: 0; }   /* let flex/grid children shrink so long strings wrap instead of pushing width */
+  #notes .notes-entry { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
   .notes-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
   .notes-count { flex: 1; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
   .notes-btn { font-size: 12px; padding: 5px 10px; }
@@ -178,7 +181,8 @@
   .notes-chev:hover { color: var(--text); }
   /* Red date pill next to each entry — the notepad's date-in-margin. */
   .notes-date { flex: none; font-size: 12px; font-weight: 700; color: var(--danger); letter-spacing: .2px; white-space: nowrap; padding: 1px 8px; border: 1px solid rgba(239,68,68,.35); border-radius: 6px; background: rgba(239,68,68,.08); }
-  .notes-entry-title { flex: 1; font-weight: 700; font-size: 14px; cursor: pointer; min-width: 200px; }
+  .notes-entry-title { flex: 1 1 auto; min-width: 0; font-weight: 700; font-size: 14px; cursor: pointer; overflow-wrap: anywhere; }
+  @media (min-width: 761px) { .notes-entry-title { min-width: 200px; } }
   .notes-entry-title:hover { color: var(--accent); }
   .notes-entry-meta { flex: none; font-size: 11px; color: var(--muted); }
   .notes-entry-body { margin-top: 8px; font-size: 13.5px; line-height: 1.55; color: var(--text); }
@@ -809,8 +813,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.01";
+const VERSION = "2.02";
 const CHANGELOG = [
+  "v2.02 — Fixed the horizontal scroll “bounce” on mobile Notes view. The container now clips horizontal overflow (overflow-x: hidden, overscroll-behavior-x: none) and long titles / notes / meta text wrap instead of pushing width; on narrow screens the title no longer forces a 200px min-width. Notes now scroll strictly as a full-width column.",
   "v2.01 — Custom fields (Dropdown or Multi-select) can now be turned on as quick-filter rows in ⚏ Display, alongside Brand / Channel / Promotion / Priority / Lane. Multi-select fields match a card if ANY of the card's values are in the filter set.",
   "v2.00 — Notes view rebuilt as a notepad. No more sprint-week section headers — each entry is a flat row with a red date pill (due date → sprint week's Monday → created-at fallback), title, and compact meta. Default sort is date newest → oldest; the global Filter & Sort still wins when set. The notes body is inline-editable — click and type directly, blur to save. Subtasks appear inline too, with strikethrough when checked and their checkbox toggles right there.",
   "v1.99 — Two reorder additions. (1) Custom fields are drag-to-reorder in Manage → Edit custom fields (⋮⋮ grip on each card); the new order sticks everywhere the field appears — the editor, the Grid, filter dropdowns. (2) The Display menu's “Show these on each item” is now split into an ordered draggable list (⋮⋮ grip, ✕ hides) plus a chip row of available dimensions (+ Add), so you can reorder card chips per view (Board/Calendar/List independent).",
