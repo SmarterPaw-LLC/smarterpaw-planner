@@ -194,6 +194,10 @@
   .notes-entry-meta { flex: none; font-size: 11px; color: var(--muted); }
   .notes-entry-body { margin-top: 8px; font-size: 13.5px; line-height: 1.55; color: var(--text); }
   .notes-entry.collapsed .notes-entry-body { display: none; }
+  /* Notes-view per-entry mini toolbar (📧 Email). */
+  .notes-tools { display: flex; gap: 6px; margin-bottom: 6px; }
+  .notes-tool-btn { font-size: 11px; padding: 3px 9px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .notes-tool-btn:hover { color: var(--text); border-color: var(--accent); }
   /* Inline-editable note area — cursor changes to text on hover; placeholder shows when empty. */
   .notes-editable { min-height: 30px; padding: 6px 8px; border-radius: 6px; cursor: text; outline: none; }
   .notes-editable:hover { background: rgba(255,255,255,.02); }
@@ -647,6 +651,7 @@
         <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Bullet list">• List</button>
         <button type="button" class="rte-btn" id="f_notesLink" title="Add / edit link">🔗 Link</button>
         <button type="button" class="rte-btn" id="f_notesUnlink" title="Remove link">⌫ Link</button>
+        <button type="button" class="rte-btn" id="f_notesEmail" title="Paste an email and insert it as a formatted email block">📧 Email</button>
       </div>
       <div id="f_notes" class="rte" contenteditable="true" data-ph="Brief, links, copy direction…"></div>
     </div>
@@ -719,6 +724,19 @@
     <div class="field"><button id="exportPdfBtn" style="width:100%">🖨 PDF — current view</button></div>
     <div class="field"><button id="exportXlsxBtn" style="width:100%">⬇ Excel — all deliverables (.xlsx)</button></div>
     <div class="hint">PDF captures whatever you're viewing now (Board, Calendar, Grid or List) as shown — including filters and Display settings. It opens your browser's print dialog; choose “Save as PDF” as the destination.</div>
+  </div>
+</div>
+
+<!-- Paste-email helper — explicit "paste your email here" dialog since auto-detect on paste is unreliable across editors. -->
+<div class="overlay" id="emailPasteOverlay">
+  <div class="modal" style="width:520px;max-width:94vw">
+    <button class="modal-x" id="emailPasteX" title="Close">✕</button>
+    <h2>Insert email into notes</h2>
+    <div class="field"><label>Paste the email here (Ctrl+V / Cmd+V)</label>
+      <textarea id="emailPasteInput" rows="12" placeholder="From: …&#10;Sent: …&#10;To: …&#10;Subject: …&#10;&#10;Body of the email…" style="width:100%;font-family:inherit;font-size:13px;line-height:1.45;"></textarea>
+    </div>
+    <div class="hint">Both Outlook-style (<b>From:</b> / <b>To:</b> / <b>Subject:</b>) and Gmail-style (<b>to me, …</b> + <b>8:49 AM</b>) headers are recognized. The block is inserted at your cursor position.</div>
+    <div class="modal-actions"><button id="emailPasteCancel">Cancel</button><div class="spacer"></div><button class="primary" id="emailPasteInsert">Insert as email</button></div>
   </div>
 </div>
 
@@ -820,8 +838,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.06";
+const VERSION = "2.07";
 const CHANGELOG = [
+  "v2.07 — Added an explicit “📧 Email” button to the notes toolbar (modal editor AND each Notes-view entry). Click it, paste your email into the dialog, hit “Insert as email” — the block is inserted at the cursor as a formatted email (headers on top, body preserved). Reliable across all editors, no more guessing at paste-detection heuristics.",
   "v2.06 — The Display panel's drag order now actually moves custom fields in the modal editor. If Platform is at position 3 in Display (between Channel and Owners), Platform now appears right after the Brand/Channel row in the edit modal — not stuck between Subtasks and Notes. Save still reads its value correctly no matter where the wrapper ends up.",
   "v2.05 — Two real fixes. (1) Email paste parser is now resilient — it scans the first 25 lines and picks out any header-shaped ones regardless of a sender name, star icons, “Learn more” or other cruft sitting between them. Previously any non-header line at the top made it bail. (2) Dragging a custom field in ⚏ Display now ALSO reorders the field globally (fieldsList position in DB) — so the modal editor, filter dropdowns, and grid column picker all follow the same order. One drag reorders the field everywhere.",
   "v2.04 — Email-paste detection now also recognizes Gmail's rendered layout (no “From:/To:/Subject:” labels — just a “to me, X, Y” recipients line + a bare time like “8:49 AM (37 minutes ago)”). Pasting that shape now formats as a proper email block. RFC-822 (Outlook) style and Gmail “On … wrote:” replies still work as before.",
@@ -1985,9 +2004,16 @@ function renderNotesView() {
     entry.appendChild(bar);
     // Body: inline-editable notes + subtasks
     const body = document.createElement("div"); body.className = "notes-entry-body";
+    // Small toolbar with a "📧 Email" button — opens the paste-email dialog and inserts a formatted email block.
+    const tools = document.createElement("div"); tools.className = "notes-tools";
+    const emailBtn = document.createElement("button"); emailBtn.type = "button"; emailBtn.className = "notes-tool-btn"; emailBtn.textContent = "📧 Email";
+    emailBtn.title = "Paste an email and insert it as a formatted email block";
+    tools.appendChild(emailBtn); body.appendChild(tools);
     // Inline-editable notes area — cursor changes to text on hover; typing saves on blur.
     const editor = document.createElement("div"); editor.className = "notes-editable"; editor.setAttribute("contenteditable", "true"); editor.setAttribute("data-ph", "Click to write a note…");
     editor.innerHTML = c.notes ? sanitizeNotes(c.notes) : "";
+    emailBtn.addEventListener("mousedown", e => e.preventDefault());
+    emailBtn.onclick = () => { if (typeof window.openEmailPasteDialog === "function") window.openEmailPasteDialog(editor); };
     editor.addEventListener("blur", () => saveInlineNote(c.id, editor));
     editor.addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
     editor.addEventListener("paste", e => {
@@ -3740,6 +3766,32 @@ async function init() {
     e.preventDefault();
     document.execCommand("insertHTML", false, notesPasteToHtml(text));
   });
+  // Explicit "📧 Email" button — opens a dialog where the user pastes the email, then we insert a styled email block.
+  // This is more reliable than auto-detecting on paste (different email clients paste different shapes).
+  let _emailInsertTarget = null;   // which contenteditable to insert into (modal or Notes-view inline editor)
+  window.openEmailPasteDialog = (targetEl) => {
+    _emailInsertTarget = targetEl || notesEd();
+    const ta = document.getElementById("emailPasteInput"); ta.value = "";
+    document.getElementById("emailPasteOverlay").classList.add("show");
+    setTimeout(() => ta.focus(), 40);
+  };
+  document.getElementById("f_notesEmail").addEventListener("mousedown", e => e.preventDefault());
+  document.getElementById("f_notesEmail").onclick = () => openEmailPasteDialog(notesEd());
+  const closeEmailPaste = () => document.getElementById("emailPasteOverlay").classList.remove("show");
+  document.getElementById("emailPasteX").onclick = closeEmailPaste;
+  document.getElementById("emailPasteCancel").onclick = closeEmailPaste;
+  document.getElementById("emailPasteOverlay").onclick = e => { if (e.target.id === "emailPasteOverlay") closeEmailPaste(); };
+  document.getElementById("emailPasteInsert").onclick = () => {
+    const text = document.getElementById("emailPasteInput").value || "";
+    if (!text.trim()) { closeEmailPaste(); return; }
+    const html = formatEmailPaste(text) + "<br>";   // always format as email — user explicitly asked for it
+    const target = _emailInsertTarget || notesEd();
+    target.focus();
+    document.execCommand("insertHTML", false, html);
+    // Notes-view inline editor saves on blur — trigger it so the change persists immediately.
+    if (target !== notesEd()) { target.dispatchEvent(new Event("blur")); }
+    closeEmailPaste();
+  };
   document.getElementById("f_subAddBtn").onclick = addModalSub;
   document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addModalSub(); } });
   const exportOv = document.getElementById("exportOverlay");
@@ -3807,7 +3859,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
