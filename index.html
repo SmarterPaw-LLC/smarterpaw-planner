@@ -674,7 +674,7 @@
         <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Bullet list">• List</button>
         <button type="button" class="rte-btn" id="f_notesLink" title="Add / edit link">🔗 Link</button>
         <button type="button" class="rte-btn" id="f_notesUnlink" title="Remove link">⌫ Link</button>
-        <button type="button" class="rte-btn" id="f_notesEmail" title="Paste an email and insert it as a formatted email block">📧 Email</button>
+        <button type="button" class="rte-btn" id="f_notesEmail" title="Paste an email — added to this deliverable's Emails list above">📧 Email</button>
       </div>
       <div id="f_notes" class="rte" contenteditable="true" data-ph="Brief, links, copy direction…"></div>
     </div>
@@ -861,8 +861,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.11";
+const VERSION = "2.12";
 const CHANGELOG = [
+  "v2.12 — Pasting an email into a Notes editor no longer inlines a formatted email block. Notes paste is now plain text with URL auto-linkify only. Use the 📧 Email button (in the modal notes toolbar or in each Notes-view entry) to route the paste into the deliverable's Emails list, where structured emails belong.",
   "v2.11 — Email parser now recognizes Gmail's rendered view where the subject sits at the very top (above the sender name, above the timestamp) with no “Subject:” label — plus category-label cruft like “External”, “Inbox”, “Starred”. Pasting that shape now correctly captures Subject and From, so the email summary shows “Caitlyn Nelson · Update Account Information” instead of “(no headers)”.",
   "v2.10 — Two fixes. (1) The New deliverable / Edit modal was showing custom fields (e.g. Platform) multiple times — one extra copy per open. Cause: reorderCustomFieldsInModal moves the wrapper out of #f_fields and the modal DOM is reused across opens, so re-render left the stranded copy in place. Fix: sweep every wrapper with data-field-name before re-rendering. (2) Notes view no longer emits an empty “📝 Note” entry when a deliverable has only emails — a card with 1 email and no note now shows as a single email row, not two.",
   "v2.09 — Emails are now their own field on a deliverable, not stray HTML inside the notes. The edit modal has an Emails section between Subtasks and Notes — each pasted email is a collapsible row (from · subject · when · ✕). The Notes view is now a chronological feed that mixes notes AND emails from every visible deliverable, sorted newest first — each entry shows a type badge (📝 Note / 📧 Email), the deliverable it belongs to, and (for emails) a ✕ to remove that one email inline.",
@@ -1770,9 +1771,9 @@ function formatEmailPaste(text) {
   const hdrHtml = headers.map(h => `<div class="email-line"><span class="email-k">${esc(h.k)}:</span> <span class="email-v">${esc(h.v)}</span></div>`).join("");
   return `<div class="email"><div class="email-hdr">${hdrHtml}</div><div class="email-body">${encBody}</div></div>`;
 }
-// Turn arbitrary pasted plain text into notes HTML — email-formatted if it looks like one, otherwise linkify URLs.
+// Turn arbitrary pasted plain text into notes HTML — plain text with URLs auto-linkified. Emails no longer format
+// inline on paste; use the 📧 Email button to add them to the deliverable's Emails list instead.
 function notesPasteToHtml(text) {
-  if (looksLikeEmail(text)) return formatEmailPaste(text);
   const re = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
   return text.split(re).map((p, i) => i % 2 === 1
     ? `<a href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>`
