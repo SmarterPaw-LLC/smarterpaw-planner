@@ -861,8 +861,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.10";
+const VERSION = "2.11";
 const CHANGELOG = [
+  "v2.11 — Email parser now recognizes Gmail's rendered view where the subject sits at the very top (above the sender name, above the timestamp) with no “Subject:” label — plus category-label cruft like “External”, “Inbox”, “Starred”. Pasting that shape now correctly captures Subject and From, so the email summary shows “Caitlyn Nelson · Update Account Information” instead of “(no headers)”.",
   "v2.10 — Two fixes. (1) The New deliverable / Edit modal was showing custom fields (e.g. Platform) multiple times — one extra copy per open. Cause: reorderCustomFieldsInModal moves the wrapper out of #f_fields and the modal DOM is reused across opens, so re-render left the stranded copy in place. Fix: sweep every wrapper with data-field-name before re-rendering. (2) Notes view no longer emits an empty “📝 Note” entry when a deliverable has only emails — a card with 1 email and no note now shows as a single email row, not two.",
   "v2.09 — Emails are now their own field on a deliverable, not stray HTML inside the notes. The edit modal has an Emails section between Subtasks and Notes — each pasted email is a collapsible row (from · subject · when · ✕). The Notes view is now a chronological feed that mixes notes AND emails from every visible deliverable, sorted newest first — each entry shows a type badge (📝 Note / 📧 Email), the deliverable it belongs to, and (for emails) a ✕ to remove that one email inline.",
   "v2.08 — Fixed: after inserting an email block you couldn't get the cursor to the line above it. Fresh inserts now sandwich the email block with an empty line above and below, legacy notes get a leading empty line auto-prepended when loaded, and clicking in the notes-editor whitespace above (or below) a block now snaps the caret to the correct spot.",
@@ -1098,27 +1099,12 @@ function emailId() { return "e_" + Math.random().toString(36).slice(2, 10); }
 // header-extraction logic as formatEmailPaste so headers show as key/value pairs and the body is preserved.
 function makeEmailEntry(rawText) {
   if (!rawText || !rawText.trim()) return null;
-  // Reuse the header-parser from formatEmailPaste to pull structured headers.
-  const lines = rawText.replace(/\r/g, "").split("\n");
-  const keyRe = /^([A-Za-z][A-Za-z-]{1,20}):\s*(.*)$/;
-  const knownKeys = /^(From|Sent|To|Cc|Bcc|Date|Subject|Reply-To|Importance|Priority)$/i;
-  const headers = {}; let lastIdx = -1;
-  for (let j = 0; j < Math.min(lines.length, 25); j++) {
-    const line = lines[j], trimmed = line.trim(); if (!trimmed) continue;
-    const kv = keyRe.exec(line);
-    if (kv && knownKeys.test(kv[1])) {
-      let val = kv[2]; let k = kv[1];
-      while (j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && lines[j + 1].trim()) { val += " " + lines[j + 1].trim(); j++; }
-      headers[k.toLowerCase()] = val; lastIdx = j; continue;
-    }
-    const gm = _gmailHeaderMatch(trimmed);
-    if (gm) { headers[gm[0].toLowerCase()] = gm[1]; lastIdx = j; continue; }
-    if (lastIdx >= 0 && trimmed.length > 40) break;
-  }
+  const { headers } = _parseEmail(rawText);
+  const h = {}; headers.forEach(x => { const k = x.k.toLowerCase(); if (!h[k]) h[k] = x.v; });
   return {
     id: emailId(),
     addedAt: (new Date()).toISOString(),
-    from: headers["from"] || "", to: headers["to"] || "", sent: headers["sent"] || headers["date"] || "", subject: headers["subject"] || "",
+    from: h["from"] || "", to: h["to"] || "", sent: h["sent"] || h["date"] || "", subject: h["subject"] || "",
     content: sanitizeNotes(formatEmailPaste(rawText)),
   };
 }
@@ -1719,14 +1705,20 @@ function _gmailHeaderMatch(line) {
   if (cc) return ["Cc", cc[1]];
   return null;
 }
-// Turn email-shaped plain text into a <div class="email"> block. Scans the first ~25 lines and picks up ANY
-// header-shaped lines (RFC-822 "From:/To:/Subject:…" OR Gmail rendered "to me,…" / "8:49 AM (37 minutes ago)")
-// regardless of what non-header cruft (sender name, star icons, "Learn more" links) sits between them.
-function formatEmailPaste(text) {
+// Gmail label lines that sit between the subject and the sender in the rendered view — they aren't part of the
+// email, they're chrome. Case-insensitive exact-match (with optional "(N)" count like "Inbox (12)").
+const GMAIL_LABEL_RE = /^(external|inbox|starred|important|snoozed|sent|draft|drafts|spam|trash|promotions|updates|social|forums|primary|unread)(\s*\(\d+\))?$/i;
+// Shared header parser used by both formatEmailPaste (renders the block) and makeEmailEntry (structured fields).
+// Scans the first ~25 lines for RFC-822 "Key: value" pairs and Gmail-rendered lines (bare time, "to X"). If
+// Gmail-shape (bare Sent line + To line) is detected without a From/Subject, backfills:
+//   • From = last non-label line right before Sent  (that's where Gmail renders the sender name)
+//   • Subject = first non-label line before From    (that's where Gmail renders the subject at the very top)
+// Returns { headers: [{k,v}...] in original document order, bodyStart: line index where the body begins }.
+function _parseEmail(text) {
   const lines = (text || "").replace(/\r/g, "").split("\n");
   const keyRe = /^([A-Za-z][A-Za-z-]{1,20}):\s*(.*)$/;
   const knownKeys = /^(From|Sent|To|Cc|Bcc|Date|Subject|Reply-To|Importance|Priority)$/i;
-  const headers = [];
+  const found = [];   // {k, v, idx}
   let lastHeaderIdx = -1;
   const SCAN = Math.min(lines.length, 25);
   for (let j = 0; j < SCAN; j++) {
@@ -1734,21 +1726,44 @@ function formatEmailPaste(text) {
     if (!trimmed) continue;
     const kv = keyRe.exec(line);
     if (kv && knownKeys.test(kv[1])) {
-      headers.push({ k: kv[1], v: kv[2] }); lastHeaderIdx = j;
-      // Fold continuation lines (indented) into the header value.
-      while (j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && lines[j + 1].trim()) {
-        headers[headers.length - 1].v += " " + lines[j + 1].trim();
-        j++; lastHeaderIdx = j;
-      }
-      continue;
+      const rec = { k: kv[1], v: kv[2], idx: j };
+      while (j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && lines[j + 1].trim()) { rec.v += " " + lines[j + 1].trim(); j++; }
+      found.push(rec); lastHeaderIdx = j; continue;
     }
     const gm = _gmailHeaderMatch(trimmed);
-    if (gm) { headers.push({ k: gm[0], v: gm[1] }); lastHeaderIdx = j; continue; }
-    // Non-header: if we've already collected any headers AND this line looks like body content (long-ish), stop scanning.
+    if (gm) { found.push({ k: gm[0], v: gm[1], idx: j }); lastHeaderIdx = j; continue; }
     if (lastHeaderIdx >= 0 && trimmed.length > 40) break;
   }
+  // Gmail rendered-view backfill: if we've got a bare Sent line but no From, use the line right above it as the
+  // sender name; and if we've got no Subject, use the first non-label line above the sender as the subject.
+  const hasKey = k => found.some(h => h.k.toLowerCase() === k);
+  const sentIdx = found.find(h => h.k === "Sent") ? found.find(h => h.k === "Sent").idx : -1;
+  if (sentIdx > 0 && !hasKey("from")) {
+    for (let j = sentIdx - 1; j >= 0; j--) {
+      const t = lines[j].trim(); if (!t) continue;
+      if (GMAIL_LABEL_RE.test(t)) continue;
+      found.push({ k: "From", v: t, idx: j }); break;
+    }
+  }
+  const fromRec = found.find(h => h.k === "From");
+  const cutIdx = fromRec && fromRec.idx < sentIdx ? fromRec.idx : sentIdx;   // subject sits above the sender (or the Sent line if no From)
+  if (cutIdx > 0 && !hasKey("subject")) {
+    for (let j = 0; j < cutIdx; j++) {
+      const t = lines[j].trim(); if (!t) continue;
+      if (GMAIL_LABEL_RE.test(t)) continue;
+      if (fromRec && j === fromRec.idx) continue;
+      found.push({ k: "Subject", v: t, idx: j }); break;
+    }
+  }
+  // Sort headers back into document order so the rendered block reads top-down like the original paste.
+  found.sort((a, b) => a.idx - b.idx);
   let bodyStart = 0;
   if (lastHeaderIdx >= 0) { bodyStart = lastHeaderIdx + 1; while (bodyStart < lines.length && !lines[bodyStart].trim()) bodyStart++; }
+  return { headers: found.map(h => ({ k: h.k, v: h.v })), bodyStart, lines };
+}
+// Turn email-shaped plain text into a <div class="email"> block using _parseEmail.
+function formatEmailPaste(text) {
+  const { headers, bodyStart, lines } = _parseEmail(text);
   const body = lines.slice(bodyStart).join("\n").replace(/^\s+|\s+$/g, "");
   const urlRe = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
   const encBody = esc(body).split(urlRe).map((p, idx) => idx % 2 === 1 ? `<a href="${p}" target="_blank" rel="noopener noreferrer">${p}</a>` : p).join("").replace(/\n/g, "<br>");
