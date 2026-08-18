@@ -820,8 +820,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.03";
+const VERSION = "2.04";
 const CHANGELOG = [
+  "v2.04 — Email-paste detection now also recognizes Gmail's rendered layout (no “From:/To:/Subject:” labels — just a “to me, X, Y” recipients line + a bare time like “8:49 AM (37 minutes ago)”). Pasting that shape now formats as a proper email block. RFC-822 (Outlook) style and Gmail “On … wrote:” replies still work as before.",
   "v2.03 — Pasting an email into a note now formats it as an email block. If the clipboard text has ≥2 recognized headers (From / Sent / To / Cc / Bcc / Date / Subject / Reply-To) — or a Gmail-style “On … wrote:” prefix — the paste renders as a styled block with a compact key/value header and preserved body. Otherwise the paste behaves as before (auto-hyperlink URLs). Applies to both the modal notes editor and the inline notepad in the Notes view.",
   "v2.02 — Fixed the horizontal scroll “bounce” on mobile Notes view. The container now clips horizontal overflow (overflow-x: hidden, overscroll-behavior-x: none) and long titles / notes / meta text wrap instead of pushing width; on narrow screens the title no longer forces a 200px min-width. Notes now scroll strictly as a full-width column.",
   "v2.01 — Custom fields (Dropdown or Multi-select) can now be turned on as quick-filter rows in ⚏ Display, alongside Brand / Channel / Promotion / Priority / Lane. Multi-select fields match a card if ANY of the card's values are in the filter set.",
@@ -1610,30 +1611,62 @@ function sanitizeNotes(html) {
   });
   const d = document.createElement("div"); d.appendChild(tpl.content); return d.innerHTML;
 }
-// Detect email-formatted plain-text (2+ recognized headers near the top, or Gmail-style "On … wrote:").
+// Detect email-formatted plain-text. Handles three shapes:
+//   1. RFC-822 style (2+ header labels: "From:", "Sent:", "To:", "Subject:" …)
+//   2. Gmail quoted-reply prefix ("On <date>, <name> wrote:")
+//   3. Gmail rendered view — no header labels, but a "to <recipients>" line + a bare time ("8:49 AM (37 minutes ago)")
 function looksLikeEmail(text) {
-  const head = (text || "").slice(0, 1000);
+  const head = (text || "").slice(0, 1500);
   const keys = ["From:", "Sent:", "To:", "Cc:", "Bcc:", "Date:", "Subject:", "Reply-To:"];
   let hits = 0; for (const k of keys) if (new RegExp("(^|\\n)\\s*" + k.replace(/([.*+?^${}()|[\]\\])/g, "\\$1"), "i").test(head)) hits++;
   if (hits >= 2) return true;
-  if (/(^|\n)On\s+.{5,80}\s+wrote:\s*$/mi.test(head)) return true;
+  if (/(^|\n)On\s+.{5,120}\s+wrote:\s*$/mi.test(head)) return true;
+  const hasTo = /(^|\n)\s*to\s+[A-Za-z][\w.@-]*/i.test(head);
+  const hasTime = /(^|\n)\s*\d{1,2}:\d{2}\s?(am|pm)\b/i.test(head);
+  if (hasTo && hasTime) return true;
   return false;
 }
-// Turn email-shaped plain text into an <div class="email"> block with header key/value pairs + body.
+// Regexes for the Gmail rendered layout (no key: prefixes). Each returns [display key, value] or null.
+function _gmailHeaderMatch(line) {
+  const t = line.trim(); if (!t) return null;
+  const tm = /^(\d{1,2}:\d{2}\s?(?:AM|PM|am|pm))(?:\s*\(.*\))?$/.exec(t);
+  if (tm) return ["Sent", t];
+  // Simple date lines like "Wed, Sep 3, 2025, 3:45 PM" or "Sep 3, 2025"
+  if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+\w+\s+\d{1,2},?\s+\d{4}/.test(t)) return ["Sent", t];
+  const to = /^to\s+(.+)/i.exec(t);
+  if (to) return ["To", to[1]];
+  const cc = /^cc\s+(.+)/i.exec(t);
+  if (cc) return ["Cc", cc[1]];
+  return null;
+}
+// Turn email-shaped plain text into a <div class="email"> block with header key/value pairs + body.
 function formatEmailPaste(text) {
   const lines = (text || "").replace(/\r/g, "").split("\n");
   const keyRe = /^([A-Za-z][A-Za-z-]{1,20}):\s*(.*)$/;
   const knownKeys = /^(From|Sent|To|Cc|Bcc|Date|Subject|Reply-To|Importance|Priority)$/i;
   let i = 0; while (i < lines.length && !lines[i].trim()) i++;
   const headers = [];
+  // Try RFC-822 header block first.
   while (i < lines.length) {
     const m = keyRe.exec(lines[i]);
     if (m && knownKeys.test(m[1])) { headers.push({ k: m[1], v: m[2] }); i++;
-      // fold continuation lines (indented) into the last header value
       while (i < lines.length && /^\s+\S/.test(lines[i]) && lines[i].trim()) { headers[headers.length - 1].v += " " + lines[i].trim(); i++; }
       continue;
     }
     break;
+  }
+  // If no RFC headers, try Gmail rendered layout: consume up to ~6 non-blank leading lines that match a Gmail header pattern.
+  if (!headers.length) {
+    let peek = i, consumedTo = i, seen = 0;
+    while (peek < lines.length && seen < 6) {
+      const line = lines[peek];
+      if (!line.trim()) { peek++; continue; }
+      const m = _gmailHeaderMatch(line);
+      if (!m) break;
+      headers.push({ k: m[0], v: m[1] });
+      seen++; peek++; consumedTo = peek;
+    }
+    if (headers.length) i = consumedTo;
   }
   while (i < lines.length && !lines[i].trim()) i++;
   const body = lines.slice(i).join("\n").replace(/^\s+|\s+$/g, "");
