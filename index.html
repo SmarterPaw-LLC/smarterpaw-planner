@@ -861,8 +861,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.09";
+const VERSION = "2.10";
 const CHANGELOG = [
+  "v2.10 — Two fixes. (1) The New deliverable / Edit modal was showing custom fields (e.g. Platform) multiple times — one extra copy per open. Cause: reorderCustomFieldsInModal moves the wrapper out of #f_fields and the modal DOM is reused across opens, so re-render left the stranded copy in place. Fix: sweep every wrapper with data-field-name before re-rendering. (2) Notes view no longer emits an empty “📝 Note” entry when a deliverable has only emails — a card with 1 email and no note now shows as a single email row, not two.",
   "v2.09 — Emails are now their own field on a deliverable, not stray HTML inside the notes. The edit modal has an Emails section between Subtasks and Notes — each pasted email is a collapsible row (from · subject · when · ✕). The Notes view is now a chronological feed that mixes notes AND emails from every visible deliverable, sorted newest first — each entry shows a type badge (📝 Note / 📧 Email), the deliverable it belongs to, and (for emails) a ✕ to remove that one email inline.",
   "v2.08 — Fixed: after inserting an email block you couldn't get the cursor to the line above it. Fresh inserts now sandwich the email block with an empty line above and below, legacy notes get a leading empty line auto-prepended when loaded, and clicking in the notes-editor whitespace above (or below) a block now snaps the caret to the correct spot.",
   "v2.07 — Added an explicit “📧 Email” button to the notes toolbar (modal editor AND each Notes-view entry). Click it, paste your email into the dialog, hit “Insert as email” — the block is inserted at the cursor as a formatted email (headers on top, body preserved). Reliable across all editors, no more guessing at paste-detection heuristics.",
@@ -2061,9 +2062,12 @@ function renderNotesView() {
   const cardsIn = visibleCards();
   const feed = [];
   cardsIn.forEach(c => {
-    // Every card gets a note entry (even empty — so you can start typing).
-    feed.push({ kind: "note", card: c, date: noteEntryDate(c), key: "note:" + c.id });
-    cardEmails(c).forEach(em => feed.push({ kind: "email", card: c, email: em, date: (em.addedAt || "").slice(0, 10) || noteEntryDate(c), key: "email:" + c.id + ":" + em.id }));
+    const emails = cardEmails(c);
+    const hasNoteText = !!(c.notes && c.notes.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim());
+    // Emit a note entry only when the card has actual note text, OR when it has neither notes nor emails
+    // (so an untouched card is still visible in Notes so you can click into it and write one).
+    if (hasNoteText || !emails.length) feed.push({ kind: "note", card: c, date: noteEntryDate(c), key: "note:" + c.id });
+    emails.forEach(em => feed.push({ kind: "email", card: c, email: em, date: (em.addedAt || "").slice(0, 10) || noteEntryDate(c), key: "email:" + c.id + ":" + em.id }));
   });
   // Sort — global sortKey overrides; otherwise date desc.
   if (!sortKey) feed.sort((a, b) => { const av = a.date || "0000-00-00", bv = b.date || "0000-00-00"; if (av === bv) return (a.card.title || "").localeCompare(b.card.title || ""); return bv.localeCompare(av); });
@@ -3274,6 +3278,10 @@ function reorderCustomFieldsInModal() {
   });
 }
 function renderFieldInputs(values) {
+  // reorderCustomFieldsInModal moves custom-field wrappers OUT of #f_fields into the modal body; the modal itself
+  // is reused (hidden, not destroyed), so those moved wrappers stick around across opens. Clear ALL of them
+  // wherever they landed — otherwise every open adds a fresh wrapper and duplicates stack up.
+  document.querySelectorAll("#overlay .modal .field[data-field-name]").forEach(w => w.remove());
   const box = document.getElementById("f_fields"); box.innerHTML = "";
   fieldsList.forEach(f => {
     const wrap = document.createElement("div"); wrap.className = "field"; wrap.dataset.fieldName = f.name;   // used by reorderCustomFieldsInModal to move this wrapper into Display-order position
