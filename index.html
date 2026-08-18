@@ -114,6 +114,13 @@
   /* Links inside notes (editor + card preview): accent color and a pointer cursor (overrides the text cursor that contenteditable uses by default). */
   .card .notes a, .rte a { color: var(--accent); cursor: pointer; }
   .card .notes a:hover, .rte a:hover { text-decoration: underline; }
+  /* Pasted-email formatting: a bordered block with a compact key/value header + preserved body text. */
+  .email { margin: 6px 0; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; background: rgba(109,93,252,.06); overflow: hidden; }
+  .email .email-hdr { padding: 8px 12px; background: rgba(109,93,252,.08); border-bottom: 1px solid var(--line); font-size: 12px; line-height: 1.5; }
+  .email .email-line { display: block; }
+  .email .email-k { color: var(--muted); font-weight: 700; letter-spacing: .2px; margin-right: 4px; }
+  .email .email-v { color: var(--text); }
+  .email .email-body { padding: 10px 12px; font-size: 13px; line-height: 1.55; color: var(--text); white-space: normal; overflow-wrap: anywhere; }
   .row2 { display: flex; gap: 12px; } .row2 > .field { flex: 1; }
   .ch-wrap { display: flex; gap: 6px; }
   .ch-wrap select { flex: 1; }
@@ -813,8 +820,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.02";
+const VERSION = "2.03";
 const CHANGELOG = [
+  "v2.03 — Pasting an email into a note now formats it as an email block. If the clipboard text has ≥2 recognized headers (From / Sent / To / Cc / Bcc / Date / Subject / Reply-To) — or a Gmail-style “On … wrote:” prefix — the paste renders as a styled block with a compact key/value header and preserved body. Otherwise the paste behaves as before (auto-hyperlink URLs). Applies to both the modal notes editor and the inline notepad in the Notes view.",
   "v2.02 — Fixed the horizontal scroll “bounce” on mobile Notes view. The container now clips horizontal overflow (overflow-x: hidden, overscroll-behavior-x: none) and long titles / notes / meta text wrap instead of pushing width; on narrow screens the title no longer forces a 200px min-width. Notes now scroll strictly as a full-width column.",
   "v2.01 — Custom fields (Dropdown or Multi-select) can now be turned on as quick-filter rows in ⚏ Display, alongside Brand / Channel / Promotion / Priority / Lane. Multi-select fields match a card if ANY of the card's values are in the filter set.",
   "v2.00 — Notes view rebuilt as a notepad. No more sprint-week section headers — each entry is a flat row with a red date pill (due date → sprint week's Monday → created-at fallback), title, and compact meta. Default sort is date newest → oldest; the global Filter & Sort still wins when set. The notes body is inline-editable — click and type directly, blur to save. Subtasks appear inline too, with strikethrough when checked and their checkbox toggles right there.",
@@ -1584,17 +1592,64 @@ function isOverdue(c) { if (!c.due || c.status === "Live") return false; const t
 function fmtDue(d) { if (!d) return ""; return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function esc(s) { return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 // ── Notes rich text (WYSIWYG, stored as sanitized HTML) ──
-const NOTE_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A"]);
-function looksLikeHtml(s) { return /<(\/?)(b|i|u|a|p|div|br|ul|ol|li|strong|em)\b/i.test(s || ""); }
-// Strip everything except a safe tag/attr allowlist; force links to open safely.
+const NOTE_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "SPAN", "UL", "OL", "LI", "A"]);
+const NOTE_CLASS_OK = /^email(-hdr|-body|-line|-k|-v)?$/;   // whitelist of classes preserved by the sanitizer (pasted-email blocks)
+function looksLikeHtml(s) { return /<(\/?)(b|i|u|a|p|div|span|br|ul|ol|li|strong|em)\b/i.test(s || ""); }
+// Strip everything except a safe tag/attr allowlist; force links to open safely; keep whitelisted classes.
 function sanitizeNotes(html) {
   const tpl = document.createElement("template"); tpl.innerHTML = html || "";
   tpl.content.querySelectorAll("*").forEach(el => {
     if (!NOTE_TAGS.has(el.tagName)) { const p = el.parentNode; while (el.firstChild) p.insertBefore(el.firstChild, el); p.removeChild(el); return; }
-    [...el.attributes].forEach(a => { if (!(el.tagName === "A" && a.name.toLowerCase() === "href")) el.removeAttribute(a.name); });
+    [...el.attributes].forEach(a => {
+      const n = a.name.toLowerCase();
+      if (el.tagName === "A" && n === "href") return;
+      if (n === "class" && (el.tagName === "DIV" || el.tagName === "SPAN") && NOTE_CLASS_OK.test(a.value)) return;
+      el.removeAttribute(a.name);
+    });
     if (el.tagName === "A") { const href = el.getAttribute("href") || ""; if (!/^(https?:|mailto:)/i.test(href)) el.removeAttribute("href"); else { el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener noreferrer"); } }
   });
   const d = document.createElement("div"); d.appendChild(tpl.content); return d.innerHTML;
+}
+// Detect email-formatted plain-text (2+ recognized headers near the top, or Gmail-style "On … wrote:").
+function looksLikeEmail(text) {
+  const head = (text || "").slice(0, 1000);
+  const keys = ["From:", "Sent:", "To:", "Cc:", "Bcc:", "Date:", "Subject:", "Reply-To:"];
+  let hits = 0; for (const k of keys) if (new RegExp("(^|\\n)\\s*" + k.replace(/([.*+?^${}()|[\]\\])/g, "\\$1"), "i").test(head)) hits++;
+  if (hits >= 2) return true;
+  if (/(^|\n)On\s+.{5,80}\s+wrote:\s*$/mi.test(head)) return true;
+  return false;
+}
+// Turn email-shaped plain text into an <div class="email"> block with header key/value pairs + body.
+function formatEmailPaste(text) {
+  const lines = (text || "").replace(/\r/g, "").split("\n");
+  const keyRe = /^([A-Za-z][A-Za-z-]{1,20}):\s*(.*)$/;
+  const knownKeys = /^(From|Sent|To|Cc|Bcc|Date|Subject|Reply-To|Importance|Priority)$/i;
+  let i = 0; while (i < lines.length && !lines[i].trim()) i++;
+  const headers = [];
+  while (i < lines.length) {
+    const m = keyRe.exec(lines[i]);
+    if (m && knownKeys.test(m[1])) { headers.push({ k: m[1], v: m[2] }); i++;
+      // fold continuation lines (indented) into the last header value
+      while (i < lines.length && /^\s+\S/.test(lines[i]) && lines[i].trim()) { headers[headers.length - 1].v += " " + lines[i].trim(); i++; }
+      continue;
+    }
+    break;
+  }
+  while (i < lines.length && !lines[i].trim()) i++;
+  const body = lines.slice(i).join("\n").replace(/^\s+|\s+$/g, "");
+  const urlRe = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
+  const encBody = esc(body).split(urlRe).map((p, idx) => idx % 2 === 1 ? `<a href="${p}" target="_blank" rel="noopener noreferrer">${p}</a>` : p).join("").replace(/\n/g, "<br>");
+  const hdrHtml = headers.map(h => `<div class="email-line"><span class="email-k">${esc(h.k)}:</span> <span class="email-v">${esc(h.v)}</span></div>`).join("");
+  return `<div class="email"><div class="email-hdr">${hdrHtml}</div><div class="email-body">${encBody}</div></div>`;
+}
+// Turn arbitrary pasted plain text into notes HTML — email-formatted if it looks like one, otherwise linkify URLs.
+function notesPasteToHtml(text) {
+  if (looksLikeEmail(text)) return formatEmailPaste(text);
+  const re = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
+  return text.split(re).map((p, i) => i % 2 === 1
+    ? `<a href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>`
+    : esc(p).replace(/\n/g, "<br>")
+  ).join("");
 }
 // Turn bare URLs in text nodes into links (skips text already inside <a>).
 function linkifyInto(root) {
@@ -1904,9 +1959,7 @@ function renderNotesView() {
       const cd = e.clipboardData || window.clipboardData; if (!cd) return;
       const text = cd.getData("text/plain"); if (!text) return;
       e.preventDefault();
-      const re = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
-      const html = text.split(re).map((p, i) => i % 2 === 1 ? `<a href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>` : esc(p).replace(/\n/g, "<br>")).join("");
-      document.execCommand("insertHTML", false, html);
+      document.execCommand("insertHTML", false, notesPasteToHtml(text));
     });
     body.appendChild(editor);
     // Subtasks appear as part of the note — checkboxes work inline; done items strike through.
@@ -3592,17 +3645,12 @@ async function init() {
   notesEd().addEventListener("blur", () => linkifyInto(notesEd()));   // turn typed/pasted URLs into links when you click away
   // Clicking a link inside contenteditable normally just places the cursor — intercept and open it in a new tab.
   notesEd().addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
-  // Auto-hyperlink URLs on paste — insert the clipboard text with <a> already wrapped around any http(s) URLs.
+  // On paste: if the clipboard looks like an email (2+ headers), insert it as a styled email block. Otherwise just auto-hyperlink URLs.
   notesEd().addEventListener("paste", e => {
     const cd = e.clipboardData || window.clipboardData; if (!cd) return;
     const text = cd.getData("text/plain"); if (!text) return;
     e.preventDefault();
-    const re = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
-    const html = text.split(re).map((p, i) => i % 2 === 1
-      ? `<a href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>`
-      : esc(p).replace(/\n/g, "<br>")
-    ).join("");
-    document.execCommand("insertHTML", false, html);
+    document.execCommand("insertHTML", false, notesPasteToHtml(text));
   });
   document.getElementById("f_subAddBtn").onclick = addModalSub;
   document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addModalSub(); } });
