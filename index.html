@@ -820,8 +820,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.05";
+const VERSION = "2.06";
 const CHANGELOG = [
+  "v2.06 — The Display panel's drag order now actually moves custom fields in the modal editor. If Platform is at position 3 in Display (between Channel and Owners), Platform now appears right after the Brand/Channel row in the edit modal — not stuck between Subtasks and Notes. Save still reads its value correctly no matter where the wrapper ends up.",
   "v2.05 — Two real fixes. (1) Email paste parser is now resilient — it scans the first 25 lines and picks out any header-shaped ones regardless of a sender name, star icons, “Learn more” or other cruft sitting between them. Previously any non-header line at the top made it bail. (2) Dragging a custom field in ⚏ Display now ALSO reorders the field globally (fieldsList position in DB) — so the modal editor, filter dropdowns, and grid column picker all follow the same order. One drag reorders the field everywhere.",
   "v2.04 — Email-paste detection now also recognizes Gmail's rendered layout (no “From:/To:/Subject:” labels — just a “to me, X, Y” recipients line + a bare time like “8:49 AM (37 minutes ago)”). Pasting that shape now formats as a proper email block. RFC-822 (Outlook) style and Gmail “On … wrote:” replies still work as before.",
   "v2.03 — Pasting an email into a note now formats it as an email block. If the clipboard text has ≥2 recognized headers (From / Sent / To / Cc / Bcc / Date / Subject / Reply-To) — or a Gmail-style “On … wrote:” prefix — the paste renders as a styled block with a compact key/value header and preserved body. Otherwise the paste behaves as before (auto-hyperlink URLs). Applies to both the modal notes editor and the inline notepad in the Notes view.",
@@ -3084,10 +3085,40 @@ function addModalSub() {
   const inp = document.getElementById("f_subAdd"); const t = inp.value.trim(); if (!t) return;
   modalSubs.push({ id: subId(), text: t, done: false }); inp.value = ""; renderSubsEdit(); inp.focus();
 }
+// After the modal renders, move each custom-field wrapper to the position dictated by the current view's
+// Display order (ds.dims). "Position 3 in Display" therefore becomes the actual 3rd form slot in the modal.
+// Built-in fields (Brand/Channel share row1; Owners, Due, Sprint, Status, Priority, Promotion) stay in
+// their default slots but serve as anchors — a custom field gets inserted RIGHT AFTER whichever built-in
+// field precedes it in ds.dims (or right after the previous custom field if that came first).
+function reorderCustomFieldsInModal() {
+  const ds = curDisp && curDisp(); if (!ds || !ds.dims) return;
+  const wrappers = {};
+  document.querySelectorAll("#f_fields > .field").forEach(w => { const n = w.dataset.fieldName; if (n) wrappers[n] = w; });
+  const anchorFor = (key) => {
+    if (key === "brand" || key === "channel") return document.querySelector("#overlay .modal .row2");
+    const id = { owners: "f_owners", dates: "f_due", sprint: "f_sprint", status: "f_status", priority: "f_priority", promotion: "f_promo" }[key];
+    if (!id) return null;
+    const el = document.getElementById(id); return el ? el.closest(".field") : null;
+  };
+  const titleEl = document.getElementById("f_title") ? document.getElementById("f_title").closest(".field") : null;
+  ds.dims.forEach((key, i) => {
+    if (key.indexOf("field:") !== 0) return;
+    const name = key.slice(6); const wrapper = wrappers[name]; if (!wrapper) return;
+    let anchor = null;
+    for (let j = i - 1; j >= 0; j--) {
+      const prev = ds.dims[j];
+      anchor = prev.indexOf("field:") === 0 ? wrappers[prev.slice(6)] : anchorFor(prev);
+      if (anchor) break;
+    }
+    // Fallback: if no anchor found (custom field is first), place after Title so it lands at the top.
+    if (!anchor) anchor = titleEl;
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(wrapper, anchor.nextSibling);
+  });
+}
 function renderFieldInputs(values) {
   const box = document.getElementById("f_fields"); box.innerHTML = "";
   fieldsList.forEach(f => {
-    const wrap = document.createElement("div"); wrap.className = "field";
+    const wrap = document.createElement("div"); wrap.className = "field"; wrap.dataset.fieldName = f.name;   // used by reorderCustomFieldsInModal to move this wrapper into Display-order position
     const lab = document.createElement("label"); lab.textContent = f.name;
     const cur = (values && values[f.name]) || "";
     wrap.appendChild(lab);
@@ -3138,6 +3169,7 @@ function openModal(card, prefill) {
   document.getElementById("f_endWrap").style.display = hasEnd ? "" : "none";
   document.getElementById("f_addEnd").style.display = hasEnd ? "none" : "";
   renderFieldInputs(card ? (card.fields || {}) : {});
+  reorderCustomFieldsInModal();   // moves each custom-field wrapper into the position dictated by the Display panel's drag order
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
   buildPrioritySelect(card ? cardPriority(card) : (prefill && prefill.priority ? prefill.priority : "No Priority"));
   const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
@@ -3169,7 +3201,9 @@ function saveModal() {
   const title = document.getElementById("f_title").value.trim();
   if (!title) { document.getElementById("f_title").focus(); return; }
   const fields = {};
-  document.querySelectorAll("#f_fields [data-field]").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
+  // Custom field wrappers may have been moved out of #f_fields (into their Display-ordered slot) by reorderCustomFieldsInModal.
+  // Look them up via their data-field-name wrapper attribute across the whole modal.
+  document.querySelectorAll("#overlay .field[data-field-name] [data-field]").forEach(i => { const v = i.value.trim(); if (v) fields[i.dataset.field] = v; });
   const promo = document.getElementById("f_promo").value.trim();
   if (promo && promo !== "__add_promo__") fields[PROMO_KEY] = promo;
   const priority = document.getElementById("f_priority").value;
