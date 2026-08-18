@@ -198,6 +198,25 @@
   .notes-tools { display: flex; gap: 6px; margin-bottom: 6px; }
   .notes-tool-btn { font-size: 11px; padding: 3px 9px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
   .notes-tool-btn:hover { color: var(--text); border-color: var(--accent); }
+  /* Per-entry type badge (📝 Note / 📧 Email) — sits between the date pill and the deliverable title. */
+  .notes-kind { flex: none; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); background: var(--panel-2); text-transform: uppercase; letter-spacing: .2px; }
+  .notes-kind-email { color: var(--accent); border-color: rgba(96,165,250,.35); background: rgba(96,165,250,.08); }
+  .notes-entry-rm { flex: none; padding: 0 6px; font-size: 12px; color: var(--muted); background: transparent; border: none; cursor: pointer; }
+  .notes-entry-rm:hover { color: var(--danger); }
+  /* Email-style body inside the Notes feed — softer container so it reads as a document, not a paragraph. */
+  .notes-entry-email .notes-entry-body { background: rgba(255,255,255,.02); border-radius: 8px; padding: 10px 12px; }
+  .notes-entry-email .notes-entry-body .email { margin: 0; }
+  /* Modal Emails section — collapsible cards, one per email. */
+  .emails-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .email-item { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
+  .email-item-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
+  .email-item-chev { flex: none; font-size: 11px; color: var(--muted); background: transparent; border: none; padding: 0; cursor: pointer; }
+  .email-item-sum { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .email-item-when { flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .email-item-rm { flex: none; padding: 0 6px; font-size: 12px; color: var(--muted); background: transparent; border: none; cursor: pointer; }
+  .email-item-rm:hover { color: var(--danger); }
+  .email-item-body { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 13px; }
+  .email-item.collapsed .email-item-body { display: none; }
   /* Inline-editable note area — cursor changes to text on hover; placeholder shows when empty. */
   .notes-editable { min-height: 30px; padding: 6px 8px; border-radius: 6px; cursor: text; outline: none; }
   .notes-editable:hover { background: rgba(255,255,255,.02); }
@@ -643,6 +662,10 @@
       <div id="f_subs" class="subs-edit"></div>
       <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask…" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button></div>
     </div>
+    <div class="field"><label>Emails <span id="f_emailCount" class="opt"></span></label>
+      <div id="f_emails" class="emails-edit"></div>
+      <button type="button" id="f_emailAdd" class="ghost" style="width:100%">＋ Add email (paste)</button>
+    </div>
     <div id="f_fields"></div>
     <div class="field"><label>Notes</label>
       <div class="rte-toolbar">
@@ -838,8 +861,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.08";
+const VERSION = "2.09";
 const CHANGELOG = [
+  "v2.09 — Emails are now their own field on a deliverable, not stray HTML inside the notes. The edit modal has an Emails section between Subtasks and Notes — each pasted email is a collapsible row (from · subject · when · ✕). The Notes view is now a chronological feed that mixes notes AND emails from every visible deliverable, sorted newest first — each entry shows a type badge (📝 Note / 📧 Email), the deliverable it belongs to, and (for emails) a ✕ to remove that one email inline.",
   "v2.08 — Fixed: after inserting an email block you couldn't get the cursor to the line above it. Fresh inserts now sandwich the email block with an empty line above and below, legacy notes get a leading empty line auto-prepended when loaded, and clicking in the notes-editor whitespace above (or below) a block now snaps the caret to the correct spot.",
   "v2.07 — Added an explicit “📧 Email” button to the notes toolbar (modal editor AND each Notes-view entry). Click it, paste your email into the dialog, hit “Insert as email” — the block is inserted at the cursor as a formatted email (headers on top, body preserved). Reliable across all editors, no more guessing at paste-detection heuristics.",
   "v2.06 — The Display panel's drag order now actually moves custom fields in the modal editor. If Platform is at position 3 in Display (between Channel and Owners), Platform now appears right after the Brand/Channel row in the edit modal — not stuck between Subtasks and Notes. Save still reads its value correctly no matter where the wrapper ends up.",
@@ -980,7 +1004,7 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails";
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
   if (!ymdStr) return "";
@@ -1065,6 +1089,38 @@ function recordedSprints(d) {
   return out;
 }
 function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_KEY])) ? c.fields[SUBTASKS_KEY] : []; }
+// Emails live in their own list on each card (fields.__emails). Each entry: { id, addedAt (ISO), from, to, sent, subject, content }.
+// content is the sanitized HTML of the styled email block; from/to/sent/subject are convenience copies of the header fields for compact listing.
+function cardEmails(c) { return (c.fields && Array.isArray(c.fields[EMAILS_KEY])) ? c.fields[EMAILS_KEY] : []; }
+function emailId() { return "e_" + Math.random().toString(36).slice(2, 10); }
+// Given raw plain-text pasted from an email client, produce {content, from, to, sent, subject} — reusing the same
+// header-extraction logic as formatEmailPaste so headers show as key/value pairs and the body is preserved.
+function makeEmailEntry(rawText) {
+  if (!rawText || !rawText.trim()) return null;
+  // Reuse the header-parser from formatEmailPaste to pull structured headers.
+  const lines = rawText.replace(/\r/g, "").split("\n");
+  const keyRe = /^([A-Za-z][A-Za-z-]{1,20}):\s*(.*)$/;
+  const knownKeys = /^(From|Sent|To|Cc|Bcc|Date|Subject|Reply-To|Importance|Priority)$/i;
+  const headers = {}; let lastIdx = -1;
+  for (let j = 0; j < Math.min(lines.length, 25); j++) {
+    const line = lines[j], trimmed = line.trim(); if (!trimmed) continue;
+    const kv = keyRe.exec(line);
+    if (kv && knownKeys.test(kv[1])) {
+      let val = kv[2]; let k = kv[1];
+      while (j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && lines[j + 1].trim()) { val += " " + lines[j + 1].trim(); j++; }
+      headers[k.toLowerCase()] = val; lastIdx = j; continue;
+    }
+    const gm = _gmailHeaderMatch(trimmed);
+    if (gm) { headers[gm[0].toLowerCase()] = gm[1]; lastIdx = j; continue; }
+    if (lastIdx >= 0 && trimmed.length > 40) break;
+  }
+  return {
+    id: emailId(),
+    addedAt: (new Date()).toISOString(),
+    from: headers["from"] || "", to: headers["to"] || "", sent: headers["sent"] || headers["date"] || "", subject: headers["subject"] || "",
+    content: sanitizeNotes(formatEmailPaste(rawText)),
+  };
+}
 function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
 function allSprints() { return [...new Set(cards.map(cardSprint).filter(Boolean))].sort(); } // ISO week strings sort chronologically
 function fmtSprint(w) { const m = /^(\d{4})-W(\d{2})$/.exec(w || ""); return m ? "Wk " + (+m[2]) + " ’" + m[1].slice(2) : (w || ""); }
@@ -1241,6 +1297,7 @@ let searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
 let modalSubs = [];   // working copy of the open card's subtasks
+let modalEmails = [];   // working copy of the open card's emails (fields.__emails)
 let modalSprintHist = [];   // working copy of the open card's tracked-sprint history (editable via ✕ chips)
 let view = "board", calMode = "month", calRef = new Date();
 let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
@@ -1986,101 +2043,113 @@ async function toggleInlineSubtask(cardId, subId, done) {
   const { error } = await db.from("deliverables").update({ fields }).eq("id", cardId);
   if (error) toast("Save failed: " + error.message); else render();
 }
+// Delete an email from a card and persist immediately (used by the Notes-view feed).
+async function removeCardEmail(cardId, emailId) {
+  const c = cards.find(x => x.id === cardId); if (!c) return;
+  const list = cardEmails(c).filter(e => e.id !== emailId);
+  const fields = Object.assign({}, c.fields || {}); if (list.length) fields[EMAILS_KEY] = list; else delete fields[EMAILS_KEY];
+  c.fields = fields;
+  if (!ONLINE) { saveLocal(); render(); return; }
+  const { error } = await db.from("deliverables").update({ fields }).eq("id", cardId);
+  if (error) toast("Delete failed: " + error.message); else render();
+}
+// Notes view — a chronological feed mixing NOTES and EMAILS from all visible deliverables. Each note is one entry
+// per card; each email is one entry per email object. Entries are sorted by date desc (email.addedAt for emails;
+// card.due/sprint/created_at for notes).
 function renderNotesView() {
   const root = document.getElementById("notes"); root.innerHTML = "";
-  const items = visibleCards();
-  // Default sort is date newest → oldest (undated at the bottom). Global sortKey wins when set.
-  const rows = sortKey ? items : [...items].sort((a, b) => {
-    const av = noteEntryDate(a) || "0000-00-00", bv = noteEntryDate(b) || "0000-00-00";
-    if (av === bv) return (a.title || "").localeCompare(b.title || "");
-    return bv.localeCompare(av);
+  const cardsIn = visibleCards();
+  const feed = [];
+  cardsIn.forEach(c => {
+    // Every card gets a note entry (even empty — so you can start typing).
+    feed.push({ kind: "note", card: c, date: noteEntryDate(c), key: "note:" + c.id });
+    cardEmails(c).forEach(em => feed.push({ kind: "email", card: c, email: em, date: (em.addedAt || "").slice(0, 10) || noteEntryDate(c), key: "email:" + c.id + ":" + em.id }));
   });
-  // Toolbar: count + expand/collapse-all.
+  // Sort — global sortKey overrides; otherwise date desc.
+  if (!sortKey) feed.sort((a, b) => { const av = a.date || "0000-00-00", bv = b.date || "0000-00-00"; if (av === bv) return (a.card.title || "").localeCompare(b.card.title || ""); return bv.localeCompare(av); });
+  // Toolbar
   const head = document.createElement("div"); head.className = "notes-head";
-  const count = document.createElement("span"); count.className = "notes-count"; count.textContent = rows.length + " entr" + (rows.length === 1 ? "y" : "ies") + (sortKey ? "" : " · newest first");
-  const expAll = document.createElement("button"); expAll.type = "button"; expAll.className = "notes-btn"; expAll.textContent = "▾ Expand all";
-  expAll.onclick = () => { notesCollapsed = new Set(); notesAllCollapsed = false; renderNotesView(); };
-  const colAll = document.createElement("button"); colAll.type = "button"; colAll.className = "notes-btn"; colAll.textContent = "▸ Collapse all";
-  colAll.onclick = () => { notesCollapsed = new Set(rows.map(c => c.id)); notesAllCollapsed = true; renderNotesView(); };
+  const count = document.createElement("span"); count.className = "notes-count"; count.textContent = feed.length + " entr" + (feed.length === 1 ? "y" : "ies") + (sortKey ? "" : " · newest first");
+  const expAll = document.createElement("button"); expAll.type = "button"; expAll.className = "notes-btn"; expAll.textContent = "▾ Expand all"; expAll.onclick = () => { notesCollapsed = new Set(); notesAllCollapsed = false; renderNotesView(); };
+  const colAll = document.createElement("button"); colAll.type = "button"; colAll.className = "notes-btn"; colAll.textContent = "▸ Collapse all"; colAll.onclick = () => { notesCollapsed = new Set(feed.map(f => f.key)); notesAllCollapsed = true; renderNotesView(); };
   head.appendChild(count); head.appendChild(expAll); head.appendChild(colAll); root.appendChild(head);
-  if (!rows.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No entries here. Adjust the search or filters."; root.appendChild(empty); return; }
-  // Notepad layout — one flat entry per card. Date pill in red, editable body inline.
-  rows.forEach(c => {
-    const collapsed = notesAllCollapsed ? !notesCollapsed.has("__open:" + c.id) : notesCollapsed.has(c.id);
-    const entry = document.createElement("div"); entry.className = "notes-entry" + (collapsed ? " collapsed" : "");
+  if (!feed.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No entries here. Adjust the search or filters."; root.appendChild(empty); return; }
+  feed.forEach(item => {
+    const c = item.card;
+    const collapsed = notesAllCollapsed ? !notesCollapsed.has("__open:" + item.key) : notesCollapsed.has(item.key);
+    const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "");
     entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
-    // Header row
+    // Header
     const bar = document.createElement("div"); bar.className = "notes-entry-head";
     const chev = document.createElement("button"); chev.type = "button"; chev.className = "notes-chev"; chev.textContent = collapsed ? "▸" : "▾";
     chev.onclick = e => { e.stopPropagation();
-      if (notesAllCollapsed) { if (notesCollapsed.has("__open:" + c.id)) notesCollapsed.delete("__open:" + c.id); else notesCollapsed.add("__open:" + c.id); }
-      else { if (notesCollapsed.has(c.id)) notesCollapsed.delete(c.id); else notesCollapsed.add(c.id); }
+      if (notesAllCollapsed) { if (notesCollapsed.has("__open:" + item.key)) notesCollapsed.delete("__open:" + item.key); else notesCollapsed.add("__open:" + item.key); }
+      else { if (notesCollapsed.has(item.key)) notesCollapsed.delete(item.key); else notesCollapsed.add(item.key); }
       renderNotesView();
     };
     bar.appendChild(chev);
-    const d = noteEntryDate(c);
-    const date = document.createElement("span"); date.className = "notes-date"; date.textContent = d ? fmtDue(d) : "—";
-    if (d && c.end && c.end !== c.due) date.textContent = fmtDue(c.due) + " → " + fmtDue(c.end);
+    const date = document.createElement("span"); date.className = "notes-date"; date.textContent = item.date ? fmtDue(item.date) : "—";
     bar.appendChild(date);
-    const title = document.createElement("span"); title.className = "notes-entry-title"; title.textContent = c.title;
-    title.onclick = () => openModal(c);
-    bar.appendChild(title);
-    // Compact meta (no date — that's in the red pill)
+    const kind = document.createElement("span"); kind.className = "notes-kind notes-kind-" + item.kind; kind.textContent = item.kind === "email" ? "📧 Email" : "📝 Note";
+    bar.appendChild(kind);
+    const title = document.createElement("span"); title.className = "notes-entry-title"; title.textContent = c.title; title.onclick = () => openModal(c); bar.appendChild(title);
     const meta = document.createElement("span"); meta.className = "notes-entry-meta";
     const parts = [];
-    const sp = cardSprint(c); if (sp) parts.push(fmtSprint(sp));
-    if (c.owner) parts.push(c.owner); if (c.brand) parts.push(c.brand); if (c.channel) parts.push(c.channel);
-    const pr = cardPromo(c); if (pr) parts.push("◆ " + pr);
-    const pri = cardPriority(c); if (pri && pri !== "No Priority") parts.push("! " + pri);
+    if (c.brand) parts.push(c.brand); if (c.channel) parts.push(c.channel);
+    if (item.kind === "email") { if (item.email.from) parts.push("from " + item.email.from); if (item.email.subject) parts.push("re: " + item.email.subject); }
+    else if (c.owner) parts.push(c.owner);
     meta.textContent = parts.join(" · "); bar.appendChild(meta);
+    if (item.kind === "email") {
+      const rm = document.createElement("button"); rm.type = "button"; rm.className = "notes-entry-rm"; rm.textContent = "✕"; rm.title = "Remove this email";
+      rm.onclick = e => { e.stopPropagation(); if (confirm("Remove this email from " + (c.title || "the deliverable") + "?")) removeCardEmail(c.id, item.email.id); };
+      bar.appendChild(rm);
+    }
     entry.appendChild(bar);
-    // Body: inline-editable notes + subtasks
+    // Body
     const body = document.createElement("div"); body.className = "notes-entry-body";
-    // Small toolbar with a "📧 Email" button — opens the paste-email dialog and inserts a formatted email block.
-    const tools = document.createElement("div"); tools.className = "notes-tools";
-    const emailBtn = document.createElement("button"); emailBtn.type = "button"; emailBtn.className = "notes-tool-btn"; emailBtn.textContent = "📧 Email";
-    emailBtn.title = "Paste an email and insert it as a formatted email block";
-    tools.appendChild(emailBtn); body.appendChild(tools);
-    // Inline-editable notes area — cursor changes to text on hover; typing saves on blur.
-    const editor = document.createElement("div"); editor.className = "notes-editable"; editor.setAttribute("contenteditable", "true"); editor.setAttribute("data-ph", "Click to write a note…");
-    let _initialHtml = c.notes ? sanitizeNotes(c.notes) : "";
-    if (/^\s*<div class="email"/.test(_initialHtml)) _initialHtml = "<br>" + _initialHtml;   // give the caret a clickable line above a leading email block
-    editor.innerHTML = _initialHtml;
-    emailBtn.addEventListener("mousedown", e => e.preventDefault());
-    emailBtn.onclick = () => { if (typeof window.openEmailPasteDialog === "function") window.openEmailPasteDialog(editor); };
-    editor.addEventListener("blur", () => saveInlineNote(c.id, editor));
-    _installNotesCaretRescue(editor);   // clicking in the padding above / below an email block puts the caret there
-    editor.addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
-    editor.addEventListener("paste", e => {
-      const cd = e.clipboardData || window.clipboardData; if (!cd) return;
-      const text = cd.getData("text/plain"); if (!text) return;
-      e.preventDefault();
-      document.execCommand("insertHTML", false, notesPasteToHtml(text));
-    });
-    body.appendChild(editor);
-    // Subtasks appear as part of the note — checkboxes work inline; done items strike through.
-    const subs = cardSubtasks(c);
-    if (subs.length) {
-      const sbox = document.createElement("div"); sbox.className = "notes-subs";
-      subs.forEach(s => {
-        const row = document.createElement("div"); row.className = "notes-sub";
-        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
-        cb.onclick = e => { e.stopPropagation(); toggleInlineSubtask(c.id, s.id, cb.checked); };
-        row.appendChild(cb);
-        const txt = document.createElement("span"); txt.className = "notes-sub-text" + (s.done ? " done" : "");
-        if (s.linkedCardId) {
-          const linked = cards.find(x => x.id === s.linkedCardId);
-          if (linked) { const a = document.createElement("a"); a.className = "notes-sub-link"; a.textContent = "🔗 " + linked.title; a.onclick = e => { e.stopPropagation(); openModal(linked); }; txt.appendChild(a); }
-          else txt.textContent = (s.text || "(deleted)") + " (deleted)";
-        } else txt.textContent = s.text || "(untitled)";
-        row.appendChild(txt);
-        const bits = [];
-        if (s.owner) bits.push(s.owner);
-        if (s.due) bits.push(fmtDue(s.due));
-        if (bits.length) { const m = document.createElement("span"); m.className = "notes-sub-meta"; m.textContent = "— " + bits.join(" · "); row.appendChild(m); }
-        sbox.appendChild(row);
-      });
-      body.appendChild(sbox);
+    if (item.kind === "email") {
+      const wrap = document.createElement("div"); wrap.innerHTML = sanitizeNotes(item.email.content || "");
+      body.appendChild(wrap);
+    } else {
+      // 📧 Email button — adds a new email entry to this card.
+      const tools = document.createElement("div"); tools.className = "notes-tools";
+      const emailBtn = document.createElement("button"); emailBtn.type = "button"; emailBtn.className = "notes-tool-btn"; emailBtn.textContent = "📧 Add email";
+      emailBtn.title = "Paste an email — added to this deliverable's email list";
+      emailBtn.addEventListener("mousedown", e => e.preventDefault());
+      emailBtn.onclick = () => { if (typeof window.openEmailPasteDialog === "function") window.openEmailPasteDialog({ kind: "card", cardId: c.id }); };
+      tools.appendChild(emailBtn); body.appendChild(tools);
+      // Inline-editable notes
+      const editor = document.createElement("div"); editor.className = "notes-editable"; editor.setAttribute("contenteditable", "true"); editor.setAttribute("data-ph", "Click to write a note…");
+      let _initialHtml = c.notes ? sanitizeNotes(c.notes) : "";
+      if (/^\s*<div class="email"/.test(_initialHtml)) _initialHtml = "<br>" + _initialHtml;
+      editor.innerHTML = _initialHtml;
+      editor.addEventListener("blur", () => saveInlineNote(c.id, editor));
+      _installNotesCaretRescue(editor);
+      editor.addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
+      editor.addEventListener("paste", e => { const cd = e.clipboardData || window.clipboardData; if (!cd) return; const text = cd.getData("text/plain"); if (!text) return; e.preventDefault(); document.execCommand("insertHTML", false, notesPasteToHtml(text)); });
+      body.appendChild(editor);
+      // Subtasks
+      const subs = cardSubtasks(c);
+      if (subs.length) {
+        const sbox = document.createElement("div"); sbox.className = "notes-subs";
+        subs.forEach(s => {
+          const row = document.createElement("div"); row.className = "notes-sub";
+          const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
+          cb.onclick = e => { e.stopPropagation(); toggleInlineSubtask(c.id, s.id, cb.checked); };
+          row.appendChild(cb);
+          const txt = document.createElement("span"); txt.className = "notes-sub-text" + (s.done ? " done" : "");
+          if (s.linkedCardId) {
+            const linked = cards.find(x => x.id === s.linkedCardId);
+            if (linked) { const a = document.createElement("a"); a.className = "notes-sub-link"; a.textContent = "🔗 " + linked.title; a.onclick = e => { e.stopPropagation(); openModal(linked); }; txt.appendChild(a); }
+            else txt.textContent = (s.text || "(deleted)") + " (deleted)";
+          } else txt.textContent = s.text || "(untitled)";
+          row.appendChild(txt);
+          const bits = []; if (s.owner) bits.push(s.owner); if (s.due) bits.push(fmtDue(s.due));
+          if (bits.length) { const m = document.createElement("span"); m.className = "notes-sub-meta"; m.textContent = "— " + bits.join(" · "); row.appendChild(m); }
+          sbox.appendChild(row);
+        });
+        body.appendChild(sbox);
+      }
     }
     entry.appendChild(body);
     root.appendChild(entry);
@@ -3142,6 +3211,34 @@ async function convertSubtaskToDeliverable(s) {
   renderSubsEdit();
   toast(`Converted "${text}" to a new deliverable.`);
 }
+// Render the collapsible list of emails attached to the current card. Each row shows a compact "From · subject · when
+// added" summary; clicking expands the full formatted email block; ✕ removes it. Body clicks don't propagate.
+function renderEmailsEdit() {
+  const box = document.getElementById("f_emails"); if (!box) return;
+  box.innerHTML = "";
+  document.getElementById("f_emailCount").textContent = modalEmails.length ? "(" + modalEmails.length + ")" : "";
+  modalEmails.forEach((em, idx) => {
+    const row = document.createElement("div"); row.className = "email-item";
+    const head = document.createElement("div"); head.className = "email-item-head";
+    const chev = document.createElement("button"); chev.type = "button"; chev.className = "email-item-chev";
+    const collapsed = em._expanded !== true;
+    chev.textContent = collapsed ? "▸" : "▾";
+    chev.onclick = () => { em._expanded = collapsed; renderEmailsEdit(); };
+    const summary = document.createElement("span"); summary.className = "email-item-sum";
+    const meta = [em.from, em.subject].filter(Boolean).join(" · ") || "(no headers)";
+    const when = em.sent || (em.addedAt ? "added " + em.addedAt.slice(0, 10) : "");
+    summary.innerHTML = `<span class="email-item-meta">${esc(meta)}</span>${when ? `<span class="email-item-when">${esc(when)}</span>` : ""}`;
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "email-item-rm"; rm.textContent = "✕"; rm.title = "Remove email";
+    rm.onclick = e => { e.stopPropagation(); modalEmails = modalEmails.filter(x => x !== em); renderEmailsEdit(); };
+    head.appendChild(chev); head.appendChild(summary); head.appendChild(rm); row.appendChild(head);
+    head.onclick = () => { em._expanded = collapsed; renderEmailsEdit(); };
+    if (!collapsed) {
+      const body = document.createElement("div"); body.className = "email-item-body"; body.innerHTML = em.content || "";
+      row.appendChild(body);
+    }
+    box.appendChild(row);
+  });
+}
 function addModalSub() {
   const inp = document.getElementById("f_subAdd"); const t = inp.value.trim(); if (!t) return;
   modalSubs.push({ id: subId(), text: t, done: false }); inp.value = ""; renderSubsEdit(); inp.focus();
@@ -3237,6 +3334,8 @@ function openModal(card, prefill) {
   document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
   updateSprintField();   // also renders the Sprints-tracked preview
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "" })) : [];
+  modalEmails = card ? cardEmails(card).map(e => Object.assign({}, e)) : [];
+  renderEmailsEdit();
   modalSprintHist = card ? cardSprintHistory(card).slice() : [];   // working copy for the Sprints-tracked chips (editable)
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
@@ -3277,6 +3376,7 @@ function saveModal() {
   if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
   const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; return o; }).filter(s => s.text || s.linkedCardId);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
+  if (modalEmails.length) fields[EMAILS_KEY] = modalEmails.map(e => ({ id: e.id, addedAt: e.addedAt, from: e.from || "", to: e.to || "", sent: e.sent || "", subject: e.subject || "", content: e.content || "" }));
   fields[SPRINTHIST_KEY] = modalSprintHist.slice();   // user's edited history (may be empty); updateCard will add this save's recorded sprints on top
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const notesEl = document.getElementById("f_notes");
@@ -3802,32 +3902,38 @@ async function init() {
     e.preventDefault();
     document.execCommand("insertHTML", false, notesPasteToHtml(text));
   });
-  // Explicit "📧 Email" button — opens a dialog where the user pastes the email, then we insert a styled email block.
-  // This is more reliable than auto-detecting on paste (different email clients paste different shapes).
-  let _emailInsertTarget = null;   // which contenteditable to insert into (modal or Notes-view inline editor)
-  window.openEmailPasteDialog = (targetEl) => {
-    _emailInsertTarget = targetEl || notesEd();
+  // "📧 Email" flow: emails are a separate list on the card (fields.__emails), not part of the notes rich-text.
+  // The paste dialog captures the email and stores it as a structured entry (headers + body). Two contexts:
+  //   • Modal editor  → adds to modalEmails (persisted on Save).
+  //   • Notes view   → adds to a specific card's __emails and saves immediately.
+  let _emailAddCtx = null;   // { kind: "modal" } or { kind: "card", cardId }
+  window.openEmailPasteDialog = (ctx) => {
+    _emailAddCtx = ctx || { kind: "modal" };
     const ta = document.getElementById("emailPasteInput"); ta.value = "";
     document.getElementById("emailPasteOverlay").classList.add("show");
     setTimeout(() => ta.focus(), 40);
   };
   document.getElementById("f_notesEmail").addEventListener("mousedown", e => e.preventDefault());
-  document.getElementById("f_notesEmail").onclick = () => openEmailPasteDialog(notesEd());
+  document.getElementById("f_notesEmail").onclick = () => openEmailPasteDialog({ kind: "modal" });
+  document.getElementById("f_emailAdd").onclick = () => openEmailPasteDialog({ kind: "modal" });
   const closeEmailPaste = () => document.getElementById("emailPasteOverlay").classList.remove("show");
   document.getElementById("emailPasteX").onclick = closeEmailPaste;
   document.getElementById("emailPasteCancel").onclick = closeEmailPaste;
   document.getElementById("emailPasteOverlay").onclick = e => { if (e.target.id === "emailPasteOverlay") closeEmailPaste(); };
-  document.getElementById("emailPasteInsert").onclick = () => {
+  document.getElementById("emailPasteInsert").onclick = async () => {
     const text = document.getElementById("emailPasteInput").value || "";
     if (!text.trim()) { closeEmailPaste(); return; }
-    // Sandwich the email block with a <br> above AND below so the caret has somewhere to land — clicking above the block
-    // used to trap you (no preceding line to land on); this gives you an editable line before and after the block.
-    const html = "<br>" + formatEmailPaste(text) + "<br>";
-    const target = _emailInsertTarget || notesEd();
-    target.focus();
-    document.execCommand("insertHTML", false, html);
-    // Notes-view inline editor saves on blur — trigger it so the change persists immediately.
-    if (target !== notesEd()) { target.dispatchEvent(new Event("blur")); }
+    const entry = makeEmailEntry(text); if (!entry) { closeEmailPaste(); return; }
+    if (_emailAddCtx && _emailAddCtx.kind === "card") {
+      // Notes-view add: append to that card's emails and persist immediately (no modal open).
+      const c = cards.find(x => x.id === _emailAddCtx.cardId); if (!c) { closeEmailPaste(); return; }
+      const list = cardEmails(c).slice(); list.push(entry);
+      const fields = Object.assign({}, c.fields || {}); fields[EMAILS_KEY] = list; c.fields = fields;
+      if (ONLINE) { const { error } = await db.from("deliverables").update({ fields }).eq("id", c.id); if (error) toast("Save failed: " + error.message); } else { saveLocal(); }
+      render();
+    } else {
+      modalEmails.push(entry); entry._expanded = true; renderEmailsEdit();
+    }
     closeEmailPaste();
   };
   document.getElementById("f_subAddBtn").onclick = addModalSub;
