@@ -820,8 +820,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.04";
+const VERSION = "2.05";
 const CHANGELOG = [
+  "v2.05 — Two real fixes. (1) Email paste parser is now resilient — it scans the first 25 lines and picks out any header-shaped ones regardless of a sender name, star icons, “Learn more” or other cruft sitting between them. Previously any non-header line at the top made it bail. (2) Dragging a custom field in ⚏ Display now ALSO reorders the field globally (fieldsList position in DB) — so the modal editor, filter dropdowns, and grid column picker all follow the same order. One drag reorders the field everywhere.",
   "v2.04 — Email-paste detection now also recognizes Gmail's rendered layout (no “From:/To:/Subject:” labels — just a “to me, X, Y” recipients line + a bare time like “8:49 AM (37 minutes ago)”). Pasting that shape now formats as a proper email block. RFC-822 (Outlook) style and Gmail “On … wrote:” replies still work as before.",
   "v2.03 — Pasting an email into a note now formats it as an email block. If the clipboard text has ≥2 recognized headers (From / Sent / To / Cc / Bcc / Date / Subject / Reply-To) — or a Gmail-style “On … wrote:” prefix — the paste renders as a styled block with a compact key/value header and preserved body. Otherwise the paste behaves as before (auto-hyperlink URLs). Applies to both the modal notes editor and the inline notepad in the Notes view.",
   "v2.02 — Fixed the horizontal scroll “bounce” on mobile Notes view. The container now clips horizontal overflow (overflow-x: hidden, overscroll-behavior-x: none) and long titles / notes / meta text wrap instead of pushing width; on narrow screens the title no longer forces a 200px min-width. Notes now scroll strictly as a full-width column.",
@@ -1639,37 +1640,37 @@ function _gmailHeaderMatch(line) {
   if (cc) return ["Cc", cc[1]];
   return null;
 }
-// Turn email-shaped plain text into a <div class="email"> block with header key/value pairs + body.
+// Turn email-shaped plain text into a <div class="email"> block. Scans the first ~25 lines and picks up ANY
+// header-shaped lines (RFC-822 "From:/To:/Subject:…" OR Gmail rendered "to me,…" / "8:49 AM (37 minutes ago)")
+// regardless of what non-header cruft (sender name, star icons, "Learn more" links) sits between them.
 function formatEmailPaste(text) {
   const lines = (text || "").replace(/\r/g, "").split("\n");
   const keyRe = /^([A-Za-z][A-Za-z-]{1,20}):\s*(.*)$/;
   const knownKeys = /^(From|Sent|To|Cc|Bcc|Date|Subject|Reply-To|Importance|Priority)$/i;
-  let i = 0; while (i < lines.length && !lines[i].trim()) i++;
   const headers = [];
-  // Try RFC-822 header block first.
-  while (i < lines.length) {
-    const m = keyRe.exec(lines[i]);
-    if (m && knownKeys.test(m[1])) { headers.push({ k: m[1], v: m[2] }); i++;
-      while (i < lines.length && /^\s+\S/.test(lines[i]) && lines[i].trim()) { headers[headers.length - 1].v += " " + lines[i].trim(); i++; }
+  let lastHeaderIdx = -1;
+  const SCAN = Math.min(lines.length, 25);
+  for (let j = 0; j < SCAN; j++) {
+    const line = lines[j], trimmed = line.trim();
+    if (!trimmed) continue;
+    const kv = keyRe.exec(line);
+    if (kv && knownKeys.test(kv[1])) {
+      headers.push({ k: kv[1], v: kv[2] }); lastHeaderIdx = j;
+      // Fold continuation lines (indented) into the header value.
+      while (j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && lines[j + 1].trim()) {
+        headers[headers.length - 1].v += " " + lines[j + 1].trim();
+        j++; lastHeaderIdx = j;
+      }
       continue;
     }
-    break;
+    const gm = _gmailHeaderMatch(trimmed);
+    if (gm) { headers.push({ k: gm[0], v: gm[1] }); lastHeaderIdx = j; continue; }
+    // Non-header: if we've already collected any headers AND this line looks like body content (long-ish), stop scanning.
+    if (lastHeaderIdx >= 0 && trimmed.length > 40) break;
   }
-  // If no RFC headers, try Gmail rendered layout: consume up to ~6 non-blank leading lines that match a Gmail header pattern.
-  if (!headers.length) {
-    let peek = i, consumedTo = i, seen = 0;
-    while (peek < lines.length && seen < 6) {
-      const line = lines[peek];
-      if (!line.trim()) { peek++; continue; }
-      const m = _gmailHeaderMatch(line);
-      if (!m) break;
-      headers.push({ k: m[0], v: m[1] });
-      seen++; peek++; consumedTo = peek;
-    }
-    if (headers.length) i = consumedTo;
-  }
-  while (i < lines.length && !lines[i].trim()) i++;
-  const body = lines.slice(i).join("\n").replace(/^\s+|\s+$/g, "");
+  let bodyStart = 0;
+  if (lastHeaderIdx >= 0) { bodyStart = lastHeaderIdx + 1; while (bodyStart < lines.length && !lines[bodyStart].trim()) bodyStart++; }
+  const body = lines.slice(bodyStart).join("\n").replace(/^\s+|\s+$/g, "");
   const urlRe = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
   const encBody = esc(body).split(urlRe).map((p, idx) => idx % 2 === 1 ? `<a href="${p}" target="_blank" rel="noopener noreferrer">${p}</a>` : p).join("").replace(/\n/g, "<br>");
   const hdrHtml = headers.map(h => `<div class="email-line"><span class="email-k">${esc(h.k)}:</span> <span class="email-v">${esc(h.v)}</span></div>`).join("");
@@ -2607,7 +2608,11 @@ function renderDispSettings() {
     row.addEventListener("drop", e => {
       e.preventDefault(); const from = +e.dataTransfer.getData("text/plain"); const r = row.getBoundingClientRect(); let to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1);
       row.classList.remove("drag-over-top", "drag-over-bot"); if (isNaN(from) || from === to || from === to - 1) return;
-      const [moved] = ds.dims.splice(from, 1); if (from < to) to--; ds.dims.splice(to, 0, moved); saveDisplay(); renderDispSettings(); render();
+      const [moved] = ds.dims.splice(from, 1); if (from < to) to--; ds.dims.splice(to, 0, moved); saveDisplay();
+      // If a custom field moved, also update its global position in fieldsList so it reflects in the modal editor,
+      // filter dropdowns, grid picker, etc. — one drag reorders the field everywhere.
+      if (moved && moved.indexOf("field:") === 0) syncFieldsOrderFromDims(ds.dims);
+      renderDispSettings(); render();
     });
     const name = document.createElement("span"); name.className = "disp-shown-name"; name.textContent = d.label;
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "disp-shown-rm"; rm.textContent = "✕"; rm.title = "Hide this dimension";
@@ -3235,6 +3240,22 @@ function renderFieldsEditor() {
   fieldsList.forEach((f, i) => box.appendChild(fieldEditorCard(f, i)));
 }
 // Reorder custom fields in place (drag-and-drop). Persists via lists.position so the order sticks everywhere the field appears.
+// Reorder fieldsList so custom fields follow the order of "field:*" entries in the given dims array.
+// Any custom fields NOT present in dims keep their existing relative order at the end. Persists positions to DB.
+async function syncFieldsOrderFromDims(dims) {
+  const wantedNames = dims.filter(k => k.indexOf("field:") === 0).map(k => k.slice(6));
+  const inList = new Set(fieldsList.map(f => f.name));
+  const ordered = wantedNames.map(n => fieldsList.find(f => f.name === n)).filter(Boolean);
+  const included = new Set(ordered.map(f => f.name));
+  fieldsList.forEach(f => { if (!included.has(f.name)) ordered.push(f); });
+  // If order didn't actually change, skip persistence.
+  const same = ordered.length === fieldsList.length && ordered.every((f, i) => fieldsList[i] === f);
+  if (same) return;
+  fieldsList = ordered;
+  if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
+  await Promise.all(fieldsList.map((f, i) => db.from("lists").update({ position: i + 1 }).eq("id", f.id)));
+  await reloadListsAndUI();
+}
 async function reorderField(fromIdx, toIdx) {
   if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= fieldsList.length) return;
   const [moved] = fieldsList.splice(fromIdx, 1);
