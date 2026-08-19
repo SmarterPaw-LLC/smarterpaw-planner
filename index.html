@@ -861,8 +861,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.12";
+const VERSION = "2.13";
 const CHANGELOG = [
+  "v2.13 — On first load of a browser session, the sprint filter now auto-defaults to the current ISO week, so the app opens on “what's happening now.” Respects any sprint scope carried in the URL (bookmarks, saved views, shared links), and doesn't fight you within a session — once you clear the filter it stays cleared until the next tab open.",
   "v2.12 — Pasting an email into a Notes editor no longer inlines a formatted email block. Notes paste is now plain text with URL auto-linkify only. Use the 📧 Email button (in the modal notes toolbar or in each Notes-view entry) to route the paste into the deliverable's Emails list, where structured emails belong.",
   "v2.11 — Email parser now recognizes Gmail's rendered view where the subject sits at the very top (above the sender name, above the timestamp) with no “Subject:” label — plus category-label cruft like “External”, “Inbox”, “Starred”. Pasting that shape now correctly captures Subject and From, so the email summary shows “Caitlyn Nelson · Update Account Information” instead of “(no headers)”.",
   "v2.10 — Two fixes. (1) The New deliverable / Edit modal was showing custom fields (e.g. Platform) multiple times — one extra copy per open. Cause: reorderCustomFieldsInModal moves the wrapper out of #f_fields and the modal DOM is reused across opens, so re-render left the stranded copy in place. Fix: sweep every wrapper with data-field-name before re-rendering. (2) Notes view no longer emits an empty “📝 Note” entry when a deliverable has only emails — a card with 1 email and no note now shows as a single email row, not two.",
@@ -3832,6 +3833,15 @@ async function init() {
   fillStaticSelects();
   await loadLists();
   readUrl();   // restore view + filters from the URL so a bookmarked link reopens the same view
+  // First page-load per browser session: default the sprint filter to the current ISO week so the app opens on
+  // "what's happening now." Skipped if the URL/bookmark already scoped a sprint (respects saved views + shared
+  // links) and skipped on subsequent renders in the same tab (so clearing the filter stays cleared).
+  try {
+    if (!sessionStorage.getItem("planner-session-init")) {
+      sessionStorage.setItem("planner-session-init", "1");
+      if (!filters.sprint) { filters.sprint = new Set([isoWeek(ymd(new Date()))]); }
+    }
+  } catch (e) {}
   buildChannelSelect(); buildStatusSelect(); buildColorBy();
   document.getElementById("search").value = searchText;
   document.querySelectorAll("#calModeSeg button").forEach(b => b.classList.toggle("active", b.dataset.m === calMode));
