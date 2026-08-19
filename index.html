@@ -861,8 +861,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.13";
+const VERSION = "2.14";
 const CHANGELOG = [
+  "v2.14 — Email parser now handles Gmail's alternate copy order where the sender name sits BETWEEN the time and the “to” line (with an “Attachments” label from the paperclip icon in the way). Fix picks the candidate NEAREST the Sent line, with name-shape (“First Last”) as a tie-breaker — so “Caitlyn Nelson” wins over “Attachments” and over the subject line. Also expanded the skip list: attachments, attachment, reply, forward, print, show/hide details.",
   "v2.13 — On first load of a browser session, the sprint filter now auto-defaults to the current ISO week, so the app opens on “what's happening now.” Respects any sprint scope carried in the URL (bookmarks, saved views, shared links), and doesn't fight you within a session — once you clear the filter it stays cleared until the next tab open.",
   "v2.12 — Pasting an email into a Notes editor no longer inlines a formatted email block. Notes paste is now plain text with URL auto-linkify only. Use the 📧 Email button (in the modal notes toolbar or in each Notes-view entry) to route the paste into the deliverable's Emails list, where structured emails belong.",
   "v2.11 — Email parser now recognizes Gmail's rendered view where the subject sits at the very top (above the sender name, above the timestamp) with no “Subject:” label — plus category-label cruft like “External”, “Inbox”, “Starred”. Pasting that shape now correctly captures Subject and From, so the email summary shows “Caitlyn Nelson · Update Account Information” instead of “(no headers)”.",
@@ -1709,7 +1710,14 @@ function _gmailHeaderMatch(line) {
 }
 // Gmail label lines that sit between the subject and the sender in the rendered view — they aren't part of the
 // email, they're chrome. Case-insensitive exact-match (with optional "(N)" count like "Inbox (12)").
-const GMAIL_LABEL_RE = /^(external|inbox|starred|important|snoozed|sent|draft|drafts|spam|trash|promotions|updates|social|forums|primary|unread)(\s*\(\d+\))?$/i;
+const GMAIL_LABEL_RE = /^(external|inbox|starred|important|snoozed|sent|draft|drafts|spam|trash|promotions|updates|social|forums|primary|unread|attachments?|attachment|reply|reply all|forward|print|open in new window|show details|hide details)(\s*\(\d+\))?$/i;
+// Heuristic: does this line look like a person's name? Two-to-four capitalized words, no punctuation-heavy formatting.
+// Used to prefer "Caitlyn Nelson" over "Attachments" when both are label-adjacent candidates for the From field.
+function _looksLikeName(s) {
+  const t = (s || "").trim(); if (!t || t.length > 60) return false;
+  const words = t.split(/\s+/); if (words.length < 2 || words.length > 5) return false;
+  return words.every(w => /^[A-Z][A-Za-z'’.\-]{0,20}$/.test(w));
+}
 // Shared header parser used by both formatEmailPaste (renders the block) and makeEmailEntry (structured fields).
 // Scans the first ~25 lines for RFC-822 "Key: value" pairs and Gmail-rendered lines (bare time, "to X"). If
 // Gmail-shape (bare Sent line + To line) is detected without a From/Subject, backfills:
@@ -1736,19 +1744,28 @@ function _parseEmail(text) {
     if (gm) { found.push({ k: gm[0], v: gm[1], idx: j }); lastHeaderIdx = j; continue; }
     if (lastHeaderIdx >= 0 && trimmed.length > 40) break;
   }
-  // Gmail rendered-view backfill: if we've got a bare Sent line but no From, use the line right above it as the
-  // sender name; and if we've got no Subject, use the first non-label line above the sender as the subject.
+  // Gmail rendered-view backfill: if we've got Sent/To but no From, look for the sender name. Gmail's copy order
+  // isn't stable — the name may sit ABOVE the Sent time (e.g. "Caitlyn\n3:11 PM\nto ...") or BETWEEN Sent and To
+  // (e.g. "Attachments\n3:11 PM\nCaitlyn\nto ..."). Prefer name-shaped candidates ("First Last") over generic
+  // labels; fall back to any non-label line right before Sent.
   const hasKey = k => found.some(h => h.k.toLowerCase() === k);
   const sentIdx = found.find(h => h.k === "Sent") ? found.find(h => h.k === "Sent").idx : -1;
-  if (sentIdx > 0 && !hasKey("from")) {
-    for (let j = sentIdx - 1; j >= 0; j--) {
-      const t = lines[j].trim(); if (!t) continue;
-      if (GMAIL_LABEL_RE.test(t)) continue;
-      found.push({ k: "From", v: t, idx: j }); break;
-    }
+  const toIdx = found.find(h => h.k === "To") ? found.find(h => h.k === "To").idx : -1;
+  if ((sentIdx > 0 || toIdx > 0) && !hasKey("from")) {
+    // The sender name sits IMMEDIATELY adjacent to the Sent time in Gmail's rendered view — sometimes above,
+    // sometimes below (between Sent and To). Collect candidates on both sides, then pick the one closest to
+    // Sent — breaking ties by name-shape ("First Last") so labels/subjects lose to actual names.
+    const candidates = [];   // {idx, text, isName, dist}
+    const anchor = sentIdx >= 0 ? sentIdx : toIdx;
+    const push = (j) => { const t = (lines[j] || "").trim(); if (!t) return; if (GMAIL_LABEL_RE.test(t)) return; if (_gmailHeaderMatch(t)) return; candidates.push({ idx: j, text: t, isName: _looksLikeName(t), dist: Math.abs(j - anchor) }); };
+    if (sentIdx > 0) for (let j = sentIdx - 1; j >= 0; j--) push(j);
+    if (sentIdx >= 0 && toIdx > sentIdx) for (let j = sentIdx + 1; j < toIdx; j++) push(j);
+    candidates.sort((a, b) => (a.dist - b.dist) || ((b.isName ? 1 : 0) - (a.isName ? 1 : 0)));
+    if (candidates.length) { const p = candidates[0]; found.push({ k: "From", v: p.text, idx: p.idx }); }
   }
   const fromRec = found.find(h => h.k === "From");
-  const cutIdx = fromRec && fromRec.idx < sentIdx ? fromRec.idx : sentIdx;   // subject sits above the sender (or the Sent line if no From)
+  const subjectAnchor = Math.min(...[fromRec ? fromRec.idx : Infinity, sentIdx >= 0 ? sentIdx : Infinity, toIdx >= 0 ? toIdx : Infinity]);
+  const cutIdx = isFinite(subjectAnchor) ? subjectAnchor : -1;   // subject sits above whichever header anchor comes first
   if (cutIdx > 0 && !hasKey("subject")) {
     for (let j = 0; j < cutIdx; j++) {
       const t = lines[j].trim(); if (!t) continue;
