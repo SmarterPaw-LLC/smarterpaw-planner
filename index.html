@@ -861,8 +861,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.14";
+const VERSION = "2.15";
 const CHANGELOG = [
+  "v2.15 — Notes view: clicking anywhere on an entry's header row now toggles collapse/expand (previously only the chevron worked). The title still opens the deliverable, and the ✕ still removes an email — both stop propagation so those clicks don't also toggle.",
   "v2.14 — Email parser now handles Gmail's alternate copy order where the sender name sits BETWEEN the time and the “to” line (with an “Attachments” label from the paperclip icon in the way). Fix picks the candidate NEAREST the Sent line, with name-shape (“First Last”) as a tie-breaker — so “Caitlyn Nelson” wins over “Attachments” and over the subject line. Also expanded the skip list: attachments, attachment, reply, forward, print, show/hide details.",
   "v2.13 — On first load of a browser session, the sprint filter now auto-defaults to the current ISO week, so the app opens on “what's happening now.” Respects any sprint scope carried in the URL (bookmarks, saved views, shared links), and doesn't fight you within a session — once you clear the filter it stays cleared until the next tab open.",
   "v2.12 — Pasting an email into a Notes editor no longer inlines a formatted email block. Notes paste is now plain text with URL auto-linkify only. Use the 📧 Email button (in the modal notes toolbar or in each Notes-view entry) to route the paste into the deliverable's Emails list, where structured emails belong.",
@@ -2117,20 +2118,22 @@ function renderNotesView() {
     const collapsed = notesAllCollapsed ? !notesCollapsed.has("__open:" + item.key) : notesCollapsed.has(item.key);
     const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "");
     entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
-    // Header
-    const bar = document.createElement("div"); bar.className = "notes-entry-head";
-    const chev = document.createElement("button"); chev.type = "button"; chev.className = "notes-chev"; chev.textContent = collapsed ? "▸" : "▾";
-    chev.onclick = e => { e.stopPropagation();
+    // Header — clicking anywhere on the bar toggles collapse; children with their own handlers (title opens the
+    // modal, ✕ removes the email) stopPropagation so those clicks don't also toggle.
+    const bar = document.createElement("div"); bar.className = "notes-entry-head"; bar.style.cursor = "pointer";
+    const toggle = () => {
       if (notesAllCollapsed) { if (notesCollapsed.has("__open:" + item.key)) notesCollapsed.delete("__open:" + item.key); else notesCollapsed.add("__open:" + item.key); }
       else { if (notesCollapsed.has(item.key)) notesCollapsed.delete(item.key); else notesCollapsed.add(item.key); }
       renderNotesView();
     };
+    bar.onclick = toggle;
+    const chev = document.createElement("button"); chev.type = "button"; chev.className = "notes-chev"; chev.textContent = collapsed ? "▸" : "▾";
     bar.appendChild(chev);
     const date = document.createElement("span"); date.className = "notes-date"; date.textContent = item.date ? fmtDue(item.date) : "—";
     bar.appendChild(date);
     const kind = document.createElement("span"); kind.className = "notes-kind notes-kind-" + item.kind; kind.textContent = item.kind === "email" ? "📧 Email" : "📝 Note";
     bar.appendChild(kind);
-    const title = document.createElement("span"); title.className = "notes-entry-title"; title.textContent = c.title; title.onclick = () => openModal(c); bar.appendChild(title);
+    const title = document.createElement("span"); title.className = "notes-entry-title"; title.textContent = c.title; title.onclick = e => { e.stopPropagation(); openModal(c); }; bar.appendChild(title);
     const meta = document.createElement("span"); meta.className = "notes-entry-meta";
     const parts = [];
     if (c.brand) parts.push(c.brand); if (c.channel) parts.push(c.channel);
@@ -2140,6 +2143,8 @@ function renderNotesView() {
     if (item.kind === "email") {
       const rm = document.createElement("button"); rm.type = "button"; rm.className = "notes-entry-rm"; rm.textContent = "✕"; rm.title = "Remove this email";
       rm.onclick = e => { e.stopPropagation(); if (confirm("Remove this email from " + (c.title || "the deliverable") + "?")) removeCardEmail(c.id, item.email.id); };
+      // Guard against the bar's toggle handler swallowing our mousedown/keyup path on some browsers.
+      rm.addEventListener("mousedown", e => e.stopPropagation());
       bar.appendChild(rm);
     }
     entry.appendChild(bar);
