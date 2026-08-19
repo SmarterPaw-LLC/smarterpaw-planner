@@ -373,6 +373,13 @@
   .ver { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--panel-2);
     color: var(--muted); border: 1px solid var(--line); }
   .ver:hover { color: var(--text); border-color: var(--accent); }
+  /* Current-user selector in the header — flips filters.owner to just this person's work. */
+  .user-btn { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); cursor: pointer; }
+  .user-btn:hover { color: var(--text); border-color: var(--accent); }
+  .user-btn b { color: var(--accent); font-weight: 700; }
+  #userOverlayChoices button { display: block; width: 100%; padding: 12px 14px; text-align: left; font-size: 14px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; color: var(--text); }
+  #userOverlayChoices button:hover { border-color: var(--accent); background: rgba(109,93,252,.08); }
+  #userOverlayChoices button.on { border-color: var(--accent); background: rgba(109,93,252,.15); }
   .row-ctrls { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .mv { padding: 2px 8px; color: var(--text); border-color: transparent; background: transparent; font-weight: 700; }
   .mv:hover { border-color: var(--accent); }
@@ -585,6 +592,7 @@
   <div class="brand-title">Smarter<span>Paw</span> · Channel Planner</div>
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
+  <button id="userBtn" class="user-btn" title="Filter to your work (click to change)">You: <b id="userBtnName">All</b> ▾</button>
   <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button><button data-v="notes">Notes</button></div>
   <button class="primary orange" id="addBtn">+ Deliverable</button>
   <div class="header-spacer"></div>
@@ -599,6 +607,16 @@
     <button class="ghost" id="menuBtn">⋯</button>
   </div>
 </header>
+
+<!-- "Who are you?" picker — shown on first session load if no persisted user; also opens from the header userBtn. -->
+<div class="overlay" id="userOverlay">
+  <div class="modal" style="max-width:420px">
+    <button class="x" id="userOverlayX">✕</button>
+    <h2 id="userOverlayTitle">Who's using the planner?</h2>
+    <p style="color:var(--muted); font-size:13px; margin:0 0 14px">All views (Board, Calendar, Grid, List, Notes) will filter to just this person's deliverables. Pick “All” to see everything.</p>
+    <div id="userOverlayChoices" style="display:flex; flex-direction:column; gap:8px"></div>
+  </div>
+</div>
 
 <div id="quickFilters">
   <div class="qf-controls">
@@ -868,8 +886,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.16";
+const VERSION = "2.17";
 const CHANGELOG = [
+  "v2.17 — Current-user filter. On first session load the app now asks who's using it (Jason / Katie / Brennan / Miles / All, or anyone from your People list); Board / Calendar / Grid / List / Notes all filter to that person's deliverables until you change it. Your choice persists across sessions — the header shows “You: Jason ▾”; click it to switch person or flip to All. Owner is now also a real quick-filter dimension (turn its chip row on in ⚏ Display) — a card with multiple owners passes if any of them are in the filter set.",
   "v2.16 — Two additions to the Notes view. (1) Each entry now has a ✓ done checkbox in the header. Checking it flips the deliverable's status to the Complete lane (configured in Manage → status “✓ Complete”); unchecking it reverts to the first non-complete lane. Done entries dim and the title strikes through — matches the ✓ affordance already shown in Board / Calendar / List. Requires a Complete lane to be set; without one the checkbox is disabled with a hint. (2) Real fix for click-to-toggle: the title's flex was stretching across the whole bar and swallowing every click. Now the title only takes its text width and an invisible spacer fills the remaining space — clicks in the empty area actually toggle collapse.",
   "v2.15 — Notes view: clicking anywhere on an entry's header row now toggles collapse/expand (previously only the chevron worked). The title still opens the deliverable, and the ✕ still removes an email — both stop propagation so those clicks don't also toggle.",
   "v2.14 — Email parser now handles Gmail's alternate copy order where the sender name sits BETWEEN the time and the “to” line (with an “Attachments” label from the paperclip icon in the way). Fix picks the candidate NEAREST the Sent line, with name-shape (“First Last”) as a tie-breaker — so “Caitlyn Nelson” wins over “Attachments” and over the subject line. Also expanded the skip list: attachments, attachment, reply, forward, print, show/hide details.",
@@ -1187,6 +1206,7 @@ function qfDims() {
     { key: "promotion", label: "Promotions", vals: () => [...legendPromoSet(), ...(filters.promotion || [])].filter((v, i, a) => a.indexOf(v) === i).sort((a,b)=>a.localeCompare(b)), color: promoColor, valsOf: c => { const p = cardPromo(c); return p ? [p] : []; } },
     { key: "priority", label: "Priority", vals: () => PRIORITIES.map(p => p.name), color: priorityColor, valsOf: c => [cardPriority(c)] },
     { key: "status", label: "Lane", vals: () => statusList.map(s => s.name), color: statusColor, valsOf: c => c.status ? [c.status] : [] },
+    { key: "owner", label: "Owner", vals: () => peopleList.map(p => p.name), color: () => null, valsOf: c => splitOwners(c.owner) },
   ];
   // Custom fields with options (Dropdown or Multi-select) are togglable as quick-filter rows too.
   fieldsList.filter(fieldHasOptions).forEach(f => {
@@ -1310,6 +1330,30 @@ let gridSelected = new Set();              // card ids currently checked in the 
 let quickFilterRows = (() => { try { const raw = JSON.parse(localStorage.getItem("planner-quick-rows") || "null"); return Array.isArray(raw) ? new Set(raw) : new Set(["brand","channel","promotion"]); } catch (e) { return new Set(["brand","channel","promotion"]); } })();
 function saveQuickFilterRows() { localStorage.setItem("planner-quick-rows", JSON.stringify([...quickFilterRows])); }
 let completeLane = "";
+// Current-user filter: on session load we ask "who are you?" (see #userOverlay) and set filters.owner to just
+// that person's work. Persists in localStorage across sessions — the prompt only re-appears if the choice is
+// cleared. "" means "All" (no owner filter).
+let currentUser = localStorage.getItem("planner-current-user") || "";
+function saveCurrentUser() { if (currentUser) localStorage.setItem("planner-current-user", currentUser); else localStorage.removeItem("planner-current-user"); }
+function applyCurrentUserFilter() {
+  if (currentUser) filters.owner = new Set([currentUser]);
+  else if (filters.owner) delete filters.owner;
+  updateFilterBtn && updateFilterBtn();
+  const nameEl = document.getElementById("userBtnName"); if (nameEl) nameEl.textContent = currentUser || "All";
+}
+function openUserPicker() {
+  const box = document.getElementById("userOverlayChoices"); if (!box) return;
+  box.innerHTML = "";
+  const options = [...peopleList.map(p => p.name), "All"];
+  options.forEach(name => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = name;
+    const val = name === "All" ? "" : name;
+    if (currentUser === val) b.classList.add("on");
+    b.onclick = () => { currentUser = val; saveCurrentUser(); applyCurrentUserFilter(); document.getElementById("userOverlay").classList.remove("show"); render(); };
+    box.appendChild(b);
+  });
+  document.getElementById("userOverlay").classList.add("show");
+}
 // The "Scheduled" lane gets a clock badge (parallel to the green ✓ complete lane). Stored locally (no SQL);
 // null = never set, so we auto-detect a lane literally named "Scheduled" as the default.
 let scheduledLane = localStorage.getItem("planner-scheduled-lane");
@@ -3890,6 +3934,9 @@ async function init() {
       if (!filters.sprint) { filters.sprint = new Set([isoWeek(ymd(new Date()))]); }
     }
   } catch (e) {}
+  // Apply the persisted current-user filter (silent). If no user is set yet, prompt on first session load —
+  // the modal opens once cards/people are loaded (see below, after loadData).
+  applyCurrentUserFilter();
   buildChannelSelect(); buildStatusSelect(); buildColorBy();
   document.getElementById("search").value = searchText;
   document.querySelectorAll("#calModeSeg button").forEach(b => b.classList.toggle("active", b.dataset.m === calMode));
@@ -3898,6 +3945,11 @@ async function init() {
   renderChangelog();
   await refetch();
   setView(view);   // apply restored view (container visibility + active toggle)
+  // If no current user is persisted, open the picker on first session load (people list is loaded by now).
+  if (!currentUser && !sessionStorage.getItem("planner-user-asked")) {
+    try { sessionStorage.setItem("planner-user-asked", "1"); } catch (e) {}
+    openUserPicker();
+  }
 
   if (ONLINE) {
     db.channel("planner-deliverables").on("postgres_changes", { event: "*", schema: "public", table: "deliverables" }, refetch).subscribe();
@@ -4027,6 +4079,9 @@ async function init() {
   exportOv.onclick = e => { if (e.target.id === "exportOverlay") closeExport(); };
   document.getElementById("exportXlsxBtn").onclick = () => { closeExport(); exportXLSX(); };
   document.getElementById("exportPdfBtn").onclick = () => { closeExport(); setTimeout(printView, 60); };   // let the overlay hide before printing
+  document.getElementById("userBtn").onclick = openUserPicker;
+  document.getElementById("userOverlayX").onclick = () => document.getElementById("userOverlay").classList.remove("show");
+  document.getElementById("userOverlay").onclick = e => { if (e.target.id === "userOverlay") e.currentTarget.classList.remove("show"); };
   document.getElementById("verBtn").onclick = () => document.getElementById("verOverlay").classList.add("show");
   document.getElementById("verClose").onclick = () => document.getElementById("verOverlay").classList.remove("show");
   document.getElementById("verOverlay").onclick = e => { if (e.target.id === "verOverlay") e.currentTarget.classList.remove("show"); };
@@ -4085,7 +4140,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
