@@ -188,9 +188,9 @@
   .notes-chev:hover { color: var(--text); }
   /* Red date pill next to each entry — the notepad's date-in-margin. */
   .notes-date { flex: none; font-size: 12px; font-weight: 700; color: var(--danger); letter-spacing: .2px; white-space: nowrap; padding: 1px 8px; border: 1px solid rgba(239,68,68,.35); border-radius: 6px; background: rgba(239,68,68,.08); }
-  .notes-entry-title { flex: 1 1 auto; min-width: 0; font-weight: 700; font-size: 14px; cursor: pointer; overflow-wrap: anywhere; }
-  @media (min-width: 761px) { .notes-entry-title { min-width: 200px; } }
+  .notes-entry-title { flex: 0 1 auto; min-width: 0; max-width: 100%; font-weight: 700; font-size: 14px; cursor: pointer; overflow-wrap: anywhere; }
   .notes-entry-title:hover { color: var(--accent); }
+  .notes-entry-spacer { flex: 1 1 auto; min-width: 8px; align-self: stretch; }   /* invisible padding that participates in the bar's toggle click */
   .notes-entry-meta { flex: none; font-size: 11px; color: var(--muted); }
   .notes-entry-body { margin-top: 8px; font-size: 13.5px; line-height: 1.55; color: var(--text); }
   .notes-entry.collapsed .notes-entry-body { display: none; }
@@ -203,6 +203,13 @@
   .notes-kind-email { color: var(--accent); border-color: rgba(96,165,250,.35); background: rgba(96,165,250,.08); }
   .notes-entry-rm { flex: none; padding: 0 6px; font-size: 12px; color: var(--muted); background: transparent; border: none; cursor: pointer; }
   .notes-entry-rm:hover { color: var(--danger); }
+  /* Done affordance — checkbox in the header. When checked (card is on the Complete lane) the entry dims and
+     the title strikes through. Configure the Complete lane in Manage → status. */
+  .notes-done-cb { flex: none; width: 15px; height: 15px; margin: 0 2px 0 0; cursor: pointer; accent-color: var(--success, #10b981); }
+  .notes-done-cb:disabled { cursor: not-allowed; opacity: .4; }
+  .notes-entry.done { opacity: .65; }
+  .notes-entry.done .notes-entry-title { text-decoration: line-through; color: var(--muted); }
+  .notes-entry.done .notes-date { border-color: rgba(16,185,129,.35); background: rgba(16,185,129,.08); color: var(--success, #10b981); }
   /* Email-style body inside the Notes feed — softer container so it reads as a document, not a paragraph. */
   .notes-entry-email .notes-entry-body { background: rgba(255,255,255,.02); border-radius: 8px; padding: 10px 12px; }
   .notes-entry-email .notes-entry-body .email { margin: 0; }
@@ -861,8 +868,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.15";
+const VERSION = "2.16";
 const CHANGELOG = [
+  "v2.16 — Two additions to the Notes view. (1) Each entry now has a ✓ done checkbox in the header. Checking it flips the deliverable's status to the Complete lane (configured in Manage → status “✓ Complete”); unchecking it reverts to the first non-complete lane. Done entries dim and the title strikes through — matches the ✓ affordance already shown in Board / Calendar / List. Requires a Complete lane to be set; without one the checkbox is disabled with a hint. (2) Real fix for click-to-toggle: the title's flex was stretching across the whole bar and swallowing every click. Now the title only takes its text width and an invisible spacer fills the remaining space — clicks in the empty area actually toggle collapse.",
   "v2.15 — Notes view: clicking anywhere on an entry's header row now toggles collapse/expand (previously only the chevron worked). The title still opens the deliverable, and the ✕ still removes an email — both stop propagation so those clicks don't also toggle.",
   "v2.14 — Email parser now handles Gmail's alternate copy order where the sender name sits BETWEEN the time and the “to” line (with an “Attachments” label from the paperclip icon in the way). Fix picks the candidate NEAREST the Sent line, with name-shape (“First Last”) as a tie-breaker — so “Caitlyn Nelson” wins over “Attachments” and over the subject line. Also expanded the skip list: attachments, attachment, reply, forward, print, show/hide details.",
   "v2.13 — On first load of a browser session, the sprint filter now auto-defaults to the current ISO week, so the app opens on “what's happening now.” Respects any sprint scope carried in the URL (bookmarks, saved views, shared links), and doesn't fight you within a session — once you clear the filter it stays cleared until the next tab open.",
@@ -2119,7 +2127,9 @@ function renderNotesView() {
     const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "");
     entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
     // Header — clicking anywhere on the bar toggles collapse; children with their own handlers (title opens the
-    // modal, ✕ removes the email) stopPropagation so those clicks don't also toggle.
+    // modal, ✕ removes the email, done checkbox toggles status) stopPropagation so those clicks don't also toggle.
+    const isDone = !!(completeLane && c.status === completeLane);
+    if (isDone) entry.classList.add("done");
     const bar = document.createElement("div"); bar.className = "notes-entry-head"; bar.style.cursor = "pointer";
     const toggle = () => {
       if (notesAllCollapsed) { if (notesCollapsed.has("__open:" + item.key)) notesCollapsed.delete("__open:" + item.key); else notesCollapsed.add("__open:" + item.key); }
@@ -2127,6 +2137,19 @@ function renderNotesView() {
       renderNotesView();
     };
     bar.onclick = toggle;
+    // Done checkbox — flips this deliverable's status to the Complete lane (and back to the first non-complete
+    // lane on uncheck). Only shown when a Complete lane is configured in Manage → status; without one, we can't
+    // know what "done" means. Note + email entries for the same card share the state since it's a card-level flag.
+    const doneCb = document.createElement("input"); doneCb.type = "checkbox"; doneCb.className = "notes-done-cb"; doneCb.checked = isDone;
+    doneCb.title = completeLane ? (isDone ? "Marked done — click to reopen" : "Mark done (moves to “" + completeLane + "”)") : "Set a Complete lane in Manage to enable";
+    if (!completeLane) doneCb.disabled = true;
+    doneCb.onclick = e => { e.stopPropagation();
+      if (!completeLane) return;
+      const target = isDone ? (statusList.find(s => s.name !== completeLane) || statusList[0] || {}).name : completeLane;
+      if (target) patchStatus(c.id, target);
+    };
+    doneCb.addEventListener("mousedown", e => e.stopPropagation());
+    bar.appendChild(doneCb);
     const chev = document.createElement("button"); chev.type = "button"; chev.className = "notes-chev"; chev.textContent = collapsed ? "▸" : "▾";
     bar.appendChild(chev);
     const date = document.createElement("span"); date.className = "notes-date"; date.textContent = item.date ? fmtDue(item.date) : "—";
@@ -2134,6 +2157,9 @@ function renderNotesView() {
     const kind = document.createElement("span"); kind.className = "notes-kind notes-kind-" + item.kind; kind.textContent = item.kind === "email" ? "📧 Email" : "📝 Note";
     bar.appendChild(kind);
     const title = document.createElement("span"); title.className = "notes-entry-title"; title.textContent = c.title; title.onclick = e => { e.stopPropagation(); openModal(c); }; bar.appendChild(title);
+    // Invisible flex-grow spacer between title and meta so the "empty" area of the header row is toggle-click space,
+    // not title-click space. Without this the title would flex-grow across the whole bar and swallow every click.
+    const spacer = document.createElement("span"); spacer.className = "notes-entry-spacer"; bar.appendChild(spacer);
     const meta = document.createElement("span"); meta.className = "notes-entry-meta";
     const parts = [];
     if (c.brand) parts.push(c.brand); if (c.channel) parts.push(c.channel);
