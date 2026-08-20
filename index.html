@@ -377,6 +377,9 @@
   .user-btn { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); cursor: pointer; }
   .user-btn:hover { color: var(--text); border-color: var(--accent); }
   .user-btn b { color: var(--accent); font-weight: 700; }
+  .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
+  .af-push { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 4px 13px; background: transparent; }
+  .af-push:hover { background: var(--accent); color: #fff; }
   #userOverlayChoices button { display: block; width: 100%; padding: 12px 14px; text-align: left; font-size: 14px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; color: var(--text); }
   #userOverlayChoices button:hover { border-color: var(--accent); background: rgba(109,93,252,.08); }
   #userOverlayChoices button.on { border-color: var(--accent); background: rgba(109,93,252,.15); }
@@ -593,6 +596,7 @@
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
   <button id="userBtn" class="user-btn" title="Filter to your work (click to change)">You: <b id="userBtnName">All</b> ▾</button>
+  <button id="overdueBtn" class="user-btn" title="Show unfinished cards from past sprints (relative to today; not a saved view)">⚠ Overdue</button>
   <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button><button data-v="notes">Notes</button></div>
   <button class="primary orange" id="addBtn">+ Deliverable</button>
   <div class="header-spacer"></div>
@@ -886,8 +890,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.17";
+const VERSION = "2.18";
 const CHANGELOG = [
+  "v2.18 — Two sprint-planning shortcuts. (1) “⚠ Overdue” header toggle: shows every card whose sprint is in the past AND status isn't the Complete lane. It's a live filter (relative to today), not a saved view — no need to re-scope it week over week. (2) When any filter is active, a “⇒ Push N → next sprint” button appears next to Clear all. Click it and every visible card rolls forward exactly 1 week (due, end, and manual planning-sprint all +7 days). Perfect for “what didn't get done → push it all to next week.”",
   "v2.17 — Current-user filter. On first session load the app now asks who's using it (Jason / Katie / Brennan / Miles / All, or anyone from your People list); Board / Calendar / Grid / List / Notes all filter to that person's deliverables until you change it. Your choice persists across sessions — the header shows “You: Jason ▾”; click it to switch person or flip to All. Owner is now also a real quick-filter dimension (turn its chip row on in ⚏ Display) — a card with multiple owners passes if any of them are in the filter set.",
   "v2.16 — Two additions to the Notes view. (1) Each entry now has a ✓ done checkbox in the header. Checking it flips the deliverable's status to the Complete lane (configured in Manage → status “✓ Complete”); unchecking it reverts to the first non-complete lane. Done entries dim and the title strikes through — matches the ✓ affordance already shown in Board / Calendar / List. Requires a Complete lane to be set; without one the checkbox is disabled with a hint. (2) Real fix for click-to-toggle: the title's flex was stretching across the whole bar and swallowing every click. Now the title only takes its text width and an invisible spacer fills the remaining space — clicks in the empty area actually toggle collapse.",
   "v2.15 — Notes view: clicking anywhere on an entry's header row now toggles collapse/expand (previously only the chevron worked). The title still opens the deliverable, and the ✕ still removes an email — both stop propagation so those clicks don't also toggle.",
@@ -1334,6 +1339,11 @@ let completeLane = "";
 // that person's work. Persists in localStorage across sessions — the prompt only re-appears if the choice is
 // cleared. "" means "All" (no owner filter).
 let currentUser = localStorage.getItem("planner-current-user") || "";
+// Overdue-unfinished quick filter — matches cards whose sprint is BEFORE the current ISO week AND whose status
+// isn't the Complete lane. Kept as its own toggle (not a sprint sentinel) because it evaluates the completeLane
+// status field at render time; the "past" boundary is always relative to today, so the view stays current without
+// the user having to update saved views week over week. URL param: `overdue=1`.
+let filterOverdue = false;
 function saveCurrentUser() { if (currentUser) localStorage.setItem("planner-current-user", currentUser); else localStorage.removeItem("planner-current-user"); }
 function applyCurrentUserFilter() {
   if (currentUser) filters.owner = new Set([currentUser]);
@@ -1920,6 +1930,14 @@ function passesFilters(c) {
     const any = cs.length ? cs.some(s => filters.sprint.has(s)) : filters.sprint.has("");
     if (!any) return false;
   }
+  // Overdue-unfinished: card's sprint(s) all fall BEFORE the current ISO week AND status isn't the Complete lane.
+  // Cards with no sprint at all are excluded (they aren't "overdue," they're unplanned).
+  if (filterOverdue) {
+    const thisWeek = isoWeek(ymd(new Date()));
+    const cs = cardSprints(c); if (!cs.length) return false;
+    if (cs.some(s => s >= thisWeek)) return false;   // any current-or-future sprint disqualifies it
+    if (completeLane && c.status === completeLane) return false;
+  }
   // Quick-filter rows: each active dimension filter (brand/channel/promotion/priority/status) must match the card.
   for (const d of qfDims()) {
     const set = filters[d.key]; if (!set || !set.size) continue;
@@ -2009,9 +2027,11 @@ function filterKeyLabel(key) {
 }
 function renderActiveFilters() {
   const bar = document.getElementById("activeFilters"); if (!bar) return;
+  const overdueBtn = document.getElementById("overdueBtn"); if (overdueBtn) overdueBtn.classList.toggle("on", filterOverdue);
   bar.innerHTML = "";
   const pills = [];
   if (searchText.trim()) pills.push({ k: "Search", v: '“' + searchText.trim() + '”', remove: () => { searchText = ""; const s = document.getElementById("search"); if (s) s.value = ""; } });
+  if (filterOverdue) pills.push({ k: "⚠", v: "Overdue · past sprints, not complete", remove: () => { filterOverdue = false; } });
   if (filters.sprint) filters.sprint.forEach(v => { const disp = v ? fmtSprint(v) + " · " + sprintRange(v) : "No sprint"; pills.push({ k: "Sprint", v: disp, remove: () => { filters.sprint.delete(v); if (!filters.sprint.size) delete filters.sprint; } }); });
   qfDims().forEach(d => { if (filters[d.key]) filters[d.key].forEach(v => pills.push({ k: d.label, v, remove: () => { filters[d.key].delete(v); if (!filters[d.key].size) delete filters[d.key]; } })); });
   if (sortKey) pills.push({ k: "Sort", v: sortLabel(sortKey) + (sortDir > 0 ? " ↑" : " ↓"), remove: () => { sortKey = ""; } });
@@ -2031,10 +2051,46 @@ function renderActiveFilters() {
   const clear = document.createElement("button"); clear.className = "af-clear"; clear.textContent = "✕ Clear all";
   clear.onclick = () => {
     searchText = ""; const s = document.getElementById("search"); if (s) s.value = "";
-    filters = {}; filterRules = []; filterMatch = "all"; sortKey = ""; sortDir = 1;
+    filters = {}; filterRules = []; filterMatch = "all"; sortKey = ""; sortDir = 1; filterOverdue = false;
     updateFilterBtn(); render();
   };
   bar.appendChild(clear);
+  // Push-all action: bulk-shift every visible card's sprint forward by one week (due, end, and manual SPRINT_KEY
+  // each get +7 days). Only shown when at least one filter is active — otherwise it's a foot-gun.
+  const nCards = visibleCards().length;
+  if (nCards) {
+    const push = document.createElement("button"); push.className = "af-push"; push.textContent = "⇒ Push " + nCards + " → next sprint";
+    push.title = "Move every visible card forward by 1 week (due, end, and planning sprint each +7 days)";
+    push.onclick = pushVisibleToNextSprint;
+    bar.appendChild(push);
+  }
+}
+// Shift each visible card's sprint by exactly one week — updates due date, end date (if present), and the
+// manual sprint override. Used from the active-filters bar for sprint-planning meetings: filter to what didn't
+// get done, click one button, everything rolls forward together.
+async function pushVisibleToNextSprint() {
+  const targets = visibleCards().slice();
+  if (!targets.length) return;
+  if (!confirm("Move " + targets.length + " visible card" + (targets.length === 1 ? "" : "s") + " forward by 1 week?\n\nDue dates, end dates, and manual sprint overrides all shift +7 days.")) return;
+  const shift = (ymdStr) => { if (!ymdStr) return ""; const d = new Date(ymdStr + "T00:00:00"); d.setDate(d.getDate() + 7); return ymd(d); };
+  const shiftWeek = (w) => { if (!w) return ""; const mon = isoWeekStart(w); if (!mon) return w; mon.setUTCDate(mon.getUTCDate() + 7); return isoWeek(ymdUTC(mon)); };
+  const jobs = targets.map(async c => {
+    const patch = {};
+    if (c.due) { c.due = shift(c.due); patch.due = c.due; }
+    if (c.end) { c.end = shift(c.end); patch.end = c.end; }
+    const manual = c.fields && c.fields[SPRINT_KEY];
+    if (manual) {
+      const nw = shiftWeek(manual);
+      c.fields = Object.assign({}, c.fields); c.fields[SPRINT_KEY] = nw;
+      patch.fields = c.fields;
+    }
+    if (!Object.keys(patch).length) return;
+    if (!ONLINE) { saveLocal(); return; }
+    const { error } = await db.from("deliverables").update(patch).eq("id", c.id);
+    if (error) toast("Push failed for " + c.title + ": " + error.message);
+  });
+  await Promise.all(jobs);
+  render(); toast("Pushed " + targets.length + " card" + (targets.length === 1 ? "" : "s") + " forward 1 week.");
 }
 function render() {
   writeUrl(); renderQuickFilters(); renderActiveFilters();
@@ -3829,6 +3885,7 @@ function currentParams() {
   if (view === "grid" && gridCols) p.set("gcols", gridCols.join(","));
   if (view === "grid" && gridGroup.length) p.set("ggroup", gridGroup.join(","));
   if (sortKey) p.set("sort", sortKey + ":" + (sortDir < 0 ? "d" : "a"));
+  if (filterOverdue) p.set("overdue", "1");
   return p.toString();
 }
 function writeUrl() { const qs = currentParams(); try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {} }
@@ -3890,7 +3947,7 @@ function renderViews() {
 async function openViews() { await loadSharedViews(); renderViews(); document.getElementById("viewsOverlay").classList.add("show"); }
 // Apply a saved view's query params: reset state to defaults, parse params, sync controls.
 function applySavedView(params) {
-  view = "board"; colorBy = "brand"; searchText = ""; filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; gridGroup = []; gridCollapsed = new Set(); sortKey = ""; sortDir = 1; displaySettings.calendar.eventSize = "compact";
+  view = "board"; colorBy = "brand"; searchText = ""; filters = {}; filterRules = []; filterMatch = "all"; calMode = "month"; calRef = new Date(); listSplit = ""; gridCols = null; gridGroup = []; gridCollapsed = new Set(); sortKey = ""; sortDir = 1; displaySettings.calendar.eventSize = "compact"; filterOverdue = false;
   try { history.replaceState(null, "", location.pathname + (params ? "?" + params : "")); } catch (e) {}
   readUrl();
   document.getElementById("search").value = searchText;
@@ -3920,6 +3977,7 @@ function readUrl() {
   const gc = p.get("gcols"); if (gc) gridCols = gc.split(",");
   const gg = p.get("ggroup"); if (gg) gridGroup = gg.split(",").filter(Boolean);
   const so = p.get("sort"); if (so) { const i = so.lastIndexOf(":"); const k = i > 0 ? so.slice(0, i) : so; const d = so.slice(i + 1); if (k) { sortKey = k; sortDir = d === "d" ? -1 : 1; } }
+  if (p.get("overdue") === "1") filterOverdue = true;
 }
 async function init() {
   fillStaticSelects();
@@ -4080,6 +4138,7 @@ async function init() {
   document.getElementById("exportXlsxBtn").onclick = () => { closeExport(); exportXLSX(); };
   document.getElementById("exportPdfBtn").onclick = () => { closeExport(); setTimeout(printView, 60); };   // let the overlay hide before printing
   document.getElementById("userBtn").onclick = openUserPicker;
+  document.getElementById("overdueBtn").onclick = () => { filterOverdue = !filterOverdue; render(); };
   document.getElementById("userOverlayX").onclick = () => document.getElementById("userOverlay").classList.remove("show");
   document.getElementById("userOverlay").onclick = e => { if (e.target.id === "userOverlay") e.currentTarget.classList.remove("show"); };
   document.getElementById("verBtn").onclick = () => document.getElementById("verOverlay").classList.add("show");
