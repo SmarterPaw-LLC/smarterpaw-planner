@@ -890,8 +890,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.19";
+const VERSION = "2.20";
 const CHANGELOG = [
+  "v2.20 — Notes view: a card with subtasks but no note text now still shows its 📝 note entry so the subtasks are visible (previously the entry was skipped whenever the card had any emails, which hid the subtask checkboxes underneath). Rule is now: emit a note entry if there's note text OR any subtasks OR no emails at all.",
   "v2.19 — Subtask editing: pressing Enter inside a subtask now adds a new subtask directly below (list-style, keep typing) instead of doing nothing (or in edge cases, closing the modal). Shift+Enter keeps focus in the current row. Enter events in the subtask area also stopPropagation now, so they can never reach the modal's global Enter-to-save handler.",
   "v2.18 — Two sprint-planning shortcuts. (1) “⚠ Overdue” header toggle: shows every card whose sprint is in the past AND status isn't the Complete lane. It's a live filter (relative to today), not a saved view — no need to re-scope it week over week. (2) When any filter is active, a “⇒ Push N → next sprint” button appears next to Clear all. Click it and every visible card rolls forward exactly 1 week (due, end, and manual planning-sprint all +7 days). Perfect for “what didn't get done → push it all to next week.”",
   "v2.17 — Current-user filter. On first session load the app now asks who's using it (Jason / Katie / Brennan / Miles / All, or anyone from your People list); Board / Calendar / Grid / List / Notes all filter to that person's deliverables until you change it. Your choice persists across sessions — the header shows “You: Jason ▾”; click it to switch person or flip to All. Owner is now also a real quick-filter dimension (turn its chip row on in ⚏ Display) — a card with multiple owners passes if any of them are in the filter set.",
@@ -2208,9 +2209,10 @@ function renderNotesView() {
   cardsIn.forEach(c => {
     const emails = cardEmails(c);
     const hasNoteText = !!(c.notes && c.notes.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim());
-    // Emit a note entry only when the card has actual note text, OR when it has neither notes nor emails
-    // (so an untouched card is still visible in Notes so you can click into it and write one).
-    if (hasNoteText || !emails.length) feed.push({ kind: "note", card: c, date: noteEntryDate(c), key: "note:" + c.id });
+    const hasSubs = cardSubtasks(c).length > 0;
+    // Emit a note entry when there's a reason to show it: actual note text, ANY subtasks (they render inside the
+    // note body), or when the card has no emails either (so an untouched card stays visible for the writer).
+    if (hasNoteText || hasSubs || !emails.length) feed.push({ kind: "note", card: c, date: noteEntryDate(c), key: "note:" + c.id });
     emails.forEach(em => feed.push({ kind: "email", card: c, email: em, date: (em.addedAt || "").slice(0, 10) || noteEntryDate(c), key: "email:" + c.id + ":" + em.id }));
   });
   // Sort — global sortKey overrides; otherwise date desc.
