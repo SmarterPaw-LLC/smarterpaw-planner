@@ -890,8 +890,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.21";
+const VERSION = "2.22";
 const CHANGELOG = [
+  "v2.22 — Grid bulk edit now includes Sprint week. Select rows, pick “Sprint week”, choose any day — the planning sprint on every selected card snaps to that ISO week (blank date clears it).",
   "v2.21 — Search now matches every reasonable field, not just title/notes/owner. Typing “Chewy” finds cards whose Platform (or any custom field) is Chewy, plus matches by brand, channel, status, promotion, subtask text, and email from/to/subject. Custom-field values are all searched — no need to remember which field a value came from.",
   "v2.20 — Notes view: a card with subtasks but no note text now still shows its 📝 note entry so the subtasks are visible (previously the entry was skipped whenever the card had any emails, which hid the subtask checkboxes underneath). Rule is now: emit a note entry if there's note text OR any subtasks OR no emails at all.",
   "v2.19 — Subtask editing: pressing Enter inside a subtask now adds a new subtask directly below (list-style, keep typing) instead of doing nothing (or in edge cases, closing the modal). Shift+Enter keeps focus in the current row. Enter events in the subtask area also stopPropagation now, so they can never reach the modal's global Enter-to-save handler.",
@@ -2759,6 +2760,7 @@ function bulkEditFields() {
     { key: "promotion", label: "Promotion", type: "select", options: () => ["", ...allPromos()], labels: v => v || "— none —" },
     { key: "due", label: "Due date", type: "date" },
     { key: "end", label: "End date", type: "date" },
+    { key: "sprint", label: "Sprint week", type: "date" },   // pick any day → snapped to that ISO week (blank clears)
   ].concat(fieldsList.map(f => ({
     key: "field:" + f.name, label: f.name,
     type: f.type === "multi" ? "multi" : (fieldHasOptions(f) ? "select" : (f.type === "date" ? "date" : f.type === "number" ? "number" : "text")),
@@ -2832,6 +2834,7 @@ function bulkBuildPatch(c, key, value) {
   else if (key === "end") patch.end_date = value || null;
   else if (key === "priority") setField(f => { if (value && value !== "No Priority") f[PRIORITY_KEY] = value; else delete f[PRIORITY_KEY]; });
   else if (key === "promotion") setField(f => { if (value) f[PROMO_KEY] = value; else delete f[PROMO_KEY]; });
+  else if (key === "sprint") setField(f => { const w = value ? isoWeek(value) : ""; if (w) f[SPRINT_KEY] = w; else delete f[SPRINT_KEY]; });
   else if (key.indexOf("field:") === 0) { const n = key.slice(6); setField(f => { if (value) f[n] = value; else delete f[n]; }); }
   return patch;
 }
