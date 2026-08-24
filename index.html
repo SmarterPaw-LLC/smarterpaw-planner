@@ -890,8 +890,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.20";
+const VERSION = "2.21";
 const CHANGELOG = [
+  "v2.21 — Search now matches every reasonable field, not just title/notes/owner. Typing “Chewy” finds cards whose Platform (or any custom field) is Chewy, plus matches by brand, channel, status, promotion, subtask text, and email from/to/subject. Custom-field values are all searched — no need to remember which field a value came from.",
   "v2.20 — Notes view: a card with subtasks but no note text now still shows its 📝 note entry so the subtasks are visible (previously the entry was skipped whenever the card had any emails, which hid the subtask checkboxes underneath). Rule is now: emit a note entry if there's note text OR any subtasks OR no emails at all.",
   "v2.19 — Subtask editing: pressing Enter inside a subtask now adds a new subtask directly below (list-style, keep typing) instead of doing nothing (or in edge cases, closing the modal). Shift+Enter keeps focus in the current row. Enter events in the subtask area also stopPropagation now, so they can never reach the modal's global Enter-to-save handler.",
   "v2.18 — Two sprint-planning shortcuts. (1) “⚠ Overdue” header toggle: shows every card whose sprint is in the past AND status isn't the Complete lane. It's a live filter (relative to today), not a saved view — no need to re-scope it week over week. (2) When any filter is active, a “⇒ Push N → next sprint” button appears next to Clear all. Click it and every visible card rolls forward exactly 1 week (due, end, and manual planning-sprint all +7 days). Perfect for “what didn't get done → push it all to next week.”",
@@ -1951,9 +1952,19 @@ function passesFilters(c) {
   if (rs.length) { const res = rs.map(r => ruleMatches(c, r)); if (!(filterMatch === "any" ? res.some(Boolean) : res.every(Boolean))) return false; }
   return true;
 }
+// Build the search haystack for a card — everything a user might reasonably expect to hit by typing in the
+// search box. Includes title, notes, owners, brand, channel, status, promotion, ALL custom-field values (so
+// searching "Chewy" matches a card whose Platform field is Chewy), subtask text, and email headers/subjects.
+function cardSearchText(c) {
+  const parts = [c.title, c.notes, c.owner, c.brand, c.channel, c.status, cardPromo(c)];
+  if (c.fields) Object.keys(c.fields).forEach(k => { if (k[0] !== "_") parts.push(c.fields[k]); });   // skip internal keys like __sprint, __subtasks, __emails
+  cardSubtasks(c).forEach(s => { if (s && s.text) parts.push(s.text); });
+  cardEmails(c).forEach(e => { if (e) { parts.push(e.from); parts.push(e.to); parts.push(e.subject); } });
+  return parts.filter(Boolean).join(" ").toLowerCase();
+}
 function visibleCards() {
   const q = searchText.trim().toLowerCase();
-  const out = cards.filter(c => passesFilters(c) && (!q || (c.title + " " + (c.notes||"") + " " + (c.owner||"")).toLowerCase().includes(q)));
+  const out = cards.filter(c => passesFilters(c) && (!q || cardSearchText(c).includes(q)));
   return sortCards(out, { key: sortKey, dir: sortDir });   // unified sort flows into every view
 }
 function filterValues(key) {
