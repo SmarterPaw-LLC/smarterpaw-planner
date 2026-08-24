@@ -890,8 +890,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.18";
+const VERSION = "2.19";
 const CHANGELOG = [
+  "v2.19 — Subtask editing: pressing Enter inside a subtask now adds a new subtask directly below (list-style, keep typing) instead of doing nothing (or in edge cases, closing the modal). Shift+Enter keeps focus in the current row. Enter events in the subtask area also stopPropagation now, so they can never reach the modal's global Enter-to-save handler.",
   "v2.18 — Two sprint-planning shortcuts. (1) “⚠ Overdue” header toggle: shows every card whose sprint is in the past AND status isn't the Complete lane. It's a live filter (relative to today), not a saved view — no need to re-scope it week over week. (2) When any filter is active, a “⇒ Push N → next sprint” button appears next to Clear all. Click it and every visible card rolls forward exactly 1 week (due, end, and manual planning-sprint all +7 days). Perfect for “what didn't get done → push it all to next week.”",
   "v2.17 — Current-user filter. On first session load the app now asks who's using it (Jason / Katie / Brennan / Miles / All, or anyone from your People list); Board / Calendar / Grid / List / Notes all filter to that person's deliverables until you change it. Your choice persists across sessions — the header shows “You: Jason ▾”; click it to switch person or flip to All. Owner is now also a real quick-filter dimension (turn its chip row on in ⚏ Display) — a card with multiple owners passes if any of them are in the filter set.",
   "v2.16 — Two additions to the Notes view. (1) Each entry now has a ✓ done checkbox in the header. Checking it flips the deliverable's status to the Complete lane (configured in Manage → status “✓ Complete”); unchecking it reverts to the first non-complete lane. Done entries dim and the title strikes through — matches the ✓ affordance already shown in Board / Calendar / List. Requires a Complete lane to be set; without one the checkbox is disabled with a hint. (2) Real fix for click-to-toggle: the title's flex was stretching across the whole bar and swallowing every click. Now the title only takes its text width and an invisible spacer fills the remaining space — clicks in the empty area actually toggle collapse.",
@@ -3341,6 +3342,17 @@ function renderSubsEdit() {
     }
     const inp = document.createElement("input"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.value = s.text;
     inp.oninput = () => { s.text = inp.value; };
+    // Enter commits the edit and adds a new subtask below (list-style "keep typing" flow). stopPropagation so the
+    // modal's global Enter-to-save handler doesn't close the card behind us. Shift+Enter keeps focus here in case
+    // you're just pausing mid-thought.
+    inp.addEventListener("keydown", e => {
+      if (e.key !== "Enter") return;
+      e.preventDefault(); e.stopPropagation();
+      if (e.shiftKey) return;
+      const ns = { id: subId(), text: "", done: false };
+      modalSubs.splice(idx + 1, 0, ns); renderSubsEdit();
+      const next = document.querySelectorAll("#f_subs .sub-text")[idx + 1]; if (next) next.focus();
+    });
     // Optional owner picker — single person from peopleList; "" = unassigned.
     const own = document.createElement("select"); own.className = "sub-owner"; own.title = "Owner (used if converted to a deliverable)";
     const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "— owner —"; own.appendChild(noneOpt);
@@ -4129,7 +4141,7 @@ async function init() {
     closeEmailPaste();
   };
   document.getElementById("f_subAddBtn").onclick = addModalSub;
-  document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addModalSub(); } });
+  document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); addModalSub(); } });
   const exportOv = document.getElementById("exportOverlay");
   const closeExport = () => exportOv.classList.remove("show");
   document.getElementById("exportBtn").onclick = () => exportOv.classList.add("show");
