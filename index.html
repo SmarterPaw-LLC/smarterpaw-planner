@@ -890,8 +890,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.22";
+const VERSION = "2.23";
 const CHANGELOG = [
+  "v2.23 — Sprints-tracked chips are now removable in every case. Previously the ✕ was hidden on chips implied by the current due date or manual planning sprint (removing would just re-appear on save). Now clicking ✕ on a due-derived chip prompts to clear the due/end dates; ✕ on a planning-derived chip clears the planning sprint field; ✕ on a history-only chip works as before. Chips also show a small “· from date” or “· planning” tag so you can see WHY each one is on the card.",
   "v2.22 — Grid bulk edit now includes Sprint week. Select rows, pick “Sprint week”, choose any day — the planning sprint on every selected card snaps to that ISO week (blank date clears it).",
   "v2.21 — Search now matches every reasonable field, not just title/notes/owner. Typing “Chewy” finds cards whose Platform (or any custom field) is Chewy, plus matches by brand, channel, status, promotion, subtask text, and email from/to/subject. Custom-field values are all searched — no need to remember which field a value came from.",
   "v2.20 — Notes view: a card with subtasks but no note text now still shows its 📝 note entry so the subtasks are visible (previously the entry was skipped whenever the card had any emails, which hid the subtask checkboxes underneath). Rule is now: emit a note entry if there's note text OR any subtasks OR no emails at all.",
@@ -3234,13 +3235,16 @@ function updateSprintField() {
 }
 // Live "Sprints tracked" preview from the modal's current state: saved history ∪ the sprint(s) this edit would record.
 function renderSprintTrack() {
-  // Derived weeks come from the current date range (or manual sprint for undated). These aren't user-removable — the chip
-  // would just come back next render since the date implies it. Only history-only entries (in modalSprintHist AND not
-  // derived) show the ✕ button.
-  const due = document.getElementById("f_due").value;
-  const end = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
-  const derived = new Set(sprintsInRange(due, end));
-  if (!derived.size) { const sd = document.getElementById("f_sprint").value; if (sd) derived.add(isoWeek(sd)); }
+  // Sprints tracked = union of the saved history AND the sprint(s) the CURRENT form values imply (due-date range + manual
+  // planning sprint). "Derived" chips (implied by the current form) can't just be removed from history — they'd come back
+  // on save because recordedSprints() re-adds them. So instead of a plain no-op ✕, clicking the ✕ on a derived chip clears
+  // the source field (due dates or the manual sprint) that's producing it. History-only chips remove from the history list.
+  const dueInp = document.getElementById("f_due"), endInp = document.getElementById("f_end"), sprintInp = document.getElementById("f_sprint");
+  const due = dueInp.value; const endShown = document.getElementById("f_endWrap").style.display !== "none";
+  const end = endShown ? endInp.value : "";
+  const dueDerived = new Set(sprintsInRange(due, end));
+  const manualWk = sprintInp.value ? isoWeek(sprintInp.value) : "";
+  const derived = new Set([...dueDerived]); if (manualWk) derived.add(manualWk);
   const all = new Set([...modalSprintHist, ...derived]);
   const track = [...all].sort();
   const wrap = document.getElementById("f_sprintTrackWrap");
@@ -3248,13 +3252,27 @@ function renderSprintTrack() {
   wrap.style.display = track.length ? "" : "none";
   box.innerHTML = "";
   track.forEach(w => {
+    const fromDate = dueDerived.has(w), fromManual = manualWk === w && !fromDate;
     const chip = document.createElement("span"); chip.className = "track-chip"; chip.style.cssText = sprintChipStyle(w);
-    chip.appendChild(document.createTextNode(fmtSprintFull(w)));
-    if (!derived.has(w)) {   // history-only → let the user remove it
-      const x = document.createElement("button"); x.type = "button"; x.className = "track-chip-x"; x.textContent = "✕"; x.title = "Remove from Sprints tracked";
+    const label = fromDate ? " · from date" : fromManual ? " · planning" : "";
+    chip.appendChild(document.createTextNode(fmtSprintFull(w) + label));
+    const x = document.createElement("button"); x.type = "button"; x.className = "track-chip-x"; x.textContent = "✕";
+    if (fromDate) {
+      x.title = "Clear the due date range (that's what's putting this sprint on the card)";
+      x.onclick = () => {
+        if (!confirm("This sprint comes from the due date (" + fmtDue(due) + (end ? " → " + fmtDue(end) : "") + "). Remove the due date" + (end ? " and end date" : "") + " to drop this sprint?")) return;
+        dueInp.value = ""; if (endShown) { endInp.value = ""; document.getElementById("f_endWrap").style.display = "none"; document.getElementById("f_addEnd").style.display = ""; }
+        modalSprintHist = modalSprintHist.filter(s => s !== w);
+        renderSprintTrack();
+      };
+    } else if (fromManual) {
+      x.title = "Clear the planning sprint field (that's what's putting this sprint on the card)";
+      x.onclick = () => { sprintInp.value = ""; modalSprintHist = modalSprintHist.filter(s => s !== w); renderSprintTrack(); };
+    } else {
+      x.title = "Remove from Sprints tracked";
       x.onclick = () => { modalSprintHist = modalSprintHist.filter(s => s !== w); renderSprintTrack(); };
-      chip.appendChild(x);
     }
+    chip.appendChild(x);
     box.appendChild(chip);
   });
 }
