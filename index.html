@@ -689,7 +689,7 @@
     </div>
     <div class="field"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
       <div id="f_subs" class="subs-edit"></div>
-      <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask…" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button></div>
+      <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask… (paste a multi-line list to bulk-add)" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button></div>
     </div>
     <div class="field"><label>Emails <span id="f_emailCount" class="opt"></span></label>
       <div id="f_emails" class="emails-edit"></div>
@@ -890,8 +890,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.23";
+const VERSION = "2.24";
 const CHANGELOG = [
+  "v2.24 — Bulk-add subtasks: paste a multi-line list (from a doc, notes, an email — anything) into the “Add a subtask…” field and each non-blank line becomes its own subtask. Leading bullets/dashes/numbering (1., -, •, *) are stripped automatically, and case-insensitive duplicates are skipped so re-pasting doesn't double up. Single-line pastes still behave normally (typed input).",
   "v2.23 — Sprints-tracked chips are now removable in every case. Previously the ✕ was hidden on chips implied by the current due date or manual planning sprint (removing would just re-appear on save). Now clicking ✕ on a due-derived chip prompts to clear the due/end dates; ✕ on a planning-derived chip clears the planning sprint field; ✕ on a history-only chip works as before. Chips also show a small “· from date” or “· planning” tag so you can see WHY each one is on the card.",
   "v2.22 — Grid bulk edit now includes Sprint week. Select rows, pick “Sprint week”, choose any day — the planning sprint on every selected card snaps to that ISO week (blank date clears it).",
   "v2.21 — Search now matches every reasonable field, not just title/notes/owner. Typing “Chewy” finds cards whose Platform (or any custom field) is Chewy, plus matches by brand, channel, status, promotion, subtask text, and email from/to/subject. Custom-field values are all searched — no need to remember which field a value came from.",
@@ -3458,6 +3459,22 @@ function addModalSub() {
   const inp = document.getElementById("f_subAdd"); const t = inp.value.trim(); if (!t) return;
   modalSubs.push({ id: subId(), text: t, done: false }); inp.value = ""; renderSubsEdit(); inp.focus();
 }
+// Add many subtasks at once (one per non-blank line). Trims each line and dedupes against what's already in the
+// list so re-pasting the same list doesn't produce duplicates.
+function addModalSubs(lines) {
+  const existing = new Set(modalSubs.map(s => (s.text || "").trim().toLowerCase()));
+  let added = 0;
+  lines.forEach(raw => {
+    const t = (raw || "").replace(/^[\s\-*•\d.)\]]+\s*/, "").trim();   // strip leading list markers/bullets/numbering
+    if (!t) return;
+    const k = t.toLowerCase(); if (existing.has(k)) return;
+    existing.add(k);
+    modalSubs.push({ id: subId(), text: t, done: false });
+    added++;
+  });
+  if (added) renderSubsEdit();
+  return added;
+}
 // After the modal renders, move each custom-field wrapper to the position dictated by the current view's
 // Display order (ds.dims). "Position 3 in Display" therefore becomes the actual 3rd form slot in the modal.
 // Built-in fields (Brand/Channel share row1; Owners, Due, Sprint, Status, Priority, Promotion) stay in
@@ -4176,6 +4193,14 @@ async function init() {
   };
   document.getElementById("f_subAddBtn").onclick = addModalSub;
   document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); addModalSub(); } });
+  // Multi-line paste = bulk-add. Detected by having ≥1 newline; each non-blank line becomes its own subtask.
+  document.getElementById("f_subAdd").addEventListener("paste", e => {
+    const cd = e.clipboardData || window.clipboardData; if (!cd) return;
+    const text = cd.getData("text/plain") || ""; if (!/\r|\n/.test(text)) return;   // single-line: default paste
+    e.preventDefault();
+    const n = addModalSubs(text.split(/\r?\n/));
+    if (n) { toast("Added " + n + " subtask" + (n === 1 ? "" : "s") + "."); e.target.value = ""; }
+  });
   const exportOv = document.getElementById("exportOverlay");
   const closeExport = () => exportOv.classList.remove("show");
   document.getElementById("exportBtn").onclick = () => exportOv.classList.add("show");
