@@ -890,8 +890,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.24";
+const VERSION = "2.25";
 const CHANGELOG = [
+  "v2.25 — Fixed “opens with an old sprint filter” on mobile. Cause: a URL/bookmark saved last week keeps re-applying its stale sprint on every reopen; the first-session auto-set (added in v2.13) only kicked in when NO sprint filter existed, so a bookmarked URL like ?flt_sprint=2026-W34 wasn't touched. Now the first-session pass also overrides sprint filters that only carry past weeks — a URL scope that includes the current or a future week is still respected as intentional.",
   "v2.24 — Bulk-add subtasks: paste a multi-line list (from a doc, notes, an email — anything) into the “Add a subtask…” field and each non-blank line becomes its own subtask. Leading bullets/dashes/numbering (1., -, •, *) are stripped automatically, and case-insensitive duplicates are skipped so re-pasting doesn't double up. Single-line pastes still behave normally (typed input).",
   "v2.23 — Sprints-tracked chips are now removable in every case. Previously the ✕ was hidden on chips implied by the current due date or manual planning sprint (removing would just re-appear on save). Now clicking ✕ on a due-derived chip prompts to clear the due/end dates; ✕ on a planning-derived chip clears the planning sprint field; ✕ on a history-only chip works as before. Chips also show a small “· from date” or “· planning” tag so you can see WHY each one is on the card.",
   "v2.22 — Grid bulk edit now includes Sprint week. Select rows, pick “Sprint week”, choose any day — the planning sprint on every selected card snaps to that ISO week (blank date clears it).",
@@ -4052,7 +4053,13 @@ async function init() {
   try {
     if (!sessionStorage.getItem("planner-session-init")) {
       sessionStorage.setItem("planner-session-init", "1");
-      if (!filters.sprint) { filters.sprint = new Set([isoWeek(ymd(new Date()))]); }
+      const thisWk = isoWeek(ymd(new Date()));
+      // Set current-week sprint if none is set; ALSO override a URL/bookmark that only carries past weeks — otherwise
+      // a saved link from last week keeps re-applying an old sprint every time the app is reopened (particularly on
+      // mobile, where reopening a bookmarked URL is the common flow). A URL sprint that includes the current or a
+      // future week is respected as an intentional scope.
+      if (!filters.sprint) filters.sprint = new Set([thisWk]);
+      else if ([...filters.sprint].every(w => w && w < thisWk)) filters.sprint = new Set([thisWk]);
     }
   } catch (e) {}
   // Apply the persisted current-user filter (silent). If no user is set yet, prompt on first session load —
