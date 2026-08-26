@@ -166,6 +166,7 @@
   .sub-convert:hover { border-color: var(--accent); }
   .sub-rm { flex: none; padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
   .sub-rm:hover { border-color: var(--danger); }
+  .sub-added { flex: 0 0 100%; font-size: 11px; color: var(--muted); padding-left: 26px; margin-top: -2px; }
   @media (max-width: 600px) {
     .sub-owner, .sub-due { flex-basis: 40%; }
   }
@@ -682,7 +683,10 @@
       <input id="f_sprint" type="date" onchange="renderSprintTrack()" />
     </div>
     <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
-    <div class="field" id="f_sprintHistWrap" style="display:none"><label>Historical sprints <span class="opt">— permanent record; entries can't be removed</span></label><div id="f_sprintHist" class="sprint-track"></div></div>
+    <div class="field" id="f_sprintHistWrap" style="display:none">
+      <label style="cursor:pointer" id="f_sprintHistLabel">▸ Historical sprints <span class="opt">— permanent record; entries can't be removed</span> <span id="f_sprintHistCount" class="opt"></span></label>
+      <div id="f_sprintHist" class="sprint-track" style="display:none"></div>
+    </div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
     <div class="field"><label>Priority</label><select id="f_priority"></select></div>
     <div class="field"><label>Promotion</label>
@@ -697,7 +701,7 @@
       <button type="button" id="f_emailAdd" class="ghost" style="width:100%">＋ Add email (paste)</button>
     </div>
     <div id="f_fields"></div>
-    <div class="field"><label>Notes</label>
+    <div class="field"><label>Notes <span id="f_notesUpdated" class="opt"></span></label>
       <div class="rte-toolbar">
         <button type="button" class="rte-btn" data-cmd="bold" title="Bold"><b>B</b></button>
         <button type="button" class="rte-btn" data-cmd="italic" title="Italic"><i>I</i></button>
@@ -891,8 +895,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.26";
+const VERSION = "2.27";
 const CHANGELOG = [
+  "v2.27 — Record-keeping additions. (1) Every subtask added from now on carries a hidden “added [date]” timestamp — shown as a small gray line under the row. Subtasks written before this version don't have a stamp (we don't fabricate one); only new adds show it. (2) Notes now show “— updated [date]” next to their label, stamped on save when the text actually changed. (3) Historical sprints is now a collapsible section, collapsed by default so it doesn't crowd the modal; the label acts as the toggle and shows the count.",
   "v2.26 — Historical sprints + Backlog lane. (1) New “Historical sprints” section on every card — a permanent, append-only record of every sprint the item has ever been on. Populated automatically on save; entries CAN'T be removed via UI (unlike the editable “Sprints tracked” list right above it). (2) New Backlog lane designation. Set it in Manage → status with the “📥 Backlog” toggle (parallels ✓ Complete and 🕒 Scheduled). When a card is moved to the Backlog lane, its due date, end date, planning sprint, and Sprints-tracked list are all cleared — the card comes off the plan. Historical sprints are preserved so you can still see everywhere it's been. (3) One-time migration: existing “Backlog” lane is renamed to “To Do” (cards follow), a fresh empty “Backlog” lane is added, and the new lane is auto-designated as the Backlog lane. Guarded so it runs once.",
   "v2.25 — Fixed “opens with an old sprint filter” on mobile. Cause: a URL/bookmark saved last week keeps re-applying its stale sprint on every reopen; the first-session auto-set (added in v2.13) only kicked in when NO sprint filter existed, so a bookmarked URL like ?flt_sprint=2026-W34 wasn't touched. Now the first-session pass also overrides sprint filters that only carry past weeks — a URL scope that includes the current or a future week is still respected as intentional.",
   "v2.24 — Bulk-add subtasks: paste a multi-line list (from a doc, notes, an email — anything) into the “Add a subtask…” field and each non-blank line becomes its own subtask. Leading bullets/dashes/numbering (1., -, •, *) are stripped automatically, and case-insensitive duplicates are skipped so re-pasting doesn't double up. Single-line pastes still behave normally (typed input).",
@@ -1051,7 +1056,7 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt";
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
   if (!ymdStr) return "";
@@ -1805,6 +1810,16 @@ async function renameList(kind, item, newName) {
 /* ---------- render board ---------- */
 function isOverdue(c) { if (!c.due || c.status === "Live") return false; const t = new Date(); t.setHours(0,0,0,0); return new Date(c.due + "T00:00:00") < t; }
 function fmtDue(d) { if (!d) return ""; return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
+// Compact ISO-timestamp → "Aug 27" (or "Aug 27, 2025" if a different year). Used for the "added" affordance next
+// to subtasks and the "updated" hint by the Notes field.
+function fmtIso(iso) {
+  if (!iso) return "";
+  const d = new Date(iso); if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  const opts = d.getFullYear() === now.getFullYear() ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" };
+  return d.toLocaleDateString(undefined, opts);
+}
+function nowIso() { return (new Date()).toISOString(); }
 function esc(s) { return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 // ── Notes rich text (WYSIWYG, stored as sanitized HTML) ──
 const NOTE_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "SPAN", "UL", "OL", "LI", "A"]);
@@ -3318,10 +3333,14 @@ function updateSprintField() {
   renderSprintTrack();
 }
 // Live "Sprints tracked" preview from the modal's current state: saved history ∪ the sprint(s) this edit would record.
-// Render the read-only "Historical sprints" list from the currently-open card. Chips have no ✕. Also includes
-// any sprints the current form values would record (so the preview reflects what will be added on save).
+// Render the read-only "Historical sprints" list from the currently-open card. Chips have no ✕. Collapsed by
+// default (this can be a long list); the label acts as a toggle. Also includes any sprints the current form
+// values would record so the preview reflects what will be added on save.
+let _sprintHistOpen = false;
 function renderSprintHist(card) {
-  const wrap = document.getElementById("f_sprintHistWrap"), box = document.getElementById("f_sprintHist"); if (!wrap || !box) return;
+  const wrap = document.getElementById("f_sprintHistWrap"), box = document.getElementById("f_sprintHist"),
+        label = document.getElementById("f_sprintHistLabel"), countEl = document.getElementById("f_sprintHistCount");
+  if (!wrap || !box) return;
   const dueInp = document.getElementById("f_due"), endInp = document.getElementById("f_end"), sprintInp = document.getElementById("f_sprint");
   const due = dueInp.value; const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const end = endShown ? endInp.value : "";
@@ -3331,7 +3350,11 @@ function renderSprintHist(card) {
   const all = new Set([...(card ? cardHistoricalSprints(card) : []), ...modalSprintHist, ...cur]);
   const track = [...all].filter(Boolean).sort();
   wrap.style.display = track.length ? "" : "none";
+  if (countEl) countEl.textContent = track.length ? "(" + track.length + ")" : "";
+  if (label) { label.firstChild.nodeValue = (_sprintHistOpen ? "▾ " : "▸ ") + "Historical sprints "; label.onclick = () => { _sprintHistOpen = !_sprintHistOpen; renderSprintHist(card); }; }
+  box.style.display = _sprintHistOpen ? "" : "none";
   box.innerHTML = "";
+  if (!_sprintHistOpen) return;
   track.forEach(w => {
     const chip = document.createElement("span"); chip.className = "track-chip"; chip.style.cssText = sprintChipStyle(w);
     chip.appendChild(document.createTextNode(fmtSprintFull(w)));
@@ -3490,7 +3513,7 @@ function renderSubsEdit() {
       if (e.key !== "Enter") return;
       e.preventDefault(); e.stopPropagation();
       if (e.shiftKey) return;
-      const ns = { id: subId(), text: "", done: false };
+      const ns = { id: subId(), text: "", done: false, addedAt: nowIso() };
       modalSubs.splice(idx + 1, 0, ns); renderSubsEdit();
       const next = document.querySelectorAll("#f_subs .sub-text")[idx + 1]; if (next) next.focus();
     });
@@ -3509,7 +3532,11 @@ function renderSubsEdit() {
     conv.onclick = () => convertSubtaskToDeliverable(s);
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
     rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
-    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(own); row.appendChild(due); row.appendChild(conv); row.appendChild(rm); box.appendChild(row);
+    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(own); row.appendChild(due); row.appendChild(conv); row.appendChild(rm);
+    // "added [date]" affordance — only shown for subtasks that carry a timestamp (new/imported ones going forward;
+    // subtasks written before v2.27 don't have addedAt, so nothing shows there — we don't want to falsely claim a date).
+    if (s.addedAt) { const t = document.createElement("span"); t.className = "sub-added"; t.textContent = "added " + fmtIso(s.addedAt); t.title = new Date(s.addedAt).toLocaleString(); row.appendChild(t); }
+    box.appendChild(row);
   });
 }
 // Turn a subtask row into a full deliverable card. Uses the subtask's text/owner/due, inherits the parent card's brand/channel/promotion.
@@ -3563,7 +3590,7 @@ function renderEmailsEdit() {
 }
 function addModalSub() {
   const inp = document.getElementById("f_subAdd"); const t = inp.value.trim(); if (!t) return;
-  modalSubs.push({ id: subId(), text: t, done: false }); inp.value = ""; renderSubsEdit(); inp.focus();
+  modalSubs.push({ id: subId(), text: t, done: false, addedAt: nowIso() }); inp.value = ""; renderSubsEdit(); inp.focus();
 }
 // Add many subtasks at once (one per non-blank line). Trims each line and dedupes against what's already in the
 // list so re-pasting the same list doesn't produce duplicates.
@@ -3575,7 +3602,7 @@ function addModalSubs(lines) {
     if (!t) return;
     const k = t.toLowerCase(); if (existing.has(k)) return;
     existing.add(k);
-    modalSubs.push({ id: subId(), text: t, done: false });
+    modalSubs.push({ id: subId(), text: t, done: false, addedAt: nowIso() });
     added++;
   });
   if (added) renderSubsEdit();
@@ -3675,15 +3702,21 @@ function openModal(card, prefill) {
   const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
   updateSprintField();   // also renders the Sprints-tracked preview
-  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "" })) : [];
+  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "", addedAt: s.addedAt || "" })) : [];
   modalEmails = card ? cardEmails(card).map(e => Object.assign({}, e)) : [];
   renderEmailsEdit();
   modalSprintHist = card ? cardSprintHistory(card).slice() : [];   // working copy for the Sprints-tracked chips (editable)
+  _sprintHistOpen = false;   // historical sprints start collapsed on every modal open
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : ((prefill && prefill.status && statusList.some(s => s.name === prefill.status)) ? prefill.status : (statusList[0] ? statusList[0].name : "Backlog"));
   document.getElementById("f_notes").innerHTML = card ? notesToEditor(card.notes) : "";
+  // "Last updated" hint next to the Notes label — only shows when we have a stamp (set on save going forward).
+  const nu = document.getElementById("f_notesUpdated");
+  const nuStamp = card && card.fields && card.fields[NOTES_UPDATED_KEY];
+  nu.textContent = nuStamp ? "— updated " + fmtIso(nuStamp) : "";
+  if (nuStamp) nu.title = new Date(nuStamp).toLocaleString(); else nu.removeAttribute("title");
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
   document.getElementById("duplicateBtn").style.display = card ? "" : "none";   // only existing cards can be duplicated
   document.getElementById("overlay").classList.add("show");
@@ -3716,13 +3749,21 @@ function saveModal() {
   const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
   const derived = derivedSprintFor(dueVal, endVal);
   if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
-  const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; return o; }).filter(s => s.text || s.linkedCardId);
+  const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; if (s.addedAt) o.addedAt = s.addedAt; return o; }).filter(s => s.text || s.linkedCardId);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   if (modalEmails.length) fields[EMAILS_KEY] = modalEmails.map(e => ({ id: e.id, addedAt: e.addedAt, from: e.from || "", to: e.to || "", sent: e.sent || "", subject: e.subject || "", content: e.content || "" }));
   fields[SPRINTHIST_KEY] = modalSprintHist.slice();   // user's edited history (may be empty); updateCard will add this save's recorded sprints on top
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const notesEl = document.getElementById("f_notes");
   const notes = notesEl.textContent.trim() ? sanitizeNotes(notesEl.innerHTML) : "";   // empty editor → no notes
+  // Stamp a notes-updated timestamp when the notes text actually changed since load. Also seed it on first save
+  // (so a card that gets notes today shows "updated Aug 27" going forward). Old cards without any change keep
+  // their previously-saved timestamp; no note text at all → clear the stamp.
+  const existingCard = id ? cards.find(c => c.id === id) : null;
+  const prevNotes = existingCard ? (existingCard.notes || "") : "";
+  const prevStamp = existingCard && existingCard.fields && existingCard.fields[NOTES_UPDATED_KEY];
+  const notesStamp = notes ? (notes !== prevNotes ? nowIso() : (prevStamp || nowIso())) : "";
+  if (notesStamp) fields[NOTES_UPDATED_KEY] = notesStamp; else delete fields[NOTES_UPDATED_KEY];
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: notes, fields };
