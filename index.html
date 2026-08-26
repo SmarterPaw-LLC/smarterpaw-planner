@@ -897,8 +897,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.28";
+const VERSION = "2.29";
 const CHANGELOG = [
+  "v2.29 — Notes view subtasks now show the added-at date in the meta line (“— added Aug 27”), same affordance as the modal editor. Hover the meta shows the full timestamp.",
   "v2.28 — Fixed the Manage panel row wrapping when a lane had three designation buttons (✓ Complete / 🕒 Scheduled / 📥 Backlog) plus ↑ ↓ Rename Remove. Collapsed the three buttons into a single compact “role” dropdown (they're mutually exclusive anyway — a lane is one thing at a time), so the row fits on one line and reads clearly.",
   "v2.27 — Record-keeping additions. (1) Every subtask added from now on carries a hidden “added [date]” timestamp — shown as a small gray line under the row. Subtasks written before this version don't have a stamp (we don't fabricate one); only new adds show it. (2) Notes now show “— updated [date]” next to their label, stamped on save when the text actually changed. (3) Historical sprints is now a collapsible section, collapsed by default so it doesn't crowd the modal; the label acts as the toggle and shows the count.",
   "v2.26 — Historical sprints + Backlog lane. (1) New “Historical sprints” section on every card — a permanent, append-only record of every sprint the item has ever been on. Populated automatically on save; entries CAN'T be removed via UI (unlike the editable “Sprints tracked” list right above it). (2) New Backlog lane designation. Set it in Manage → status with the “📥 Backlog” toggle (parallels ✓ Complete and 🕒 Scheduled). When a card is moved to the Backlog lane, its due date, end date, planning sprint, and Sprints-tracked list are all cleared — the card comes off the plan. Historical sprints are preserved so you can still see everywhere it's been. (3) One-time migration: existing “Backlog” lane is renamed to “To Do” (cards follow), a fresh empty “Backlog” lane is added, and the new lane is auto-designated as the Backlog lane. Guarded so it runs once.",
@@ -2425,7 +2426,8 @@ function renderNotesView() {
           } else txt.textContent = s.text || "(untitled)";
           row.appendChild(txt);
           const bits = []; if (s.owner) bits.push(s.owner); if (s.due) bits.push(fmtDue(s.due));
-          if (bits.length) { const m = document.createElement("span"); m.className = "notes-sub-meta"; m.textContent = "— " + bits.join(" · "); row.appendChild(m); }
+          if (s.addedAt) bits.push("added " + fmtIso(s.addedAt));
+          if (bits.length) { const m = document.createElement("span"); m.className = "notes-sub-meta"; m.textContent = "— " + bits.join(" · "); if (s.addedAt) m.title = new Date(s.addedAt).toLocaleString(); row.appendChild(m); }
           sbox.appendChild(row);
         });
         body.appendChild(sbox);
