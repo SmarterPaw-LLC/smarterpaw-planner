@@ -167,6 +167,13 @@
   .sub-rm { flex: none; padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
   .sub-rm:hover { border-color: var(--danger); }
   .sub-added { flex: 0 0 100%; font-size: 11px; color: var(--muted); padding-left: 26px; margin-top: -2px; }
+  /* Subtask group header — a section title (like "Cat Toys:") that groups the subtasks below. Not a task, just a divider. */
+  .sub-row-header { padding-top: 4px; margin-top: 4px; border-top: 1px dashed var(--line); }
+  .sub-row-header:first-child { padding-top: 0; margin-top: 0; border-top: none; }
+  .sub-header-text { flex: 1; padding: 4px 6px; background: transparent; border: 1px solid transparent; font-weight: 700; text-decoration: underline; color: var(--text); font-size: 13px; }
+  .sub-header-text:focus { outline: none; border-color: var(--accent); background: rgba(109,93,252,.06); }
+  .notes-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
+  .lt-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
   @media (max-width: 600px) {
     .sub-owner, .sub-due { flex-basis: 40%; }
   }
@@ -897,8 +904,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.29";
+const VERSION = "2.30";
 const CHANGELOG = [
+  "v2.30 — Subtask group headers. A subtask whose text ends in “:” becomes a section title, not a task (no checkbox, no owner/due). Paste a structured list — e.g. “Cat Toys:” followed by product lines — and the headers get detected automatically; typing “Header:” in the add input also creates a header. Subtask counts (X/Y and progress bars) now ignore headers so they don't inflate the total. Headers render as underlined titles in the modal editor, Notes view, and expanded List view.",
   "v2.29 — Notes view subtasks now show the added-at date in the meta line (“— added Aug 27”), same affordance as the modal editor. Hover the meta shows the full timestamp.",
   "v2.28 — Fixed the Manage panel row wrapping when a lane had three designation buttons (✓ Complete / 🕒 Scheduled / 📥 Backlog) plus ↑ ↓ Rename Remove. Collapsed the three buttons into a single compact “role” dropdown (they're mutually exclusive anyway — a lane is one thing at a time), so the row fits on one line and reads clearly.",
   "v2.27 — Record-keeping additions. (1) Every subtask added from now on carries a hidden “added [date]” timestamp — shown as a small gray line under the row. Subtasks written before this version don't have a stamp (we don't fabricate one); only new adds show it. (2) Notes now show “— updated [date]” next to their label, stamped on save when the text actually changed. (3) Historical sprints is now a collapsible section, collapsed by default so it doesn't crowd the modal; the label acts as the toggle and shows the count.",
@@ -1166,7 +1174,7 @@ function makeEmailEntry(rawText) {
     content: sanitizeNotes(formatEmailPaste(rawText)),
   };
 }
-function subProgress(c) { const st = cardSubtasks(c); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
+function subProgress(c) { const st = cardSubtasks(c).filter(s => s.type !== "header"); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
 function allSprints() { return [...new Set(cards.map(cardSprint).filter(Boolean))].sort(); } // ISO week strings sort chronologically
 function fmtSprint(w) { const m = /^(\d{4})-W(\d{2})$/.exec(w || ""); return m ? "Wk " + (+m[2]) + " ’" + m[1].slice(2) : (w || ""); }
 // Sprint label WITH its date range, e.g. "Wk 25 ’26 · Jun 15 – Jun 21" — used wherever a sprint is shown.
@@ -2414,6 +2422,11 @@ function renderNotesView() {
       if (subs.length) {
         const sbox = document.createElement("div"); sbox.className = "notes-subs";
         subs.forEach(s => {
+          // Header rows render as underlined section titles (no checkbox, no meta).
+          if (s.type === "header") {
+            const h = document.createElement("div"); h.className = "notes-sub-header"; h.textContent = (s.text || "").trim() + ":";
+            sbox.appendChild(h); return;
+          }
           const row = document.createElement("div"); row.className = "notes-sub";
           const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
           cb.onclick = e => { e.stopPropagation(); toggleInlineSubtask(c.id, s.id, cb.checked); };
@@ -2557,6 +2570,10 @@ function listTaskEl(c) {
   if (exp) {
     const sb = document.createElement("div"); sb.className = "lt-subs";
     subs.forEach(s => {
+      if (s.type === "header") {
+        const h = document.createElement("div"); h.className = "lt-sub-header"; h.textContent = (s.text || "").trim() + ":";
+        sb.appendChild(h); return;
+      }
       const row = document.createElement("div"); row.className = "lt-sub-row";
       const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
       cb.onchange = () => { s.done = cb.checked; setCardField(c, SUBTASKS_KEY, cardSubtasks(c)); saveCardFields(c); renderList(); };
@@ -3464,8 +3481,10 @@ function renderOwnerChips() {
 }
 function renderSubsEdit() {
   const box = document.getElementById("f_subs"); box.innerHTML = "";
-  const done = modalSubs.filter(s => s.done).length;
-  document.getElementById("f_subProg").textContent = modalSubs.length ? "(" + done + "/" + modalSubs.length + ")" : "";
+  // Count actual subtasks only — header rows are group titles, not work items.
+  const items = modalSubs.filter(s => s.type !== "header");
+  const done = items.filter(s => s.done).length;
+  document.getElementById("f_subProg").textContent = items.length ? "(" + done + "/" + items.length + ")" : "";
   modalSubs.forEach((s, idx) => {
     const row = document.createElement("div"); row.className = "sub-row"; row.dataset.idx = String(idx);
     // Drag handle — grab here to reorder. Whole row participates in drag (handle sets draggable via mousedown).
@@ -3489,6 +3508,26 @@ function renderSubsEdit() {
       modalSubs.splice(to, 0, moved);
       renderSubsEdit();
     });
+    // Header row — a group divider inserted via a paste line ending in ":" or via the "＋ Header" button. No
+    // checkbox, no owner/due, no convert. Editable label + drag handle + ✕. Groups collapse together for a
+    // clean look; the row stays visually distinct via the .sub-row-header modifier class.
+    if (s.type === "header") {
+      row.classList.add("sub-row-header");
+      const hInp = document.createElement("input"); hInp.className = "sub-header-text"; hInp.value = s.text; hInp.placeholder = "Section title";
+      hInp.oninput = () => { s.text = hInp.value; };
+      hInp.addEventListener("keydown", e => {
+        if (e.key !== "Enter") return;
+        e.preventDefault(); e.stopPropagation();
+        if (e.shiftKey) return;
+        const ns = { id: subId(), text: "", done: false, addedAt: nowIso() };
+        modalSubs.splice(idx + 1, 0, ns); renderSubsEdit();
+        const next = document.querySelectorAll("#f_subs .sub-text, #f_subs .sub-header-text")[idx + 1]; if (next) next.focus();
+      });
+      const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove header";
+      rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
+      row.appendChild(grip); row.appendChild(hInp); row.appendChild(rm); box.appendChild(row);
+      return;
+    }
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
     cb.onchange = () => { s.done = cb.checked; renderSubsEdit(); };
     // If this subtask was already converted, render as a link pill to the target deliverable (opens it on click).
@@ -3595,16 +3634,27 @@ function renderEmailsEdit() {
 }
 function addModalSub() {
   const inp = document.getElementById("f_subAdd"); const t = inp.value.trim(); if (!t) return;
-  modalSubs.push({ id: subId(), text: t, done: false, addedAt: nowIso() }); inp.value = ""; renderSubsEdit(); inp.focus();
+  // Typing something like "Cat Toys:" → add as a section header instead of a task.
+  const headerMatch = /^(.+?):\s*$/.exec(t);
+  if (headerMatch) modalSubs.push({ id: subId(), text: headerMatch[1].trim(), type: "header", addedAt: nowIso() });
+  else modalSubs.push({ id: subId(), text: t, done: false, addedAt: nowIso() });
+  inp.value = ""; renderSubsEdit(); inp.focus();
 }
 // Add many subtasks at once (one per non-blank line). Trims each line and dedupes against what's already in the
 // list so re-pasting the same list doesn't produce duplicates.
 function addModalSubs(lines) {
-  const existing = new Set(modalSubs.map(s => (s.text || "").trim().toLowerCase()));
+  const existing = new Set(modalSubs.filter(s => s.type !== "header").map(s => (s.text || "").trim().toLowerCase()));
   let added = 0;
   lines.forEach(raw => {
     const t = (raw || "").replace(/^[\s\-*•\d.)\]]+\s*/, "").trim();   // strip leading list markers/bullets/numbering
     if (!t) return;
+    // Line ending in ":" (or the whole line is bold-styled markdown) → treat as a group header, not a task. Headers
+    // aren't deduped since two sections may legitimately share a title in different contexts.
+    const headerMatch = /^(.+?):\s*$/.exec(t);
+    if (headerMatch) {
+      modalSubs.push({ id: subId(), text: headerMatch[1].trim(), type: "header", addedAt: nowIso() });
+      added++; return;
+    }
     const k = t.toLowerCase(); if (existing.has(k)) return;
     existing.add(k);
     modalSubs.push({ id: subId(), text: t, done: false, addedAt: nowIso() });
@@ -3707,7 +3757,7 @@ function openModal(card, prefill) {
   const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
   document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
   updateSprintField();   // also renders the Sprints-tracked preview
-  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "", addedAt: s.addedAt || "" })) : [];
+  modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "", addedAt: s.addedAt || "", type: s.type || "" })) : [];
   modalEmails = card ? cardEmails(card).map(e => Object.assign({}, e)) : [];
   renderEmailsEdit();
   modalSprintHist = card ? cardSprintHistory(card).slice() : [];   // working copy for the Sprints-tracked chips (editable)
@@ -3754,7 +3804,7 @@ function saveModal() {
   const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
   const derived = derivedSprintFor(dueVal, endVal);
   if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
-  const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; if (s.addedAt) o.addedAt = s.addedAt; return o; }).filter(s => s.text || s.linkedCardId);
+  const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; if (s.addedAt) o.addedAt = s.addedAt; if (s.type) o.type = s.type; return o; }).filter(s => s.text || s.linkedCardId);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   if (modalEmails.length) fields[EMAILS_KEY] = modalEmails.map(e => ({ id: e.id, addedAt: e.addedAt, from: e.from || "", to: e.to || "", sent: e.sent || "", subject: e.subject || "", content: e.content || "" }));
   fields[SPRINTHIST_KEY] = modalSprintHist.slice();   // user's edited history (may be empty); updateCard will add this save's recorded sprints on top
