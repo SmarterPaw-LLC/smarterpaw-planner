@@ -386,6 +386,8 @@
   #userOverlayChoices button.on { border-color: var(--accent); background: rgba(109,93,252,.15); }
   .row-ctrls { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .mv { padding: 2px 8px; color: var(--text); border-color: transparent; background: transparent; font-weight: 700; }
+  .lane-dsg { padding: 3px 6px; font-size: 12px; font-weight: 600; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .lane-dsg:hover { border-color: var(--accent); }
   .mv:hover { border-color: var(--accent); }
   .mv:disabled { opacity: .25; cursor: default; border-color: transparent; }
   .lane-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
@@ -895,8 +897,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.27";
+const VERSION = "2.28";
 const CHANGELOG = [
+  "v2.28 — Fixed the Manage panel row wrapping when a lane had three designation buttons (✓ Complete / 🕒 Scheduled / 📥 Backlog) plus ↑ ↓ Rename Remove. Collapsed the three buttons into a single compact “role” dropdown (they're mutually exclusive anyway — a lane is one thing at a time), so the row fits on one line and reads clearly.",
   "v2.27 — Record-keeping additions. (1) Every subtask added from now on carries a hidden “added [date]” timestamp — shown as a small gray line under the row. Subtasks written before this version don't have a stamp (we don't fabricate one); only new adds show it. (2) Notes now show “— updated [date]” next to their label, stamped on save when the text actually changed. (3) Historical sprints is now a collapsible section, collapsed by default so it doesn't crowd the modal; the label acts as the toggle and shows the count.",
   "v2.26 — Historical sprints + Backlog lane. (1) New “Historical sprints” section on every card — a permanent, append-only record of every sprint the item has ever been on. Populated automatically on save; entries CAN'T be removed via UI (unlike the editable “Sprints tracked” list right above it). (2) New Backlog lane designation. Set it in Manage → status with the “📥 Backlog” toggle (parallels ✓ Complete and 🕒 Scheduled). When a card is moved to the Backlog lane, its due date, end date, planning sprint, and Sprints-tracked list are all cleared — the card comes off the plan. Historical sprints are preserved so you can still see everywhere it's been. (3) One-time migration: existing “Backlog” lane is renamed to “To Do” (cards follow), a fresh empty “Backlog” lane is added, and the new lane is auto-designated as the Backlog lane. Guarded so it runs once.",
   "v2.25 — Fixed “opens with an old sprint filter” on mobile. Cause: a URL/bookmark saved last week keeps re-applying its stale sprint on every reopen; the first-session auto-set (added in v2.13) only kicked in when NO sprint filter existed, so a bookmarked URL like ?flt_sprint=2026-W34 wasn't touched. Now the first-session pass also overrides sprint filters that only carry past weeks — a URL scope that includes the current or a future week is still respected as intentional.",
@@ -3954,15 +3957,23 @@ function manageRow(kind, item, idx) {
   left.appendChild(document.createTextNode(item.name));
   const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
   if (kind === "status") {
-    const comp = document.createElement("button"); comp.textContent = "✓ Complete"; comp.className = "mv comp" + (completeLane === item.name ? " on" : "");
-    comp.title = completeLane === item.name ? "This is the Complete lane — click to unset" : "Mark this as the Complete lane";
-    comp.onclick = () => setComplete(item); ctrls.appendChild(comp);
-    const sch = document.createElement("button"); sch.textContent = "🕒 Scheduled"; sch.className = "mv sched" + (effScheduledLane() === item.name ? " on" : "");
-    sch.title = effScheduledLane() === item.name ? "This is the Scheduled lane — click to unset" : "Mark this as the Scheduled lane (clock badge)";
-    sch.onclick = () => setScheduled(item); ctrls.appendChild(sch);
-    const bkl = document.createElement("button"); bkl.textContent = BACKLOG_ICON + " Backlog"; bkl.className = "mv sched" + (effBacklogLane() === item.name ? " on" : "");
-    bkl.title = effBacklogLane() === item.name ? "This is the Backlog lane — click to unset. Cards moved here get their due/end/planning-sprint/sprints-tracked cleared (Historical sprints kept)." : "Mark this as the Backlog lane — moving a card here strips sprint data (keeps Historical).";
-    bkl.onclick = () => setBacklog(item); ctrls.appendChild(bkl);
+    // Designation dropdown — collapses the three mutually-exclusive lane roles (Complete / Scheduled / Backlog)
+    // into one compact selector so the row doesn't wrap. Picking one designation clears the others.
+    const cur = completeLane === item.name ? "complete" : effScheduledLane() === item.name ? "scheduled" : effBacklogLane() === item.name ? "backlog" : "";
+    const dsg = document.createElement("select"); dsg.className = "mv lane-dsg"; dsg.title = "Designate this lane's role";
+    [["", "— role —"], ["complete", "✓ Complete"], ["scheduled", "🕒 Scheduled"], ["backlog", BACKLOG_ICON + " Backlog"]].forEach(([v, l]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === cur) o.selected = true; dsg.appendChild(o);
+    });
+    dsg.onchange = () => {
+      const v = dsg.value;
+      if (cur === "complete") setComplete(item);   // toggles off (since it was on)
+      if (cur === "scheduled") setScheduled(item);
+      if (cur === "backlog") setBacklog(item);
+      if (v === "complete" && cur !== "complete") setComplete(item);
+      if (v === "scheduled" && cur !== "scheduled") setScheduled(item);
+      if (v === "backlog" && cur !== "backlog") setBacklog(item);
+    };
+    ctrls.appendChild(dsg);
     const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
     const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
     ctrls.appendChild(up); ctrls.appendChild(dn);
