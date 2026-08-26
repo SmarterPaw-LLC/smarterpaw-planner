@@ -682,6 +682,7 @@
       <input id="f_sprint" type="date" onchange="renderSprintTrack()" />
     </div>
     <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
+    <div class="field" id="f_sprintHistWrap" style="display:none"><label>Historical sprints <span class="opt">— permanent record; entries can't be removed</span></label><div id="f_sprintHist" class="sprint-track"></div></div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
     <div class="field"><label>Priority</label><select id="f_priority"></select></div>
     <div class="field"><label>Promotion</label>
@@ -890,8 +891,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.25";
+const VERSION = "2.26";
 const CHANGELOG = [
+  "v2.26 — Historical sprints + Backlog lane. (1) New “Historical sprints” section on every card — a permanent, append-only record of every sprint the item has ever been on. Populated automatically on save; entries CAN'T be removed via UI (unlike the editable “Sprints tracked” list right above it). (2) New Backlog lane designation. Set it in Manage → status with the “📥 Backlog” toggle (parallels ✓ Complete and 🕒 Scheduled). When a card is moved to the Backlog lane, its due date, end date, planning sprint, and Sprints-tracked list are all cleared — the card comes off the plan. Historical sprints are preserved so you can still see everywhere it's been. (3) One-time migration: existing “Backlog” lane is renamed to “To Do” (cards follow), a fresh empty “Backlog” lane is added, and the new lane is auto-designated as the Backlog lane. Guarded so it runs once.",
   "v2.25 — Fixed “opens with an old sprint filter” on mobile. Cause: a URL/bookmark saved last week keeps re-applying its stale sprint on every reopen; the first-session auto-set (added in v2.13) only kicked in when NO sprint filter existed, so a bookmarked URL like ?flt_sprint=2026-W34 wasn't touched. Now the first-session pass also overrides sprint filters that only carry past weeks — a URL scope that includes the current or a future week is still respected as intentional.",
   "v2.24 — Bulk-add subtasks: paste a multi-line list (from a doc, notes, an email — anything) into the “Add a subtask…” field and each non-blank line becomes its own subtask. Leading bullets/dashes/numbering (1., -, •, *) are stripped automatically, and case-insensitive duplicates are skipped so re-pasting doesn't double up. Single-line pastes still behave normally (typed input).",
   "v2.23 — Sprints-tracked chips are now removable in every case. Previously the ✕ was hidden on chips implied by the current due date or manual planning sprint (removing would just re-appear on save). Now clicking ✕ on a due-derived chip prompts to clear the due/end dates; ✕ on a planning-derived chip clears the planning sprint field; ✕ on a history-only chip works as before. Chips also show a small “· from date” or “· planning” tag so you can see WHY each one is on the card.",
@@ -1049,7 +1051,7 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints";
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
   if (!ymdStr) return "";
@@ -1100,6 +1102,10 @@ function derivedSprintFor(due, end) { const a = due || end, b = end || due; retu
 function cardSprint(c) { return derivedSprintFor(c.due, c.end) || ((c.fields && c.fields[SPRINT_KEY]) || ""); }
 // Record of distinct sprints a task has been assigned to over time (carryover tracking).
 function cardSprintHistory(c) { return (c.fields && Array.isArray(c.fields[SPRINTHIST_KEY])) ? c.fields[SPRINTHIST_KEY] : []; }
+// Historical sprints — the permanent, append-only record of every sprint this card has ever been in. Unlike the
+// editable "Sprints tracked" list (SPRINTHIST_KEY), entries here can NEVER be removed via UI. Used for durable
+// reporting and for the Backlog lane, which strips current sprint data but preserves this list.
+function cardHistoricalSprints(c) { return (c.fields && Array.isArray(c.fields[HIST_SPRINTS_KEY])) ? c.fields[HIST_SPRINTS_KEY] : []; }
 // Every ISO sprint week a date range covers (start week → end week).
 function sprintsInRange(due, end) {
   const a = due || end, b = end || due; if (!a) return [];
@@ -1385,6 +1391,30 @@ function setScheduled(item) {
   afterListsChanged();
 }
 const SCHED_ICON = "🕒";
+// Backlog lane — parallels Complete and Scheduled. Cards moved to the Backlog lane get their sprint data
+// stripped (due, end, planning sprint, sprints-tracked history) — EXCEPT the append-only Historical sprints
+// list — because they're intentionally being un-planned. localStorage-scoped like scheduledLane.
+let backlogLane = localStorage.getItem("planner-backlog-lane");
+function effBacklogLane() {
+  if (backlogLane !== null) return backlogLane;
+  const s = statusList.find(x => /^backlog$/i.test(x.name));
+  return s ? s.name : "";
+}
+function setBacklog(item) {
+  backlogLane = (effBacklogLane() === item.name) ? "" : item.name;
+  localStorage.setItem("planner-backlog-lane", backlogLane || "");
+  afterListsChanged();
+}
+const BACKLOG_ICON = "📥";
+// Called whenever a card's status is about to become the Backlog lane — clears due/end/planning-sprint and the
+// editable sprints-tracked list, but keeps the historical sprints record. Returns the fields blob to persist.
+function applyBacklogClear(c) {
+  c.due = ""; c.end = "";
+  const f = Object.assign({}, c.fields || {});
+  delete f[SPRINT_KEY]; delete f[SPRINTHIST_KEY];
+  c.fields = f;
+  return f;
+}
 function schedBadge(c) { const sl = effScheduledLane(); return (sl && c.status === sl) ? '<span class="sched-check" title="Scheduled">' + SCHED_ICON + '</span> ' : ''; }
 let filters = {};   // quick sprint filter from the List header: { sprint: Set }
 let filterRules = [];      // advanced Filter panel: [{ field, op:'is'|'isnot'|'empty'|'notempty', values:[] }]
@@ -1498,7 +1528,7 @@ function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel,
   due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {} }; }
 async function createCard(d) {
   const weeks = recordedSprints(d);
-  if (weeks.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = weeks; }
+  if (weeks.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = weeks; d.fields[HIST_SPRINTS_KEY] = weeks.slice(); }
   if (!ONLINE) { const id = uid(); cards.push(Object.assign({ id }, d)); saveLocal(); render(); return id; }
   const { data, error } = await db.from("deliverables").insert(dbObj(d)).select("id").single();
   if (error) { toast("Save failed: " + error.message); return null; }
@@ -1507,19 +1537,44 @@ async function createCard(d) {
 }
 async function updateCard(id, d) {
   const existing = cards.find(c => c.id === id);
-  // Start from the explicit history the modal saved (respects user removals via the ✕ chips); fall back to the in-memory card for direct callers.
+  // If the new status is the Backlog lane, strip current sprint data: due/end/planning-sprint/sprints-tracked
+  // all get cleared. Historical sprints (see below) are preserved as the permanent record.
+  const bl = effBacklogLane();
+  if (bl && d.status === bl && existing && existing.status !== bl) {
+    d.due = ""; d.end = "";
+    d.fields = Object.assign({}, d.fields || {});
+    delete d.fields[SPRINT_KEY]; delete d.fields[SPRINTHIST_KEY];
+  }
+  // Editable "Sprints tracked" (SPRINTHIST_KEY): start from what the modal saved (respects ✕ removals); fall back
+  // to the in-memory card for direct callers. Merge in the sprints implied by the current form values.
   const base = (d.fields && Array.isArray(d.fields[SPRINTHIST_KEY])) ? d.fields[SPRINTHIST_KEY].slice() : cardSprintHistory(existing);
   const merged = [...base];
   recordedSprints(d).forEach(w => { if (!merged.includes(w)) merged.push(w); });
   if (merged.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = merged; }
   else if (d.fields) delete d.fields[SPRINTHIST_KEY];
+  // Append-only Historical sprints (HIST_SPRINTS_KEY): union of previous historical + editable-tracked + currently
+  // recorded. Never removed. This is the durable record even when the editable list gets pruned or the Backlog
+  // lane wipes the current sprint data.
+  const hist = new Set([...(cardHistoricalSprints(existing) || []), ...merged]);
+  recordedSprints(d).forEach(w => hist.add(w));
+  if (hist.size) { d.fields = d.fields || {}; d.fields[HIST_SPRINTS_KEY] = [...hist].sort(); }
   if (!ONLINE) { Object.assign(cards.find(c => c.id === id), d); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").update(dbObj(d)).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
 }
 async function patchStatus(id, status) {
-  if (!ONLINE) { cards.find(c => c.id === id).status = status; saveLocal(); render(); return; }
-  const { error } = await db.from("deliverables").update({ status }).eq("id", id);
+  const c = cards.find(x => x.id === id); if (!c) return;
+  // If we're moving into the Backlog lane, wipe current sprint data (keeps Historical). Otherwise: just status.
+  const bl = effBacklogLane();
+  const enteringBacklog = bl && status === bl && c.status !== bl;
+  const patch = { status };
+  if (enteringBacklog) {
+    const fields = applyBacklogClear(c);
+    patch.due = null; patch.end_date = null; patch.fields = fields;
+  }
+  c.status = status;
+  if (!ONLINE) { saveLocal(); render(); return; }
+  const { error } = await db.from("deliverables").update(patch).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
 }
 async function patchDue(id, due) {
@@ -1635,6 +1690,26 @@ async function setColor(item, color) {
   if (error) toast("Color save failed: " + error.message); else reloadListsAndUI();
 }
 async function reloadListsAndUI() { await loadLists(); afterListsChanged(); }
+// One-time migration: rename an existing "Backlog" lane to "To Do" (cards on that lane follow), add a fresh
+// "Backlog" lane, and designate it as the backlog lane. Guarded by a localStorage flag AND idempotent (skips if
+// "To Do" already exists). Only runs online — offline installs shouldn't reshape a shared DB.
+async function maybeMigrateBacklogTodo() {
+  if (!ONLINE) return;
+  if (localStorage.getItem("planner-backlog-todo-migrated-v1")) return;
+  const hasTodo = statusList.some(s => /^to\s?do$/i.test(s.name));
+  const oldBl = statusList.find(s => /^backlog$/i.test(s.name));
+  if (hasTodo || !oldBl) { localStorage.setItem("planner-backlog-todo-migrated-v1", "1"); return; }
+  try {
+    await db.from("lists").update({ name: "To Do" }).eq("id", oldBl.id);
+    await db.from("deliverables").update({ status: "To Do" }).eq("status", oldBl.name);
+    await db.from("lists").insert({ kind: "status", name: "Backlog", position: statusList.length + 1 });
+    await reloadListsAndUI();
+    const newBl = statusList.find(s => /^backlog$/i.test(s.name));
+    if (newBl) { backlogLane = newBl.name; localStorage.setItem("planner-backlog-lane", backlogLane); }
+    localStorage.setItem("planner-backlog-todo-migrated-v1", "1");
+    toast("Migrated: “Backlog” → “To Do”; new empty “Backlog” lane added (moving cards here clears sprint data).");
+  } catch (e) { toast("Backlog migration failed: " + (e && e.message)); }
+}
 function afterListsChanged() {
   buildChannelSelect(); buildStatusSelect();
   if (modalOpen) renderOwnerChips();
@@ -2832,6 +2907,13 @@ function renderGridBulkBar() {
 // Build a per-card patch for the requested bulk edit (handles top-level columns AND the fields jsonb).
 function bulkBuildPatch(c, key, value) {
   const patch = {}; const setField = mutator => { const f = Object.assign({}, c.fields || {}); mutator(f); patch.fields = f; };
+  // Moving into the Backlog lane wipes current sprint data (same rule as patchStatus / updateCard).
+  const bl = effBacklogLane();
+  if (key === "status" && bl && value === bl && c.status !== bl) {
+    patch.status = value; patch.due = null; patch.end_date = null;
+    const f = Object.assign({}, c.fields || {}); delete f[SPRINT_KEY]; delete f[SPRINTHIST_KEY]; patch.fields = f;
+    return patch;
+  }
   if (["brand","channel","owner","status","title","notes"].includes(key)) patch[key] = value;
   else if (key === "due") patch.due = value || null;
   else if (key === "end") patch.end_date = value || null;
@@ -3236,6 +3318,26 @@ function updateSprintField() {
   renderSprintTrack();
 }
 // Live "Sprints tracked" preview from the modal's current state: saved history ∪ the sprint(s) this edit would record.
+// Render the read-only "Historical sprints" list from the currently-open card. Chips have no ✕. Also includes
+// any sprints the current form values would record (so the preview reflects what will be added on save).
+function renderSprintHist(card) {
+  const wrap = document.getElementById("f_sprintHistWrap"), box = document.getElementById("f_sprintHist"); if (!wrap || !box) return;
+  const dueInp = document.getElementById("f_due"), endInp = document.getElementById("f_end"), sprintInp = document.getElementById("f_sprint");
+  const due = dueInp.value; const endShown = document.getElementById("f_endWrap").style.display !== "none";
+  const end = endShown ? endInp.value : "";
+  const cur = new Set(sprintsInRange(due, end));
+  const manualWk = sprintInp.value ? isoWeek(sprintInp.value) : "";
+  if (manualWk) cur.add(manualWk);
+  const all = new Set([...(card ? cardHistoricalSprints(card) : []), ...modalSprintHist, ...cur]);
+  const track = [...all].filter(Boolean).sort();
+  wrap.style.display = track.length ? "" : "none";
+  box.innerHTML = "";
+  track.forEach(w => {
+    const chip = document.createElement("span"); chip.className = "track-chip"; chip.style.cssText = sprintChipStyle(w);
+    chip.appendChild(document.createTextNode(fmtSprintFull(w)));
+    box.appendChild(chip);
+  });
+}
 function renderSprintTrack() {
   // Sprints tracked = union of the saved history AND the sprint(s) the CURRENT form values imply (due-date range + manual
   // planning sprint). "Derived" chips (implied by the current form) can't just be removed from history — they'd come back
@@ -3277,6 +3379,9 @@ function renderSprintTrack() {
     chip.appendChild(x);
     box.appendChild(chip);
   });
+  // Historical sprints live alongside — same trigger points, but they render independently and are read-only.
+  const editingId = document.getElementById("f_id").value;
+  renderSprintHist(editingId ? cards.find(c => c.id === editingId) : null);
 }
 function buildStatusSelect() {
   const ss = document.getElementById("f_status"); const cur = ss.value; ss.innerHTML = "";
@@ -3814,6 +3919,9 @@ function manageRow(kind, item, idx) {
     const sch = document.createElement("button"); sch.textContent = "🕒 Scheduled"; sch.className = "mv sched" + (effScheduledLane() === item.name ? " on" : "");
     sch.title = effScheduledLane() === item.name ? "This is the Scheduled lane — click to unset" : "Mark this as the Scheduled lane (clock badge)";
     sch.onclick = () => setScheduled(item); ctrls.appendChild(sch);
+    const bkl = document.createElement("button"); bkl.textContent = BACKLOG_ICON + " Backlog"; bkl.className = "mv sched" + (effBacklogLane() === item.name ? " on" : "");
+    bkl.title = effBacklogLane() === item.name ? "This is the Backlog lane — click to unset. Cards moved here get their due/end/planning-sprint/sprints-tracked cleared (Historical sprints kept)." : "Mark this as the Backlog lane — moving a card here strips sprint data (keeps Historical).";
+    bkl.onclick = () => setBacklog(item); ctrls.appendChild(bkl);
     const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
     const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
     ctrls.appendChild(up); ctrls.appendChild(dn);
@@ -4046,6 +4154,7 @@ function readUrl() {
 async function init() {
   fillStaticSelects();
   await loadLists();
+  await maybeMigrateBacklogTodo();   // one-time: rename Backlog→To Do + add new Backlog lane w/ special semantics
   readUrl();   // restore view + filters from the URL so a bookmarked link reopens the same view
   // First page-load per browser session: default the sprint filter to the current ISO week so the app opens on
   // "what's happening now." Skipped if the URL/bookmark already scoped a sprint (respects saved views + shared
