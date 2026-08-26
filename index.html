@@ -172,8 +172,14 @@
   .sub-row-header:first-child { padding-top: 0; margin-top: 0; border-top: none; }
   .sub-header-text { flex: 1; padding: 4px 6px; background: transparent; border: 1px solid transparent; font-weight: 700; text-decoration: underline; color: var(--text); font-size: 13px; }
   .sub-header-text:focus { outline: none; border-color: var(--accent); background: rgba(109,93,252,.06); }
+  /* Rollup count next to a header, e.g. "(3/8)". Gray, monospaced digits for scannability. */
+  .sub-header-count { flex: none; color: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* Non-header subtasks that live inside a group indent to make the rollup structure legible. */
+  .sub-row-in-group { padding-left: 18px; border-left: 2px solid var(--line); margin-left: 6px; }
   .notes-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
+  .notes-sub-in-group { padding-left: 14px; border-left: 2px solid var(--line); margin-left: 4px; }
   .lt-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
+  .lt-sub-in-group { padding-left: 14px; border-left: 2px solid var(--line); margin-left: 4px; }
   @media (max-width: 600px) {
     .sub-owner, .sub-due { flex-basis: 40%; }
   }
@@ -703,7 +709,7 @@
     </div>
     <div class="field"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
       <div id="f_subs" class="subs-edit"></div>
-      <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask… (paste a multi-line list to bulk-add)" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button></div>
+      <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask… (end with “:” for a group header, or paste a multi-line list)" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button><button type="button" id="f_subAddHeaderBtn" class="ghost" title="Add a group header (section title)">＋ Header</button></div>
     </div>
     <div class="field"><label>Emails <span id="f_emailCount" class="opt"></span></label>
       <div id="f_emails" class="emails-edit"></div>
@@ -904,8 +910,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.30";
+const VERSION = "2.31";
 const CHANGELOG = [
+  "v2.31 — Subtask groups made discoverable + real rollups. (1) Explicit “＋ Header” button next to the subtask add row — no more guessing that ending a line with “:” makes a header. (2) Each header now shows its group's rollup count (e.g. “Cat Toys: 3/8”) — modal editor, Notes view, and expanded List view. (3) Subtasks that belong to a header group are visually indented under it with a soft left border, so the structure reads at a glance. Removing a header keeps its subtasks (they merge into the group above).",
   "v2.30 — Subtask group headers. A subtask whose text ends in “:” becomes a section title, not a task (no checkbox, no owner/due). Paste a structured list — e.g. “Cat Toys:” followed by product lines — and the headers get detected automatically; typing “Header:” in the add input also creates a header. Subtask counts (X/Y and progress bars) now ignore headers so they don't inflate the total. Headers render as underlined titles in the modal editor, Notes view, and expanded List view.",
   "v2.29 — Notes view subtasks now show the added-at date in the meta line (“— added Aug 27”), same affordance as the modal editor. Hover the meta shows the full timestamp.",
   "v2.28 — Fixed the Manage panel row wrapping when a lane had three designation buttons (✓ Complete / 🕒 Scheduled / 📥 Backlog) plus ↑ ↓ Rename Remove. Collapsed the three buttons into a single compact “role” dropdown (they're mutually exclusive anyway — a lane is one thing at a time), so the row fits on one line and reads clearly.",
@@ -2421,13 +2428,16 @@ function renderNotesView() {
       const subs = cardSubtasks(c);
       if (subs.length) {
         const sbox = document.createElement("div"); sbox.className = "notes-subs";
-        subs.forEach(s => {
-          // Header rows render as underlined section titles (no checkbox, no meta).
+        const nCounts = subtaskGroupCounts(subs);
+        subs.forEach((s, i) => {
+          // Header rows render as underlined section titles + rollup count of items below.
           if (s.type === "header") {
-            const h = document.createElement("div"); h.className = "notes-sub-header"; h.textContent = (s.text || "").trim() + ":";
+            const h = document.createElement("div"); h.className = "notes-sub-header";
+            const gc = nCounts[s.id];
+            h.textContent = (s.text || "").trim() + ":" + (gc && gc.total ? "  " + gc.done + "/" + gc.total : "");
             sbox.appendChild(h); return;
           }
-          const row = document.createElement("div"); row.className = "notes-sub";
+          const row = document.createElement("div"); row.className = "notes-sub" + (subtaskInGroup(subs, i) ? " notes-sub-in-group" : "");
           const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
           cb.onclick = e => { e.stopPropagation(); toggleInlineSubtask(c.id, s.id, cb.checked); };
           row.appendChild(cb);
@@ -2569,12 +2579,15 @@ function listTaskEl(c) {
   top.appendChild(main); wrap.appendChild(top);
   if (exp) {
     const sb = document.createElement("div"); sb.className = "lt-subs";
-    subs.forEach(s => {
+    const lCounts = subtaskGroupCounts(subs);
+    subs.forEach((s, i) => {
       if (s.type === "header") {
-        const h = document.createElement("div"); h.className = "lt-sub-header"; h.textContent = (s.text || "").trim() + ":";
+        const h = document.createElement("div"); h.className = "lt-sub-header";
+        const gc = lCounts[s.id];
+        h.textContent = (s.text || "").trim() + ":" + (gc && gc.total ? "  " + gc.done + "/" + gc.total : "");
         sb.appendChild(h); return;
       }
-      const row = document.createElement("div"); row.className = "lt-sub-row";
+      const row = document.createElement("div"); row.className = "lt-sub-row" + (subtaskInGroup(subs, i) ? " lt-sub-in-group" : "");
       const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
       cb.onchange = () => { s.done = cb.checked; setCardField(c, SUBTASKS_KEY, cardSubtasks(c)); saveCardFields(c); renderList(); };
       const tx = document.createElement("span"); tx.className = "lt-sub-text" + (s.done ? " done" : ""); tx.textContent = s.text;
@@ -3479,12 +3492,26 @@ function renderOwnerChips() {
     const ok = await addList("person", name); if (ok) { modalOwners.add(name); renderOwnerChips(); } };
   box.appendChild(add);
 }
+// Walk a flat subtasks array and compute {headerId → {done, total}}. Headers group everything BELOW them up to
+// the next header (or end). Anything before the first header is ungrouped (not counted per-header).
+function subtaskGroupCounts(list) {
+  const out = {}; let cur = null;
+  list.forEach(s => {
+    if (s.type === "header") { cur = s.id; out[cur] = { done: 0, total: 0 }; return; }
+    if (!cur) return;   // items before the first header are ungrouped
+    out[cur].total++; if (s.done) out[cur].done++;
+  });
+  return out;
+}
+// Returns true if the item at position idx is inside any header group (i.e. some earlier row is a header).
+function subtaskInGroup(list, idx) { for (let i = 0; i < idx; i++) if (list[i].type === "header") return true; return false; }
 function renderSubsEdit() {
   const box = document.getElementById("f_subs"); box.innerHTML = "";
   // Count actual subtasks only — header rows are group titles, not work items.
   const items = modalSubs.filter(s => s.type !== "header");
   const done = items.filter(s => s.done).length;
   document.getElementById("f_subProg").textContent = items.length ? "(" + done + "/" + items.length + ")" : "";
+  const counts = subtaskGroupCounts(modalSubs);
   modalSubs.forEach((s, idx) => {
     const row = document.createElement("div"); row.className = "sub-row"; row.dataset.idx = String(idx);
     // Drag handle — grab here to reorder. Whole row participates in drag (handle sets draggable via mousedown).
@@ -3509,8 +3536,7 @@ function renderSubsEdit() {
       renderSubsEdit();
     });
     // Header row — a group divider inserted via a paste line ending in ":" or via the "＋ Header" button. No
-    // checkbox, no owner/due, no convert. Editable label + drag handle + ✕. Groups collapse together for a
-    // clean look; the row stays visually distinct via the .sub-row-header modifier class.
+    // checkbox, no owner/due, no convert. Shows "(done/total)" of items that follow it up to the next header.
     if (s.type === "header") {
       row.classList.add("sub-row-header");
       const hInp = document.createElement("input"); hInp.className = "sub-header-text"; hInp.value = s.text; hInp.placeholder = "Section title";
@@ -3523,11 +3549,15 @@ function renderSubsEdit() {
         modalSubs.splice(idx + 1, 0, ns); renderSubsEdit();
         const next = document.querySelectorAll("#f_subs .sub-text, #f_subs .sub-header-text")[idx + 1]; if (next) next.focus();
       });
-      const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove header";
+      const gc = counts[s.id]; const cnt = document.createElement("span"); cnt.className = "sub-header-count";
+      cnt.textContent = gc && gc.total ? "(" + gc.done + "/" + gc.total + ")" : "";
+      const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove header (subtasks in this group stay — they just get merged into the previous group)";
       rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
-      row.appendChild(grip); row.appendChild(hInp); row.appendChild(rm); box.appendChild(row);
+      row.appendChild(grip); row.appendChild(hInp); row.appendChild(cnt); row.appendChild(rm); box.appendChild(row);
       return;
     }
+    // Non-header rows get an "in a group" class so CSS can indent them below their header for the rollup look.
+    if (subtaskInGroup(modalSubs, idx)) row.classList.add("sub-row-in-group");
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
     cb.onchange = () => { s.done = cb.checked; renderSubsEdit(); };
     // If this subtask was already converted, render as a link pill to the target deliverable (opens it on click).
@@ -4412,6 +4442,15 @@ async function init() {
     closeEmailPaste();
   };
   document.getElementById("f_subAddBtn").onclick = addModalSub;
+  // Explicit "＋ Header" — uses whatever's in the add input (stripped of trailing ":") as the group title, or
+  // inserts a blank header ready to be typed if the input is empty.
+  document.getElementById("f_subAddHeaderBtn").onclick = () => {
+    const inp = document.getElementById("f_subAdd"); const raw = inp.value.trim().replace(/:\s*$/, "");
+    modalSubs.push({ id: subId(), text: raw, type: "header", addedAt: nowIso() });
+    inp.value = ""; renderSubsEdit();
+    // Focus the new header's input so you can type immediately if it was blank.
+    const inputs = document.querySelectorAll("#f_subs .sub-header-text"); const last = inputs[inputs.length - 1]; if (last) last.focus();
+  };
   document.getElementById("f_subAdd").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); addModalSub(); } });
   // Multi-line paste = bulk-add. Detected by having ≥1 newline; each non-blank line becomes its own subtask.
   document.getElementById("f_subAdd").addEventListener("paste", e => {
