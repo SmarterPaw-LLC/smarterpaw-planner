@@ -910,8 +910,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.31";
+const VERSION = "2.32";
 const CHANGELOG = [
+  "v2.32 — Fixed “paste flattens into a wall of text” in the notes editor. Cause: we were only reading text/plain from the clipboard, and rich sources (Google Docs, Word, web pages) don't put paragraph breaks in the plain version — they encode them as HTML block boundaries. Now the paste handler prefers the clipboard's text/html when present, sanitizes it through the same allowlist as saved notes (keeps P/DIV/BR/UL/OL/LI/formatting/links, strips inline styles/scripts/etc.), and falls back to plain text with URL linkification when no HTML is available.",
   "v2.31 — Subtask groups made discoverable + real rollups. (1) Explicit “＋ Header” button next to the subtask add row — no more guessing that ending a line with “:” makes a header. (2) Each header now shows its group's rollup count (e.g. “Cat Toys: 3/8”) — modal editor, Notes view, and expanded List view. (3) Subtasks that belong to a header group are visually indented under it with a soft left border, so the structure reads at a glance. Removing a header keeps its subtasks (they merge into the group above).",
   "v2.30 — Subtask group headers. A subtask whose text ends in “:” becomes a section title, not a task (no checkbox, no owner/due). Paste a structured list — e.g. “Cat Toys:” followed by product lines — and the headers get detected automatically; typing “Header:” in the add input also creates a header. Subtask counts (X/Y and progress bars) now ignore headers so they don't inflate the total. Headers render as underlined titles in the modal editor, Notes view, and expanded List view.",
   "v2.29 — Notes view subtasks now show the added-at date in the meta line (“— added Aug 27”), same affordance as the modal editor. Hover the meta shows the full timestamp.",
@@ -1968,9 +1969,16 @@ function formatEmailPaste(text) {
   const hdrHtml = headers.map(h => `<div class="email-line"><span class="email-k">${esc(h.k)}:</span> <span class="email-v">${esc(h.v)}</span></div>`).join("");
   return `<div class="email"><div class="email-hdr">${hdrHtml}</div><div class="email-body">${encBody}</div></div>`;
 }
-// Turn arbitrary pasted plain text into notes HTML — plain text with URLs auto-linkified. Emails no longer format
-// inline on paste; use the 📧 Email button to add them to the deliverable's Emails list instead.
-function notesPasteToHtml(text) {
+// Turn a clipboard paste into notes HTML. Prefers text/html when the source (Google Docs, Word, web pages) has
+// paragraph structure — pastes from those often flatten to a wall of text if we only take text/plain, because
+// they encode paragraph breaks as HTML block boundaries rather than newlines. Falls back to plain text with URL
+// linkification when there's no HTML on the clipboard. Emails don't auto-format inline anymore — use the 📧
+// button on the Emails list for that.
+function notesPasteToHtml(clipboardOrText) {
+  const isCd = clipboardOrText && typeof clipboardOrText.getData === "function";
+  const html = isCd ? clipboardOrText.getData("text/html") : "";
+  if (html && html.trim()) return sanitizeNotes(html);
+  const text = isCd ? (clipboardOrText.getData("text/plain") || "") : (clipboardOrText || "");
   const re = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
   return text.split(re).map((p, i) => i % 2 === 1
     ? `<a href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>`
@@ -2422,7 +2430,7 @@ function renderNotesView() {
       editor.addEventListener("blur", () => saveInlineNote(c.id, editor));
       _installNotesCaretRescue(editor);
       editor.addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
-      editor.addEventListener("paste", e => { const cd = e.clipboardData || window.clipboardData; if (!cd) return; const text = cd.getData("text/plain"); if (!text) return; e.preventDefault(); document.execCommand("insertHTML", false, notesPasteToHtml(text)); });
+      editor.addEventListener("paste", e => { const cd = e.clipboardData || window.clipboardData; if (!cd) return; e.preventDefault(); document.execCommand("insertHTML", false, notesPasteToHtml(cd)); });
       body.appendChild(editor);
       // Subtasks
       const subs = cardSubtasks(c);
@@ -4400,12 +4408,12 @@ async function init() {
   // Clicking a link inside contenteditable normally just places the cursor — intercept and open it in a new tab.
   notesEd().addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
   _installNotesCaretRescue(notesEd());   // clicking in the editor's padding above / below an email block places the caret correctly
-  // On paste: if the clipboard looks like an email (2+ headers), insert it as a styled email block. Otherwise just auto-hyperlink URLs.
+  // On paste: prefer text/html when the source has structure (Google Docs, Word, web pages) so paragraphs stay
+  // separated instead of collapsing into a wall of text. Falls back to plain text + URL linkification.
   notesEd().addEventListener("paste", e => {
     const cd = e.clipboardData || window.clipboardData; if (!cd) return;
-    const text = cd.getData("text/plain"); if (!text) return;
     e.preventDefault();
-    document.execCommand("insertHTML", false, notesPasteToHtml(text));
+    document.execCommand("insertHTML", false, notesPasteToHtml(cd));
   });
   // "📧 Email" flow: emails are a separate list on the card (fields.__emails), not part of the notes rich-text.
   // The paste dialog captures the email and stores it as a structured entry (headers + body). Two contexts:
