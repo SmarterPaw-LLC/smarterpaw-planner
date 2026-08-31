@@ -13,6 +13,19 @@
     --backlog: #6b7280; --progress: #3b82f6; --review: #a855f7; --scheduled: #f59e0b; --live: #22c55e;
     --danger: #ef4444; --ok: #22c55e;
   }
+  /* Light theme — set via <html data-theme="light"> (toggle lives in the ⋯ menu). Only the surface/text/line
+     tokens flip; brand and status accents stay the same so cards read consistently across themes. */
+  html[data-theme="light"] {
+    --bg: #f7f8fa; --panel: #ffffff; --panel-2: #f1f3f6; --line: #d9dee5;
+    --text: #12141a; --muted: #5b6473; --accent: #5847e6;
+  }
+  /* Rgba white overlays (hover backgrounds) create dark specks on light — flip them to a rgba black overlay. */
+  html[data-theme="light"] .notes-entry-email .notes-entry-body { background: rgba(0,0,0,.03); }
+  html[data-theme="light"] .notes-editable:hover { background: rgba(0,0,0,.03); }
+  html[data-theme="light"] .notes-editable:focus { background: rgba(0,0,0,.04); }
+  html[data-theme="light"] .wday:hover { background: rgba(0,0,0,.035); }
+  html[data-theme="light"] .wday.other { background: rgba(0,0,0,.02); }
+  html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme="light"] textarea { color-scheme: light; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body { background: var(--bg); color: var(--text);
@@ -840,7 +853,11 @@
 <!-- Data & backup -->
 <div class="overlay" id="menuOverlay">
   <div class="modal" style="width:360px">
-    <h2>Data &amp; backup</h2>
+    <h2>Settings</h2>
+    <div class="field"><label>Theme</label>
+      <div class="seg" id="themeToggle" role="tablist"><button type="button" data-theme="dark" class="active">🌙 Dark</button><button type="button" data-theme="light">☀ Light</button></div>
+    </div>
+    <h3 style="margin:16px 0 6px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px">Data &amp; backup</h3>
     <div class="field"><button id="exportJsonBtn" style="width:100%">⬇ Export backup (.json)</button></div>
     <div class="field"><button id="importJsonBtn" style="width:100%">⬆ Import backup (.json)</button></div>
     <div class="field"><button id="csvBtn" style="width:100%">Export CSV</button></div>
@@ -935,8 +952,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.37";
+const VERSION = "2.38";
 const CHANGELOG = [
+  "v2.38 — Light mode. Open the ⋯ Settings dialog → Theme → Dark / Light. Choice persists across sessions and is applied on first paint (no dark flash on reload). Brand colors and status accents stay the same in both themes; only the surfaces, text, and lines flip. If you spot a spot that still reads dark-on-dark or vice versa in light mode, let me know.",
   "v2.37 — Fixed “Sprints tracked stayed after moving to Backlog.” Cause: updateCard's Backlog block correctly wiped SPRINTHIST_KEY, but then the very next block (which rebuilds it) fell back to the existing in-memory list when the field wasn't on the incoming save payload, re-populating what we just cleared. Now that fallback is skipped when the save is a Backlog transition — Sprints tracked ends up empty, Historical keeps everything.",
   "v2.36 — Fixed “Historical sprints disappeared after moving to Backlog.” Cause: cards created before v2.26 don't have the Historical field populated yet, so when Backlog wiped their editable Sprints-tracked list, nothing survived to seed Historical. Now every Backlog transition (modal save, Board drag / done checkbox, Grid bulk edit) snapshots the union of the card's Historical + Sprints-tracked + date-implied sprints BEFORE the wipe and writes that back into Historical. Result: the sprint history is preserved forever, even on the first move to Backlog.",
   "v2.35 — Push-to-next-sprint now also skips Backlog-lane cards entirely — they aren't in a sprint, so pushing them makes no sense. The button count excludes them upfront, and the underlying action silently drops them if any slip through the filter. Combined with v2.34's Complete-lane handling: Backlog is always skipped, Complete asks separately, everything else moves.",
@@ -1412,6 +1430,16 @@ let completeLane = "";
 // that person's work. Persists in localStorage across sessions — the prompt only re-appears if the choice is
 // cleared. "" means "All" (no owner filter).
 let currentUser = localStorage.getItem("planner-current-user") || "";
+// Theme — "dark" (default) or "light". Applied via a data-theme attribute on <html> so the CSS override kicks
+// in without a re-render. Persisted in localStorage; the toggle lives in the ⋯ Settings dialog.
+function applyTheme(t) {
+  const theme = t === "light" ? "light" : "dark";
+  if (theme === "dark") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", "light");
+  localStorage.setItem("planner-theme", theme);
+  document.querySelectorAll("#themeToggle button").forEach(b => b.classList.toggle("active", b.dataset.theme === theme));
+}
+applyTheme(localStorage.getItem("planner-theme") || "dark");   // apply immediately so first paint matches
 // Overdue-unfinished quick filter — matches cards whose sprint is BEFORE the current ISO week AND whose status
 // isn't the Complete lane. Kept as its own toggle (not a sprint sentinel) because it evaluates the completeLane
 // status field at render time; the "past" boundary is always relative to today, so the view stays current without
@@ -4686,6 +4714,7 @@ async function init() {
   document.getElementById("menuClose").onclick = () => menu.classList.remove("show");
   menu.onclick = e => { if (e.target.id === "menuOverlay") menu.classList.remove("show"); };
   document.getElementById("csvBtn").onclick = exportCSV;
+  document.querySelectorAll("#themeToggle button").forEach(b => b.onclick = () => applyTheme(b.dataset.theme));
   document.getElementById("exportJsonBtn").onclick = exportJSON;
   document.getElementById("importJsonBtn").onclick = () => document.getElementById("importFile").click();
   document.getElementById("importFile").onchange = e => { const file = e.target.files[0]; if (!file) return;
