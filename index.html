@@ -229,6 +229,24 @@
   .notes-entry-email .notes-entry-body .email { margin: 0; }
   /* Modal Emails section — collapsible cards, one per email. */
   .emails-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  /* Linked deliverables — chip list + typeahead picker. Chips read the linked card's title and status color. */
+  .links-edit { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .link-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; font-size: 12px; }
+  .link-chip:hover { border-color: var(--accent); }
+  .link-chip.deleted { opacity: .55; cursor: default; }
+  .link-chip-icon { font-size: 11px; }
+  .link-chip-title { font-weight: 600; }
+  .link-chip-status { padding: 1px 7px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .2px; color: #fff; border-radius: 999px; }
+  .link-chip-x { padding: 0 4px; font-size: 11px; color: var(--muted); background: transparent; border: none; cursor: pointer; }
+  .link-chip-x:hover { color: var(--danger); }
+  .link-picker { position: relative; }
+  .link-picker input { width: 100%; }
+  .link-results { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; max-height: 260px; overflow-y: auto; }
+  .link-result { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); cursor: pointer; font-size: 12.5px; }
+  .link-result:hover { border-color: var(--accent); background: rgba(109,93,252,.06); }
+  .link-result.empty { color: var(--muted); font-style: italic; cursor: default; }
+  .link-result-title { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .link-result-meta { flex: none; color: var(--muted); font-size: 11px; }
   .email-item { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
   .email-item-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
   .email-item-chev { flex: none; font-size: 11px; color: var(--muted); background: transparent; border: none; padding: 0; cursor: pointer; }
@@ -715,6 +733,13 @@
       <div id="f_emails" class="emails-edit"></div>
       <button type="button" id="f_emailAdd" class="ghost" style="width:100%">＋ Add email (paste)</button>
     </div>
+    <div class="field"><label>Linked deliverables <span id="f_linkCount" class="opt"></span> <span class="opt">— appears on both cards</span></label>
+      <div id="f_links" class="links-edit"></div>
+      <div class="link-picker">
+        <input id="f_linkSearch" type="text" placeholder="Search a deliverable to link…" autocomplete="off" />
+        <div id="f_linkResults" class="link-results"></div>
+      </div>
+    </div>
     <div id="f_fields"></div>
     <div class="field"><label>Notes <span id="f_notesUpdated" class="opt"></span></label>
       <div class="rte-toolbar">
@@ -910,8 +935,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.32";
+const VERSION = "2.33";
 const CHANGELOG = [
+  "v2.33 — Bidirectional card links. New “Linked deliverables” section in the modal (between Emails and custom fields): type a title in the picker, hit Enter or click a result, and the two cards are linked. The link shows on BOTH cards as a status-colored chip you can click to jump between them; ✕ unlinks (again, on both sides). Different from subtask-to-deliverable conversion, which stays as a checklist item — this is a peer relationship between two full deliverables. Deleted-target chips show as “(deleted)” rather than disappearing silently.",
   "v2.32 — Fixed “paste flattens into a wall of text” in the notes editor. Cause: we were only reading text/plain from the clipboard, and rich sources (Google Docs, Word, web pages) don't put paragraph breaks in the plain version — they encode them as HTML block boundaries. Now the paste handler prefers the clipboard's text/html when present, sanitizes it through the same allowlist as saved notes (keeps P/DIV/BR/UL/OL/LI/formatting/links, strips inline styles/scripts/etc.), and falls back to plain text with URL linkification when no HTML is available.",
   "v2.31 — Subtask groups made discoverable + real rollups. (1) Explicit “＋ Header” button next to the subtask add row — no more guessing that ending a line with “:” makes a header. (2) Each header now shows its group's rollup count (e.g. “Cat Toys: 3/8”) — modal editor, Notes view, and expanded List view. (3) Subtasks that belong to a header group are visually indented under it with a soft left border, so the structure reads at a glance. Removing a header keeps its subtasks (they merge into the group above).",
   "v2.30 — Subtask group headers. A subtask whose text ends in “:” becomes a section title, not a task (no checkbox, no owner/due). Paste a structured list — e.g. “Cat Toys:” followed by product lines — and the headers get detected automatically; typing “Header:” in the add input also creates a header. Subtask counts (X/Y and progress bars) now ignore headers so they don't inflate the total. Headers render as underlined titles in the modal editor, Notes view, and expanded List view.",
@@ -1076,7 +1102,7 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards";
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
   if (!ymdStr) return "";
@@ -1131,6 +1157,10 @@ function cardSprintHistory(c) { return (c.fields && Array.isArray(c.fields[SPRIN
 // editable "Sprints tracked" list (SPRINTHIST_KEY), entries here can NEVER be removed via UI. Used for durable
 // reporting and for the Backlog lane, which strips current sprint data but preserves this list.
 function cardHistoricalSprints(c) { return (c.fields && Array.isArray(c.fields[HIST_SPRINTS_KEY])) ? c.fields[HIST_SPRINTS_KEY] : []; }
+// Bidirectional card-to-card links. Stored on each side as an array of IDs; saveModal keeps both sides in sync
+// (linking A→B also writes B→A; unlinking clears both). Different from subtask.linkedCardId — a subtask link is
+// a checklist item pointing to another card; this is a peer relationship between two full deliverables.
+function cardLinks(c) { return (c.fields && Array.isArray(c.fields[LINKS_KEY])) ? c.fields[LINKS_KEY] : []; }
 // Every ISO sprint week a date range covers (start week → end week).
 function sprintsInRange(due, end) {
   const a = due || end, b = end || due; if (!a) return [];
@@ -1361,6 +1391,7 @@ let modalOwners = new Set();
 let modalSubs = [];   // working copy of the open card's subtasks
 let modalEmails = [];   // working copy of the open card's emails (fields.__emails)
 let modalSprintHist = [];   // working copy of the open card's tracked-sprint history (editable via ✕ chips)
+let modalLinks = [];   // working copy of the open card's linked-deliverable ids (bidirectional; synced on save)
 let view = "board", calMode = "month", calRef = new Date();
 let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
 let sortKey = "", sortDir = 1;   // unified sort across all views (Filter & Sort panel); "" = manual/creation order
@@ -3670,6 +3701,43 @@ function renderEmailsEdit() {
     box.appendChild(row);
   });
 }
+// Render the "Linked deliverables" chip list on the currently-open card. Each chip shows the target title +
+// its status color; clicking opens that card, ✕ removes the link (both sides updated on save).
+function renderLinksEdit() {
+  const box = document.getElementById("f_links"); if (!box) return;
+  box.innerHTML = "";
+  document.getElementById("f_linkCount").textContent = modalLinks.length ? "(" + modalLinks.length + ")" : "";
+  modalLinks.forEach(lid => {
+    const linked = cards.find(c => c.id === lid);
+    const chip = document.createElement("span"); chip.className = "link-chip";
+    if (linked) {
+      chip.innerHTML = `<span class="link-chip-icon">🔗</span> <span class="link-chip-title">${esc(linked.title)}</span> <span class="link-chip-status" style="background:${statusColor(linked.status)}">${esc(linked.status || "")}</span>`;
+      chip.title = "Open this deliverable"; chip.onclick = () => { const cur = document.getElementById("f_id").value; if (cur) saveModal(); else closeModal(); setTimeout(() => openModal(linked), 60); };
+    } else {
+      chip.innerHTML = `<span class="link-chip-icon">🔗</span> <span class="link-chip-title">(deleted)</span>`;
+      chip.classList.add("deleted");
+    }
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "link-chip-x"; rm.textContent = "✕"; rm.title = "Unlink";
+    rm.onclick = e => { e.stopPropagation(); modalLinks = modalLinks.filter(x => x !== lid); renderLinksEdit(); };
+    chip.appendChild(rm);
+    box.appendChild(chip);
+  });
+}
+function renderLinkPickerResults() {
+  const inp = document.getElementById("f_linkSearch"), box = document.getElementById("f_linkResults");
+  const q = (inp.value || "").trim().toLowerCase(); box.innerHTML = "";
+  if (!q) return;
+  const selfId = document.getElementById("f_id").value;
+  const linkedSet = new Set(modalLinks);
+  const hits = cards.filter(c => c.id !== selfId && !linkedSet.has(c.id) && (c.title || "").toLowerCase().includes(q)).slice(0, 8);
+  if (!hits.length) { const e = document.createElement("div"); e.className = "link-result empty"; e.textContent = "No matches."; box.appendChild(e); return; }
+  hits.forEach(c => {
+    const r = document.createElement("div"); r.className = "link-result";
+    r.innerHTML = `<span class="link-result-title">${esc(c.title)}</span> <span class="link-chip-status" style="background:${statusColor(c.status)}">${esc(c.status || "")}</span> <span class="link-result-meta">${esc([c.brand, c.channel].filter(Boolean).join(" · "))}</span>`;
+    r.onclick = () => { modalLinks.push(c.id); inp.value = ""; box.innerHTML = ""; renderLinksEdit(); };
+    box.appendChild(r);
+  });
+}
 function addModalSub() {
   const inp = document.getElementById("f_subAdd"); const t = inp.value.trim(); if (!t) return;
   // Typing something like "Cat Toys:" → add as a section header instead of a task.
@@ -3798,6 +3866,10 @@ function openModal(card, prefill) {
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "", addedAt: s.addedAt || "", type: s.type || "" })) : [];
   modalEmails = card ? cardEmails(card).map(e => Object.assign({}, e)) : [];
   renderEmailsEdit();
+  modalLinks = card ? cardLinks(card).slice() : [];
+  const linkSearch = document.getElementById("f_linkSearch"); if (linkSearch) linkSearch.value = "";
+  const linkResults = document.getElementById("f_linkResults"); if (linkResults) linkResults.innerHTML = "";
+  renderLinksEdit();
   modalSprintHist = card ? cardSprintHistory(card).slice() : [];   // working copy for the Sprints-tracked chips (editable)
   _sprintHistOpen = false;   // historical sprints start collapsed on every modal open
   document.getElementById("f_subAdd").value = ""; renderSubsEdit();
@@ -3845,6 +3917,10 @@ function saveModal() {
   const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; if (s.addedAt) o.addedAt = s.addedAt; if (s.type) o.type = s.type; return o; }).filter(s => s.text || s.linkedCardId);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   if (modalEmails.length) fields[EMAILS_KEY] = modalEmails.map(e => ({ id: e.id, addedAt: e.addedAt, from: e.from || "", to: e.to || "", sent: e.sent || "", subject: e.subject || "", content: e.content || "" }));
+  // Persist this card's link list; other-side sync (adding/removing the reciprocal reference) happens after the
+  // primary save below so the current card's write doesn't stomp its own realtime broadcast.
+  const linksClean = [...new Set(modalLinks.filter(id => id && id !== document.getElementById("f_id").value))];
+  if (linksClean.length) fields[LINKS_KEY] = linksClean; else delete fields[LINKS_KEY];
   fields[SPRINTHIST_KEY] = modalSprintHist.slice();   // user's edited history (may be empty); updateCard will add this save's recorded sprints on top
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   const notesEl = document.getElementById("f_notes");
@@ -3860,8 +3936,33 @@ function saveModal() {
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: notes, fields };
+  // Compute reciprocal link changes BEFORE the save so we can push both sides. For a new card, we don't know the
+  // id yet — but we can identify additions vs removals by comparing the previous saved list to the current one.
+  const prevLinks = existingCard ? cardLinks(existingCard) : [];
+  const linksAdded = linksClean.filter(x => !prevLinks.includes(x));
+  const linksRemoved = prevLinks.filter(x => !linksClean.includes(x));
   if (id) updateCard(id, d); else createCard(d);
+  syncReciprocalLinks(id, linksAdded, linksRemoved);
   closeModal();
+}
+// After a modal save, add THIS card's id to every newly-linked target's link list, and remove it from every
+// unlinked one. Runs in the background; no toast on success. Skipped for brand-new cards (no id yet) — the
+// reciprocal pointers are added the next time either side is edited (a small acceptable gap).
+async function syncReciprocalLinks(selfId, added, removed) {
+  if (!selfId || (!added.length && !removed.length)) return;
+  const jobs = [];
+  const patchOther = (otherId, nextLinks) => {
+    const other = cards.find(c => c.id === otherId); if (!other) return;
+    const fields = Object.assign({}, other.fields || {});
+    if (nextLinks.length) fields[LINKS_KEY] = nextLinks; else delete fields[LINKS_KEY];
+    other.fields = fields;
+    if (ONLINE) jobs.push(db.from("deliverables").update({ fields }).eq("id", otherId));
+  };
+  added.forEach(oid => { const other = cards.find(c => c.id === oid); if (!other) return; const set = new Set(cardLinks(other)); set.add(selfId); patchOther(oid, [...set]); });
+  removed.forEach(oid => { const other = cards.find(c => c.id === oid); if (!other) return; patchOther(oid, cardLinks(other).filter(x => x !== selfId)); });
+  if (!ONLINE) saveLocal();
+  const res = await Promise.all(jobs);
+  const err = res.find(r => r && r.error); if (err) toast("Link sync warning: " + err.error.message);
 }
 function deleteCard() { const id = document.getElementById("f_id").value; if (id && confirm("Delete this deliverable?")) { removeCard(id); closeModal(); } }
 // Duplicate the open deliverable as a new card (title gets " (copy)"; subtasks get fresh ids).
@@ -4450,6 +4551,8 @@ async function init() {
     closeEmailPaste();
   };
   document.getElementById("f_subAddBtn").onclick = addModalSub;
+  document.getElementById("f_linkSearch").addEventListener("input", renderLinkPickerResults);
+  document.getElementById("f_linkSearch").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); const first = document.querySelector("#f_linkResults .link-result:not(.empty)"); if (first) first.click(); } });
   // Explicit "＋ Header" — uses whatever's in the add input (stripped of trailing ":") as the group title, or
   // inserts a blank header ready to be typed if the input is empty.
   document.getElementById("f_subAddHeaderBtn").onclick = () => {
