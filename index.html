@@ -935,8 +935,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.33";
+const VERSION = "2.34";
 const CHANGELOG = [
+  "v2.34 — Push-to-next-sprint now respects the Complete lane. If any visible cards are on the Complete lane, a second prompt appears asking whether to include them — default answer keeps them in the sprint they were completed in (which is usually what you want; those cards represent shipped work). Non-Complete cards are pushed on the first confirm as before.",
   "v2.33 — Bidirectional card links. New “Linked deliverables” section in the modal (between Emails and custom fields): type a title in the picker, hit Enter or click a result, and the two cards are linked. The link shows on BOTH cards as a status-colored chip you can click to jump between them; ✕ unlinks (again, on both sides). Different from subtask-to-deliverable conversion, which stays as a checklist item — this is a peer relationship between two full deliverables. Deleted-target chips show as “(deleted)” rather than disappearing silently.",
   "v2.32 — Fixed “paste flattens into a wall of text” in the notes editor. Cause: we were only reading text/plain from the clipboard, and rich sources (Google Docs, Word, web pages) don't put paragraph breaks in the plain version — they encode them as HTML block boundaries. Now the paste handler prefers the clipboard's text/html when present, sanitizes it through the same allowlist as saved notes (keeps P/DIV/BR/UL/OL/LI/formatting/links, strips inline styles/scripts/etc.), and falls back to plain text with URL linkification when no HTML is available.",
   "v2.31 — Subtask groups made discoverable + real rollups. (1) Explicit “＋ Header” button next to the subtask add row — no more guessing that ending a line with “:” makes a header. (2) Each header now shows its group's rollup count (e.g. “Cat Toys: 3/8”) — modal editor, Notes view, and expanded List view. (3) Subtasks that belong to a header group are visually indented under it with a soft left border, so the structure reads at a glance. Removing a header keeps its subtasks (they merge into the group above).",
@@ -2234,9 +2235,26 @@ function renderActiveFilters() {
 // manual sprint override. Used from the active-filters bar for sprint-planning meetings: filter to what didn't
 // get done, click one button, everything rolls forward together.
 async function pushVisibleToNextSprint() {
-  const targets = visibleCards().slice();
+  const all = visibleCards().slice();
+  if (!all.length) return;
+  // Cards on the Complete lane usually SHOULDN'T be pushed — they mark work that shipped and belong in the sprint
+  // they landed on. If any are present, split them out and ask the user separately.
+  const cl = completeLane;
+  const complete = cl ? all.filter(c => c.status === cl) : [];
+  const rest = cl ? all.filter(c => c.status !== cl) : all;
+  let targets;
+  if (complete.length && rest.length) {
+    if (!confirm("Move " + rest.length + " visible card" + (rest.length === 1 ? "" : "s") + " forward by 1 week?\n\nDue dates, end dates, and manual sprint overrides all shift +7 days.")) return;
+    const includeDone = confirm(complete.length + " of the visible cards are on the “" + cl + "” lane.\n\nOK — also push those forward.\nCancel — leave them in their current sprint (recommended).");
+    targets = includeDone ? all : rest;
+  } else if (complete.length && !rest.length) {
+    if (!confirm("All " + complete.length + " visible card" + (complete.length === 1 ? "" : "s") + " are on the “" + cl + "” lane. These usually stay in the sprint they were completed in.\n\nPush them forward by 1 week anyway?")) return;
+    targets = complete;
+  } else {
+    if (!confirm("Move " + rest.length + " visible card" + (rest.length === 1 ? "" : "s") + " forward by 1 week?\n\nDue dates, end dates, and manual sprint overrides all shift +7 days.")) return;
+    targets = rest;
+  }
   if (!targets.length) return;
-  if (!confirm("Move " + targets.length + " visible card" + (targets.length === 1 ? "" : "s") + " forward by 1 week?\n\nDue dates, end dates, and manual sprint overrides all shift +7 days.")) return;
   const shift = (ymdStr) => { if (!ymdStr) return ""; const d = new Date(ymdStr + "T00:00:00"); d.setDate(d.getDate() + 7); return ymd(d); };
   const shiftWeek = (w) => { if (!w) return ""; const mon = isoWeekStart(w); if (!mon) return w; mon.setUTCDate(mon.getUTCDate() + 7); return isoWeek(ymdUTC(mon)); };
   const jobs = targets.map(async c => {
