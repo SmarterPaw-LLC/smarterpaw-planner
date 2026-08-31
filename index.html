@@ -952,8 +952,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.38";
+const VERSION = "2.39";
 const CHANGELOG = [
+  "v2.39 — Fixed “Sort by Sprint (Desc) doesn't do anything on the List view.” Cause: the List view groups cards by sprint week and sorted the group keys with a hard-coded `.sort()` (always ascending), ignoring the user's Sort direction. Now Desc reverses the sprint groups so the most recent week is on top. “No sprint” stays at the bottom regardless.",
   "v2.38 — Light mode. Open the ⋯ Settings dialog → Theme → Dark / Light. Choice persists across sessions and is applied on first paint (no dark flash on reload). Brand colors and status accents stay the same in both themes; only the surfaces, text, and lines flip. If you spot a spot that still reads dark-on-dark or vice versa in light mode, let me know.",
   "v2.37 — Fixed “Sprints tracked stayed after moving to Backlog.” Cause: updateCard's Backlog block correctly wiped SPRINTHIST_KEY, but then the very next block (which rebuilds it) fell back to the existing in-memory list when the field wasn't on the incoming save payload, re-populating what we just cleared. Now that fallback is skipped when the save is a Backlog transition — Sprints tracked ends up empty, Historical keeps everything.",
   "v2.36 — Fixed “Historical sprints disappeared after moving to Backlog.” Cause: cards created before v2.26 don't have the Historical field populated yet, so when Backlog wiped their editable Sprints-tracked list, nothing survived to seed Historical. Now every Backlog transition (modal save, Board drag / done checkbox, Grid bulk edit) snapshots the union of the card's Historical + Sprints-tracked + date-implied sprints BEFORE the wipe and writes that back into Historical. Result: the sprint history is preserved forever, even on the first move to Backlog.",
@@ -2649,7 +2650,10 @@ function renderList() {
     if (!spr.length) (groups[""] = groups[""] || []).push(c);
     else spr.forEach(s => (groups[s] = groups[s] || []).push(c));
   });
-  const ordered = Object.keys(groups).filter(k => k).sort().concat(groups[""] ? [""] : []);
+  // Sprint groups sort chronologically. When the user's Sort By is "sprint" with descending direction, flip the
+  // week order (recent-first) — "No sprint" always sits at the end regardless of direction.
+  const desc = sortKey === "sprint" && sortDir < 0;
+  const ordered = Object.keys(groups).filter(k => k).sort((a, b) => desc ? b.localeCompare(a) : a.localeCompare(b)).concat(groups[""] ? [""] : []);
   ordered.forEach(sk => {
     const sec = document.createElement("div"); sec.className = "list-sec";
     const h = document.createElement("div"); h.className = "list-sec-head";
