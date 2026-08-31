@@ -935,8 +935,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.34";
+const VERSION = "2.35";
 const CHANGELOG = [
+  "v2.35 — Push-to-next-sprint now also skips Backlog-lane cards entirely — they aren't in a sprint, so pushing them makes no sense. The button count excludes them upfront, and the underlying action silently drops them if any slip through the filter. Combined with v2.34's Complete-lane handling: Backlog is always skipped, Complete asks separately, everything else moves.",
   "v2.34 — Push-to-next-sprint now respects the Complete lane. If any visible cards are on the Complete lane, a second prompt appears asking whether to include them — default answer keeps them in the sprint they were completed in (which is usually what you want; those cards represent shipped work). Non-Complete cards are pushed on the first confirm as before.",
   "v2.33 — Bidirectional card links. New “Linked deliverables” section in the modal (between Emails and custom fields): type a title in the picker, hit Enter or click a result, and the two cards are linked. The link shows on BOTH cards as a status-colored chip you can click to jump between them; ✕ unlinks (again, on both sides). Different from subtask-to-deliverable conversion, which stays as a checklist item — this is a peer relationship between two full deliverables. Deleted-target chips show as “(deleted)” rather than disappearing silently.",
   "v2.32 — Fixed “paste flattens into a wall of text” in the notes editor. Cause: we were only reading text/plain from the clipboard, and rich sources (Google Docs, Word, web pages) don't put paragraph breaks in the plain version — they encode them as HTML block boundaries. Now the paste handler prefers the clipboard's text/html when present, sanitizes it through the same allowlist as saved notes (keeps P/DIV/BR/UL/OL/LI/formatting/links, strips inline styles/scripts/etc.), and falls back to plain text with URL linkification when no HTML is available.",
@@ -2223,10 +2224,12 @@ function renderActiveFilters() {
   bar.appendChild(clear);
   // Push-all action: bulk-shift every visible card's sprint forward by one week (due, end, and manual SPRINT_KEY
   // each get +7 days). Only shown when at least one filter is active — otherwise it's a foot-gun.
-  const nCards = visibleCards().length;
+  // Excludes Backlog-lane cards from the count since Push skips them entirely (not in a sprint).
+  const bl = effBacklogLane();
+  const nCards = visibleCards().filter(c => !bl || c.status !== bl).length;
   if (nCards) {
     const push = document.createElement("button"); push.className = "af-push"; push.textContent = "⇒ Push " + nCards + " → next sprint";
-    push.title = "Move every visible card forward by 1 week (due, end, and planning sprint each +7 days)";
+    push.title = "Move every visible card forward by 1 week (due, end, and planning sprint each +7 days). Skips Backlog-lane cards, asks separately about Complete-lane cards.";
     push.onclick = pushVisibleToNextSprint;
     bar.appendChild(push);
   }
@@ -2235,8 +2238,13 @@ function renderActiveFilters() {
 // manual sprint override. Used from the active-filters bar for sprint-planning meetings: filter to what didn't
 // get done, click one button, everything rolls forward together.
 async function pushVisibleToNextSprint() {
-  const all = visibleCards().slice();
-  if (!all.length) return;
+  const raw = visibleCards().slice();
+  if (!raw.length) return;
+  // Cards on the Backlog lane aren't in a sprint at all — pushing them makes no sense; drop them silently.
+  const bl = effBacklogLane();
+  const skippedBacklog = bl ? raw.filter(c => c.status === bl) : [];
+  const all = bl ? raw.filter(c => c.status !== bl) : raw;
+  if (!all.length) { toast("Nothing to push — all visible cards are on the “" + bl + "” lane."); return; }
   // Cards on the Complete lane usually SHOULDN'T be pushed — they mark work that shipped and belong in the sprint
   // they landed on. If any are present, split them out and ask the user separately.
   const cl = completeLane;
