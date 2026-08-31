@@ -935,8 +935,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.35";
+const VERSION = "2.36";
 const CHANGELOG = [
+  "v2.36 — Fixed “Historical sprints disappeared after moving to Backlog.” Cause: cards created before v2.26 don't have the Historical field populated yet, so when Backlog wiped their editable Sprints-tracked list, nothing survived to seed Historical. Now every Backlog transition (modal save, Board drag / done checkbox, Grid bulk edit) snapshots the union of the card's Historical + Sprints-tracked + date-implied sprints BEFORE the wipe and writes that back into Historical. Result: the sprint history is preserved forever, even on the first move to Backlog.",
   "v2.35 — Push-to-next-sprint now also skips Backlog-lane cards entirely — they aren't in a sprint, so pushing them makes no sense. The button count excludes them upfront, and the underlying action silently drops them if any slip through the filter. Combined with v2.34's Complete-lane handling: Backlog is always skipped, Complete asks separately, everything else moves.",
   "v2.34 — Push-to-next-sprint now respects the Complete lane. If any visible cards are on the Complete lane, a second prompt appears asking whether to include them — default answer keeps them in the sprint they were completed in (which is usually what you want; those cards represent shipped work). Non-Complete cards are pushed on the first confirm as before.",
   "v2.33 — Bidirectional card links. New “Linked deliverables” section in the modal (between Emails and custom fields): type a title in the picker, hit Enter or click a result, and the two cards are linked. The link shows on BOTH cards as a status-colored chip you can click to jump between them; ✕ unlinks (again, on both sides). Different from subtask-to-deliverable conversion, which stays as a checklist item — this is a peer relationship between two full deliverables. Deleted-target chips show as “(deleted)” rather than disappearing silently.",
@@ -1465,11 +1466,21 @@ function setBacklog(item) {
 }
 const BACKLOG_ICON = "📥";
 // Called whenever a card's status is about to become the Backlog lane — clears due/end/planning-sprint and the
-// editable sprints-tracked list, but keeps the historical sprints record. Returns the fields blob to persist.
+// editable sprints-tracked list, but PRESERVES (and topsup) the historical sprints record. Returns the fields
+// blob to persist. Runs synchronously so callers (patchStatus, bulk edit) can include the same fields in their
+// DB patch and keep the update atomic.
 function applyBacklogClear(c) {
+  // Snapshot everything sprint-related on the card BEFORE the wipe so the historical record survives.
+  const preHist = new Set([
+    ...cardHistoricalSprints(c),
+    ...cardSprintHistory(c),
+    ...recordedSprints(c),
+  ]);
   c.due = ""; c.end = "";
   const f = Object.assign({}, c.fields || {});
   delete f[SPRINT_KEY]; delete f[SPRINTHIST_KEY];
+  const hist = [...preHist].filter(Boolean).sort();
+  if (hist.length) f[HIST_SPRINTS_KEY] = hist; else delete f[HIST_SPRINTS_KEY];
   c.fields = f;
   return f;
 }
@@ -1595,8 +1606,16 @@ async function createCard(d) {
 }
 async function updateCard(id, d) {
   const existing = cards.find(c => c.id === id);
+  // Snapshot historical BEFORE any Backlog wipe. Includes: previously-saved historical, the previously-saved
+  // editable-tracked list, and the sprints implied by the OLD dates (in case the card is being pushed into
+  // Backlog and its due/end are about to be cleared — those sprints must still be recorded historically).
+  const preHist = new Set([
+    ...(cardHistoricalSprints(existing) || []),
+    ...((existing && cardSprintHistory(existing)) || []),
+    ...(existing ? recordedSprints(existing) : []),
+  ]);
   // If the new status is the Backlog lane, strip current sprint data: due/end/planning-sprint/sprints-tracked
-  // all get cleared. Historical sprints (see below) are preserved as the permanent record.
+  // all get cleared. Historical sprints (rebuilt below from preHist) are preserved as the permanent record.
   const bl = effBacklogLane();
   if (bl && d.status === bl && existing && existing.status !== bl) {
     d.due = ""; d.end = "";
@@ -1610,12 +1629,12 @@ async function updateCard(id, d) {
   recordedSprints(d).forEach(w => { if (!merged.includes(w)) merged.push(w); });
   if (merged.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = merged; }
   else if (d.fields) delete d.fields[SPRINTHIST_KEY];
-  // Append-only Historical sprints (HIST_SPRINTS_KEY): union of previous historical + editable-tracked + currently
-  // recorded. Never removed. This is the durable record even when the editable list gets pruned or the Backlog
-  // lane wipes the current sprint data.
-  const hist = new Set([...(cardHistoricalSprints(existing) || []), ...merged]);
+  // Append-only Historical sprints (HIST_SPRINTS_KEY): preHist snapshot + the current merged + newly recorded.
+  // Never removed. This is the durable record even when the editable list gets pruned or Backlog wipes the
+  // current sprint data — preHist preserved the pre-wipe values.
+  const hist = new Set([...preHist, ...merged]);
   recordedSprints(d).forEach(w => hist.add(w));
-  if (hist.size) { d.fields = d.fields || {}; d.fields[HIST_SPRINTS_KEY] = [...hist].sort(); }
+  if (hist.size) { d.fields = d.fields || {}; d.fields[HIST_SPRINTS_KEY] = [...hist].filter(Boolean).sort(); }
   if (!ONLINE) { Object.assign(cards.find(c => c.id === id), d); saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").update(dbObj(d)).eq("id", id);
   if (error) toast("Update failed: " + error.message); else refetch();
@@ -3022,11 +3041,16 @@ function renderGridBulkBar() {
 // Build a per-card patch for the requested bulk edit (handles top-level columns AND the fields jsonb).
 function bulkBuildPatch(c, key, value) {
   const patch = {}; const setField = mutator => { const f = Object.assign({}, c.fields || {}); mutator(f); patch.fields = f; };
-  // Moving into the Backlog lane wipes current sprint data (same rule as patchStatus / updateCard).
+  // Moving into the Backlog lane wipes current sprint data (same rule as patchStatus / updateCard) but preserves
+  // — and tops up — the Historical sprints record so nothing is lost.
   const bl = effBacklogLane();
   if (key === "status" && bl && value === bl && c.status !== bl) {
     patch.status = value; patch.due = null; patch.end_date = null;
-    const f = Object.assign({}, c.fields || {}); delete f[SPRINT_KEY]; delete f[SPRINTHIST_KEY]; patch.fields = f;
+    const preHist = new Set([...cardHistoricalSprints(c), ...cardSprintHistory(c), ...recordedSprints(c)]);
+    const f = Object.assign({}, c.fields || {}); delete f[SPRINT_KEY]; delete f[SPRINTHIST_KEY];
+    const hist = [...preHist].filter(Boolean).sort();
+    if (hist.length) f[HIST_SPRINTS_KEY] = hist; else delete f[HIST_SPRINTS_KEY];
+    patch.fields = f;
     return patch;
   }
   if (["brand","channel","owner","status","title","notes"].includes(key)) patch[key] = value;
