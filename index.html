@@ -935,8 +935,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.36";
+const VERSION = "2.37";
 const CHANGELOG = [
+  "v2.37 — Fixed “Sprints tracked stayed after moving to Backlog.” Cause: updateCard's Backlog block correctly wiped SPRINTHIST_KEY, but then the very next block (which rebuilds it) fell back to the existing in-memory list when the field wasn't on the incoming save payload, re-populating what we just cleared. Now that fallback is skipped when the save is a Backlog transition — Sprints tracked ends up empty, Historical keeps everything.",
   "v2.36 — Fixed “Historical sprints disappeared after moving to Backlog.” Cause: cards created before v2.26 don't have the Historical field populated yet, so when Backlog wiped their editable Sprints-tracked list, nothing survived to seed Historical. Now every Backlog transition (modal save, Board drag / done checkbox, Grid bulk edit) snapshots the union of the card's Historical + Sprints-tracked + date-implied sprints BEFORE the wipe and writes that back into Historical. Result: the sprint history is preserved forever, even on the first move to Backlog.",
   "v2.35 — Push-to-next-sprint now also skips Backlog-lane cards entirely — they aren't in a sprint, so pushing them makes no sense. The button count excludes them upfront, and the underlying action silently drops them if any slip through the filter. Combined with v2.34's Complete-lane handling: Backlog is always skipped, Complete asks separately, everything else moves.",
   "v2.34 — Push-to-next-sprint now respects the Complete lane. If any visible cards are on the Complete lane, a second prompt appears asking whether to include them — default answer keeps them in the sprint they were completed in (which is usually what you want; those cards represent shipped work). Non-Complete cards are pushed on the first confirm as before.",
@@ -1617,14 +1618,17 @@ async function updateCard(id, d) {
   // If the new status is the Backlog lane, strip current sprint data: due/end/planning-sprint/sprints-tracked
   // all get cleared. Historical sprints (rebuilt below from preHist) are preserved as the permanent record.
   const bl = effBacklogLane();
-  if (bl && d.status === bl && existing && existing.status !== bl) {
+  const enteringBacklog = bl && d.status === bl && existing && existing.status !== bl;
+  if (enteringBacklog) {
     d.due = ""; d.end = "";
     d.fields = Object.assign({}, d.fields || {});
     delete d.fields[SPRINT_KEY]; delete d.fields[SPRINTHIST_KEY];
   }
   // Editable "Sprints tracked" (SPRINTHIST_KEY): start from what the modal saved (respects ✕ removals); fall back
-  // to the in-memory card for direct callers. Merge in the sprints implied by the current form values.
-  const base = (d.fields && Array.isArray(d.fields[SPRINTHIST_KEY])) ? d.fields[SPRINTHIST_KEY].slice() : cardSprintHistory(existing);
+  // to the in-memory card for direct callers. Merge in the sprints implied by the current form values. When we
+  // just entered Backlog we don't fall back — the wipe is intentional and the fall-back would resurrect the old
+  // list from `existing`. `recordedSprints(d)` is also empty in that case since due/end/manual were cleared.
+  const base = (d.fields && Array.isArray(d.fields[SPRINTHIST_KEY])) ? d.fields[SPRINTHIST_KEY].slice() : (enteringBacklog ? [] : cardSprintHistory(existing));
   const merged = [...base];
   recordedSprints(d).forEach(w => { if (!merged.includes(w)) merged.push(w); });
   if (merged.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = merged; }
