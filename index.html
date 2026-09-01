@@ -189,7 +189,7 @@
   .sub-header-count { flex: none; color: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
   /* Non-header subtasks that live inside a group indent to make the rollup structure legible. */
   .sub-row-in-group { padding-left: 18px; border-left: 2px solid var(--line); margin-left: 6px; }
-  .notes-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
+  .notes-sub-header { display: flex; align-items: center; gap: 4px; font-weight: 700; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
   .notes-sub-in-group { padding-left: 14px; border-left: 2px solid var(--line); margin-left: 4px; }
   .lt-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
   .lt-sub-in-group { padding-left: 14px; border-left: 2px solid var(--line); margin-left: 4px; }
@@ -286,6 +286,21 @@
   .notes-sub-link { color: var(--accent); cursor: pointer; }
   .notes-sub-link:hover { text-decoration: underline; }
   .notes-sub-meta { color: var(--muted); font-size: 12px; }
+  /* Inline-editable inputs in the Notes view — flat by default, gain a border on focus so it's clear they're editable. */
+  .notes-sub-input { flex: 1; min-width: 0; padding: 3px 6px; font: inherit; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 4px; }
+  .notes-sub-input:hover { border-color: var(--line); }
+  .notes-sub-input:focus { outline: none; border-color: var(--accent); background: rgba(109,93,252,.06); }
+  .notes-sub-input.done { text-decoration: line-through; color: var(--muted); }
+  .notes-sub-header-text { padding: 2px 6px; font: inherit; font-weight: 700; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 4px; }
+  .notes-sub-header-text:hover { border-color: var(--line); }
+  .notes-sub-header-text:focus { outline: none; border-color: var(--accent); background: rgba(109,93,252,.06); }
+  .notes-sub-header-count { color: var(--muted); font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .notes-sub-rm { flex: none; padding: 0 6px; margin-left: 4px; color: var(--muted); background: transparent; border: none; cursor: pointer; font-size: 12px; opacity: .35; }
+  .notes-sub:hover .notes-sub-rm, .notes-sub-header:hover .notes-sub-rm { opacity: 1; }
+  .notes-sub-rm:hover { color: var(--danger); }
+  .notes-sub-addrow { opacity: .8; }
+  .notes-sub-add-input { flex: 1; min-width: 0; padding: 3px 6px; font: inherit; color: var(--text); background: transparent; border: 1px dashed var(--line); border-radius: 4px; }
+  .notes-sub-add-input:focus { outline: none; border-style: solid; border-color: var(--accent); background: rgba(109,93,252,.06); }
   .list-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
   .list-body.split { gap: 0; }
   .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; flex: none; }
@@ -952,8 +967,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.39";
+const VERSION = "2.40";
 const CHANGELOG = [
+  "v2.40 — Notes view subtasks are now inline-editable. Click a subtask's text to rename it; blur or Enter saves. Enter on an empty edit adds a new subtask below. Section headers are inline-editable the same way. Each row shows a ✕ on hover to remove, and every card has a “＋ Add subtask” dashed input at the bottom of its list (ending in “:” creates a header). No more opening the full card for a quick text tweak.",
   "v2.39 — Fixed “Sort by Sprint (Desc) doesn't do anything on the List view.” Cause: the List view groups cards by sprint week and sorted the group keys with a hard-coded `.sort()` (always ascending), ignoring the user's Sort direction. Now Desc reverses the sprint groups so the most recent week is on top. “No sprint” stays at the bottom regardless.",
   "v2.38 — Light mode. Open the ⋯ Settings dialog → Theme → Dark / Light. Choice persists across sessions and is applied on first paint (no dark flash on reload). Brand colors and status accents stay the same in both themes; only the surfaces, text, and lines flip. If you spot a spot that still reads dark-on-dark or vice versa in light mode, let me know.",
   "v2.37 — Fixed “Sprints tracked stayed after moving to Backlog.” Cause: updateCard's Backlog block correctly wiped SPRINTHIST_KEY, but then the very next block (which rebuilds it) fell back to the existing in-memory list when the field wasn't on the incoming save payload, re-populating what we just cleared. Now that fallback is skipped when the save is a Backlog transition — Sprints tracked ends up empty, Historical keeps everything.",
@@ -2430,6 +2446,33 @@ async function toggleInlineSubtask(cardId, subId, done) {
   const { error } = await db.from("deliverables").update({ fields }).eq("id", cardId);
   if (error) toast("Save failed: " + error.message); else render();
 }
+// Persist an inline text edit or removal for a subtask from the Notes view. `patch` is a partial object to
+// merge into the target subtask (e.g. { text: "..." }); pass patch = null to REMOVE the subtask entirely.
+async function patchInlineSubtask(cardId, subId, patch) {
+  const c = cards.find(x => x.id === cardId); if (!c) return;
+  const cur = cardSubtasks(c);
+  const next = patch === null ? cur.filter(s => s.id !== subId) : cur.map(s => s.id === subId ? Object.assign({}, s, patch) : s);
+  const fields = Object.assign({}, c.fields || {});
+  if (next.length) fields[SUBTASKS_KEY] = next; else delete fields[SUBTASKS_KEY];
+  c.fields = fields;
+  if (!ONLINE) { saveLocal(); render(); return; }
+  const { error } = await db.from("deliverables").update({ fields }).eq("id", cardId);
+  if (error) toast("Save failed: " + error.message); else render();
+}
+// Append a subtask to a card from the Notes view. `insertAfterId`, if provided, controls where the new item
+// lands (right after that entry) — used by the per-header quick-add button.
+async function appendInlineSubtask(cardId, text, insertAfterId) {
+  const t = (text || "").trim(); if (!t) return;
+  const c = cards.find(x => x.id === cardId); if (!c) return;
+  const list = cardSubtasks(c).slice();
+  const item = { id: subId(), text: t, done: false, addedAt: nowIso() };
+  const idx = insertAfterId ? list.findIndex(s => s.id === insertAfterId) : -1;
+  if (idx >= 0) list.splice(idx + 1, 0, item); else list.push(item);
+  const fields = Object.assign({}, c.fields || {}); fields[SUBTASKS_KEY] = list; c.fields = fields;
+  if (!ONLINE) { saveLocal(); render(); return; }
+  const { error } = await db.from("deliverables").update({ fields }).eq("id", cardId);
+  if (error) toast("Save failed: " + error.message); else render();
+}
 // Delete an email from a card and persist immediately (used by the Notes-view feed).
 async function removeCardEmail(cardId, emailId) {
   const c = cards.find(x => x.id === cardId); if (!c) return;
@@ -2547,29 +2590,82 @@ function renderNotesView() {
         const sbox = document.createElement("div"); sbox.className = "notes-subs";
         const nCounts = subtaskGroupCounts(subs);
         subs.forEach((s, i) => {
-          // Header rows render as underlined section titles + rollup count of items below.
+          // Header rows render as an inline-editable section title + rollup count of items below.
           if (s.type === "header") {
             const h = document.createElement("div"); h.className = "notes-sub-header";
+            const inp = document.createElement("input"); inp.className = "notes-sub-header-text"; inp.value = (s.text || "").trim(); inp.placeholder = "Section title";
+            inp.addEventListener("blur", () => { const v = inp.value.trim(); if (v !== (s.text || "").trim()) patchInlineSubtask(c.id, s.id, { text: v }); });
+            inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
+            h.appendChild(inp);
+            const colon = document.createElement("span"); colon.textContent = ":"; h.appendChild(colon);
             const gc = nCounts[s.id];
-            h.textContent = (s.text || "").trim() + ":" + (gc && gc.total ? "  " + gc.done + "/" + gc.total : "");
+            if (gc && gc.total) { const cnt = document.createElement("span"); cnt.className = "notes-sub-header-count"; cnt.textContent = "  " + gc.done + "/" + gc.total; h.appendChild(cnt); }
+            const rm = document.createElement("button"); rm.type = "button"; rm.className = "notes-sub-rm"; rm.textContent = "✕"; rm.title = "Remove header";
+            rm.onclick = e => { e.stopPropagation(); patchInlineSubtask(c.id, s.id, null); };
+            h.appendChild(rm);
             sbox.appendChild(h); return;
           }
           const row = document.createElement("div"); row.className = "notes-sub" + (subtaskInGroup(subs, i) ? " notes-sub-in-group" : "");
           const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
           cb.onclick = e => { e.stopPropagation(); toggleInlineSubtask(c.id, s.id, cb.checked); };
           row.appendChild(cb);
-          const txt = document.createElement("span"); txt.className = "notes-sub-text" + (s.done ? " done" : "");
           if (s.linkedCardId) {
+            // Linked subtasks stay non-editable — the text belongs to the target deliverable.
             const linked = cards.find(x => x.id === s.linkedCardId);
+            const txt = document.createElement("span"); txt.className = "notes-sub-text" + (s.done ? " done" : "");
             if (linked) { const a = document.createElement("a"); a.className = "notes-sub-link"; a.textContent = "🔗 " + linked.title; a.onclick = e => { e.stopPropagation(); openModal(linked); }; txt.appendChild(a); }
             else txt.textContent = (s.text || "(deleted)") + " (deleted)";
-          } else txt.textContent = s.text || "(untitled)";
-          row.appendChild(txt);
+            row.appendChild(txt);
+          } else {
+            // Inline-editable input — blur commits; Enter commits and adds a new subtask below.
+            const inp = document.createElement("input"); inp.className = "notes-sub-input" + (s.done ? " done" : ""); inp.value = s.text || "";
+            inp.addEventListener("blur", () => { const v = inp.value.trim(); if (v !== (s.text || "").trim()) patchInlineSubtask(c.id, s.id, { text: v }); });
+            inp.addEventListener("keydown", e => {
+              if (e.key !== "Enter") return;
+              e.preventDefault(); e.stopPropagation();
+              const v = inp.value.trim();
+              if (v !== (s.text || "").trim()) patchInlineSubtask(c.id, s.id, { text: v });
+              else appendInlineSubtask(c.id, "", s.id);
+            });
+            row.appendChild(inp);
+          }
           const bits = []; if (s.owner) bits.push(s.owner); if (s.due) bits.push(fmtDue(s.due));
           if (s.addedAt) bits.push("added " + fmtIso(s.addedAt));
           if (bits.length) { const m = document.createElement("span"); m.className = "notes-sub-meta"; m.textContent = "— " + bits.join(" · "); if (s.addedAt) m.title = new Date(s.addedAt).toLocaleString(); row.appendChild(m); }
+          const rm = document.createElement("button"); rm.type = "button"; rm.className = "notes-sub-rm"; rm.textContent = "✕"; rm.title = "Remove subtask";
+          rm.onclick = e => { e.stopPropagation(); patchInlineSubtask(c.id, s.id, null); };
+          row.appendChild(rm);
           sbox.appendChild(row);
         });
+        // Inline "add subtask" — quick way to append without opening the modal. Enter commits.
+        const addRow = document.createElement("div"); addRow.className = "notes-sub notes-sub-addrow";
+        const addInp = document.createElement("input"); addInp.className = "notes-sub-add-input"; addInp.placeholder = "＋ Add subtask… (end with “:” for a header)";
+        addInp.addEventListener("keydown", e => {
+          if (e.key !== "Enter") return;
+          e.preventDefault(); e.stopPropagation();
+          const v = addInp.value.trim(); if (!v) return;
+          // Header shorthand: line ending in ":" becomes a group header.
+          const h = /^(.+?):\s*$/.exec(v);
+          if (h) { const c2 = cards.find(x => x.id === c.id); if (!c2) return; const list = cardSubtasks(c2).slice(); list.push({ id: subId(), text: h[1].trim(), type: "header", addedAt: nowIso() }); const fields = Object.assign({}, c2.fields || {}); fields[SUBTASKS_KEY] = list; c2.fields = fields; (async () => { if (ONLINE) { const { error } = await db.from("deliverables").update({ fields }).eq("id", c2.id); if (error) toast("Save failed: " + error.message); else render(); } else { saveLocal(); render(); } })(); }
+          else appendInlineSubtask(c.id, v);
+          addInp.value = "";
+        });
+        addRow.appendChild(addInp);
+        sbox.appendChild(addRow);
+        body.appendChild(sbox);
+      } else {
+        // No subtasks yet — still expose the quick-add input.
+        const sbox = document.createElement("div"); sbox.className = "notes-subs";
+        const addRow = document.createElement("div"); addRow.className = "notes-sub notes-sub-addrow";
+        const addInp = document.createElement("input"); addInp.className = "notes-sub-add-input"; addInp.placeholder = "＋ Add subtask…";
+        addInp.addEventListener("keydown", e => {
+          if (e.key !== "Enter") return;
+          e.preventDefault(); e.stopPropagation();
+          const v = addInp.value.trim(); if (v) appendInlineSubtask(c.id, v);
+          addInp.value = "";
+        });
+        addRow.appendChild(addInp);
+        sbox.appendChild(addRow);
         body.appendChild(sbox);
       }
     }
