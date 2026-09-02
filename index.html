@@ -301,6 +301,20 @@
   .notes-sub-addrow { opacity: .8; }
   .notes-sub-add-input { flex: 1; min-width: 0; padding: 3px 6px; font: inherit; color: var(--text); background: transparent; border: 1px dashed var(--line); border-radius: 4px; }
   .notes-sub-add-input:focus { outline: none; border-style: solid; border-color: var(--accent); background: rgba(109,93,252,.06); }
+  /* Inline subtask controls in the Notes view — owner picker, due-date input, drag handle, convert button. Match
+     the modal's affordances so anything you can do to a subtask on the card, you can also do here. */
+  .notes-sub-drag { flex: none; padding: 0 4px; color: var(--muted); cursor: grab; user-select: none; font-size: 11px; opacity: .4; }
+  .notes-sub:hover .notes-sub-drag { opacity: 1; }
+  .notes-sub.dragging { opacity: .55; }
+  .notes-sub.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent) inset; }
+  .notes-sub.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent) inset; }
+  .notes-sub-owner { flex: none; padding: 3px 6px; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+  .notes-sub-owner:hover { border-color: var(--accent); }
+  .notes-sub-due { flex: none; padding: 3px 6px; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; color-scheme: dark; }
+  html[data-theme="light"] .notes-sub-due { color-scheme: light; }
+  .notes-sub-convert { flex: none; padding: 3px 8px; font-size: 12px; color: var(--accent); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; opacity: .4; }
+  .notes-sub:hover .notes-sub-convert { opacity: 1; }
+  .notes-sub-convert:hover { border-color: var(--accent); }
   .list-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
   .list-body.split { gap: 0; }
   .list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; flex: none; }
@@ -967,8 +981,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.40";
+const VERSION = "2.41";
 const CHANGELOG = [
+  "v2.41 — Notes view subtasks get the full modal treatment inline. Each row now has an owner picker, due-date field, drag handle for reordering, and “➜ Convert” to promote it to a full deliverable — everything the modal editor has. Reordering, owner changes, due-date edits, and conversions all save immediately without opening the card.",
   "v2.40 — Notes view subtasks are now inline-editable. Click a subtask's text to rename it; blur or Enter saves. Enter on an empty edit adds a new subtask below. Section headers are inline-editable the same way. Each row shows a ✕ on hover to remove, and every card has a “＋ Add subtask” dashed input at the bottom of its list (ending in “:” creates a header). No more opening the full card for a quick text tweak.",
   "v2.39 — Fixed “Sort by Sprint (Desc) doesn't do anything on the List view.” Cause: the List view groups cards by sprint week and sorted the group keys with a hard-coded `.sort()` (always ascending), ignoring the user's Sort direction. Now Desc reverses the sprint groups so the most recent week is on top. “No sprint” stays at the bottom regardless.",
   "v2.38 — Light mode. Open the ⋯ Settings dialog → Theme → Dark / Light. Choice persists across sessions and is applied on first paint (no dark flash on reload). Brand colors and status accents stay the same in both themes; only the surfaces, text, and lines flip. If you spot a spot that still reads dark-on-dark or vice versa in light mode, let me know.",
@@ -2459,6 +2474,37 @@ async function patchInlineSubtask(cardId, subId, patch) {
   const { error } = await db.from("deliverables").update({ fields }).eq("id", cardId);
   if (error) toast("Save failed: " + error.message); else render();
 }
+// Reorder inline: move the subtask with id=fromId to index=toIdx in the card's subtask list, then persist.
+async function reorderInlineSubtask(cardId, fromId, toIdx) {
+  const c = cards.find(x => x.id === cardId); if (!c) return;
+  const list = cardSubtasks(c).slice();
+  const fromIdx = list.findIndex(s => s.id === fromId); if (fromIdx < 0) return;
+  const [moved] = list.splice(fromIdx, 1);
+  const target = fromIdx < toIdx ? toIdx - 1 : toIdx;
+  list.splice(target, 0, moved);
+  const fields = Object.assign({}, c.fields || {}); fields[SUBTASKS_KEY] = list; c.fields = fields;
+  if (!ONLINE) { saveLocal(); render(); return; }
+  const { error } = await db.from("deliverables").update({ fields }).eq("id", cardId);
+  if (error) toast("Reorder failed: " + error.message); else render();
+}
+// Convert a subtask to a full deliverable directly from the Notes view — same behavior as the modal's Convert
+// button: inherits the parent's brand/channel/promotion; replaces the subtask row with a link to the new card.
+async function convertInlineSubtaskToDeliverable(cardId, subId) {
+  const parent = cards.find(x => x.id === cardId); if (!parent) return;
+  const s = cardSubtasks(parent).find(x => x.id === subId); if (!s) return;
+  const text = (s.text || "").trim(); if (!text) { toast("Add a title before converting."); return; }
+  if (s.linkedCardId) return;
+  const parentPromo = parent.fields && parent.fields[PROMO_KEY];
+  const fields = {};
+  if (parentPromo && parentPromo !== "__add_promo__") fields[PROMO_KEY] = parentPromo;
+  const newId = await createCard({
+    title: text, brand: parent.brand, channel: parent.channel, owner: s.owner || "",
+    due: s.due || "", end: "", status: statusList[0] ? statusList[0].name : "Backlog", notes: "", fields,
+  });
+  if (!newId) return;
+  await patchInlineSubtask(cardId, subId, { linkedCardId: newId });
+  toast(`Converted "${text}" to a new deliverable.`);
+}
 // Append a subtask to a card from the Notes view. `insertAfterId`, if provided, controls where the new item
 // lands (right after that entry) — used by the per-header quick-add button.
 async function appendInlineSubtask(cardId, text, insertAfterId) {
@@ -2606,18 +2652,31 @@ function renderNotesView() {
             sbox.appendChild(h); return;
           }
           const row = document.createElement("div"); row.className = "notes-sub" + (subtaskInGroup(subs, i) ? " notes-sub-in-group" : "");
+          row.dataset.subId = s.id;
+          // Drag handle — grab to reorder. The whole row participates in drag; only the handle sets draggable.
+          const grip = document.createElement("span"); grip.className = "notes-sub-drag"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
+          grip.addEventListener("mousedown", e => { e.stopPropagation(); row.draggable = true; });
+          grip.addEventListener("mouseup", () => { row.draggable = false; });
+          row.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", s.id); e.dataTransfer.effectAllowed = "move"; row.classList.add("dragging"); e.stopPropagation(); });
+          row.addEventListener("dragend", () => { row.classList.remove("dragging"); row.draggable = false; sbox.querySelectorAll(".notes-sub.drag-over-top, .notes-sub.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+          row.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = row.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; row.classList.toggle("drag-over-top", above); row.classList.toggle("drag-over-bot", !above); });
+          row.addEventListener("dragleave", () => row.classList.remove("drag-over-top", "drag-over-bot"));
+          row.addEventListener("drop", e => {
+            e.preventDefault(); e.stopPropagation(); const fromId = e.dataTransfer.getData("text/plain"); if (!fromId || fromId === s.id) { row.classList.remove("drag-over-top", "drag-over-bot"); return; }
+            const rct = row.getBoundingClientRect(); const above = e.clientY < rct.top + rct.height / 2;
+            reorderInlineSubtask(c.id, fromId, i + (above ? 0 : 1));
+          });
+          row.appendChild(grip);
           const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!s.done;
           cb.onclick = e => { e.stopPropagation(); toggleInlineSubtask(c.id, s.id, cb.checked); };
           row.appendChild(cb);
           if (s.linkedCardId) {
-            // Linked subtasks stay non-editable — the text belongs to the target deliverable.
             const linked = cards.find(x => x.id === s.linkedCardId);
             const txt = document.createElement("span"); txt.className = "notes-sub-text" + (s.done ? " done" : "");
             if (linked) { const a = document.createElement("a"); a.className = "notes-sub-link"; a.textContent = "🔗 " + linked.title; a.onclick = e => { e.stopPropagation(); openModal(linked); }; txt.appendChild(a); }
             else txt.textContent = (s.text || "(deleted)") + " (deleted)";
             row.appendChild(txt);
           } else {
-            // Inline-editable input — blur commits; Enter commits and adds a new subtask below.
             const inp = document.createElement("input"); inp.className = "notes-sub-input" + (s.done ? " done" : ""); inp.value = s.text || "";
             inp.addEventListener("blur", () => { const v = inp.value.trim(); if (v !== (s.text || "").trim()) patchInlineSubtask(c.id, s.id, { text: v }); });
             inp.addEventListener("keydown", e => {
@@ -2629,10 +2688,27 @@ function renderNotesView() {
             });
             row.appendChild(inp);
           }
-          const bits = []; if (s.owner) bits.push(s.owner); if (s.due) bits.push(fmtDue(s.due));
-          if (s.addedAt) bits.push("added " + fmtIso(s.addedAt));
-          if (bits.length) { const m = document.createElement("span"); m.className = "notes-sub-meta"; m.textContent = "— " + bits.join(" · "); if (s.addedAt) m.title = new Date(s.addedAt).toLocaleString(); row.appendChild(m); }
-          const rm = document.createElement("button"); rm.type = "button"; rm.className = "notes-sub-rm"; rm.textContent = "✕"; rm.title = "Remove subtask";
+          // Owner picker — same list as the modal (peopleList + a "(deleted)" legacy value if present).
+          if (!s.linkedCardId) {
+            const own = document.createElement("select"); own.className = "notes-sub-owner"; own.title = "Owner";
+            const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "— owner —"; own.appendChild(noneOpt);
+            peopleList.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; own.appendChild(o); });
+            if (s.owner && !peopleList.some(p => p.name === s.owner)) { const o = document.createElement("option"); o.value = s.owner; o.textContent = s.owner; own.appendChild(o); }
+            own.value = s.owner || "";
+            own.onchange = e => { e.stopPropagation(); patchInlineSubtask(c.id, s.id, { owner: own.value }); };
+            own.onclick = e => e.stopPropagation();
+            row.appendChild(own);
+            const due = document.createElement("input"); due.type = "date"; due.className = "notes-sub-due"; due.value = s.due || ""; due.title = "Due date";
+            due.onchange = e => { e.stopPropagation(); patchInlineSubtask(c.id, s.id, { due: due.value }); };
+            due.onclick = e => e.stopPropagation();
+            row.appendChild(due);
+            // Convert to a full deliverable (same behavior as the modal Convert button).
+            const conv = document.createElement("button"); conv.type = "button"; conv.className = "notes-sub-convert"; conv.textContent = "➜ Convert"; conv.title = "Convert to a new deliverable (inherits this card's brand/channel/promotion)";
+            conv.onclick = e => { e.stopPropagation(); convertInlineSubtaskToDeliverable(c.id, s.id); };
+            row.appendChild(conv);
+          }
+          if (s.addedAt) { const m = document.createElement("span"); m.className = "notes-sub-meta"; m.textContent = "added " + fmtIso(s.addedAt); m.title = new Date(s.addedAt).toLocaleString(); row.appendChild(m); }
+          const rm = document.createElement("button"); rm.type = "button"; rm.className = "notes-sub-rm"; rm.textContent = "✕"; rm.title = s.linkedCardId ? "Remove this linked subtask (does not delete the deliverable)" : "Remove subtask";
           rm.onclick = e => { e.stopPropagation(); patchInlineSubtask(c.id, s.id, null); };
           row.appendChild(rm);
           sbox.appendChild(row);
