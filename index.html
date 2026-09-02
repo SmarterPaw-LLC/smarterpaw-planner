@@ -981,8 +981,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.41";
+const VERSION = "2.42";
 const CHANGELOG = [
+  "v2.42 — Notes view (only) now includes cards where any SUBTASK is assigned to the filtered owner, not just cards owned by them at the top level. So “You: Jason” or an owner quick-filter surfaces every deliverable where Jason is doing work — even if he isn't listed as an owner of the parent card. Other views keep the strict card-owner filter; other filters (sprint, brand, search…) still apply exactly as before.",
   "v2.41 — Notes view subtasks get the full modal treatment inline. Each row now has an owner picker, due-date field, drag handle for reordering, and “➜ Convert” to promote it to a full deliverable — everything the modal editor has. Reordering, owner changes, due-date edits, and conversions all save immediately without opening the card.",
   "v2.40 — Notes view subtasks are now inline-editable. Click a subtask's text to rename it; blur or Enter saves. Enter on an empty edit adds a new subtask below. Section headers are inline-editable the same way. Each row shows a ✕ on hover to remove, and every card has a “＋ Add subtask” dashed input at the bottom of its list (ending in “:” creates a header). No more opening the full card for a quick text tweak.",
   "v2.39 — Fixed “Sort by Sprint (Desc) doesn't do anything on the List view.” Cause: the List view groups cards by sprint week and sorted the group keys with a hard-coded `.sort()` (always ascending), ignoring the user's Sort direction. Now Desc reverses the sprint groups so the most recent week is on top. “No sprint” stays at the bottom regardless.",
@@ -2532,9 +2533,26 @@ async function removeCardEmail(cardId, emailId) {
 // Notes view — a chronological feed mixing NOTES and EMAILS from all visible deliverables. Each note is one entry
 // per card; each email is one entry per email object. Entries are sorted by date desc (email.addedAt for emails;
 // card.due/sprint/created_at for notes).
+// Notes-view-specific visible set. When the owner quick-filter is on, a card is included if the CARD'S owners
+// match OR any of its subtasks is assigned to the filtered owner — so someone can filter to "just my work" and
+// still see cards where they own subtask work but not the parent deliverable. Other filters (search, sprint,
+// brand, etc.) still apply exactly as they do in visibleCards().
+function notesVisibleCards() {
+  const of = filters.owner;
+  if (!of || !of.size) return visibleCards();
+  // Compute the baseline without the owner filter so we can consider subtask-owner matches too.
+  const saved = filters.owner; delete filters.owner;
+  const baseline = visibleCards();
+  filters.owner = saved;
+  return baseline.filter(c => {
+    const owners = splitOwners(c.owner);
+    if (owners.some(o => of.has(o))) return true;
+    return cardSubtasks(c).some(s => s.owner && of.has(s.owner));
+  });
+}
 function renderNotesView() {
   const root = document.getElementById("notes"); root.innerHTML = "";
-  const cardsIn = visibleCards();
+  const cardsIn = notesVisibleCards();
   const feed = [];
   cardsIn.forEach(c => {
     const emails = cardEmails(c);
