@@ -985,8 +985,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.43";
+const VERSION = "2.44";
 const CHANGELOG = [
+  "v2.44 — New lane role: 👀 Review. Parallels ✓ Complete / 🕒 Scheduled / 📥 Backlog — designate any lane as Review in Manage → status (role dropdown). Cards on that lane get a 👀 badge next to the title (Board / Calendar / List / bar chip). Visual-only, no side effects on save. Auto-detects a lane literally named “Review” or “In Review” if you haven't picked one.",
   "v2.43 — Fixed “can't open the date picker” in light mode. Cause: the dark-theme rule inverted the native calendar icon (dark→light) so it stays visible on our dark surfaces — but that inversion also applied in light mode, turning the icon white-on-white so users couldn't see where to click. Removed the invert for light mode and added a click-anywhere-to-open safety net (`input.showPicker()` on click) so the date picker opens even if you miss the icon.",
   "v2.42 — Notes view (only) now includes cards where any SUBTASK is assigned to the filtered owner, not just cards owned by them at the top level. So “You: Jason” or an owner quick-filter surfaces every deliverable where Jason is doing work — even if he isn't listed as an owner of the parent card. Other views keep the strict card-owner filter; other filters (sprint, brand, search…) still apply exactly as before.",
   "v2.41 — Notes view subtasks get the full modal treatment inline. Each row now has an owner picker, due-date field, drag handle for reordering, and “➜ Convert” to promote it to a full deliverable — everything the modal editor has. Reordering, owner changes, due-date edits, and conversions all save immediately without opening the card.",
@@ -1541,6 +1542,20 @@ function setBacklog(item) {
   afterListsChanged();
 }
 const BACKLOG_ICON = "📥";
+// Review lane — parallels Complete / Scheduled / Backlog. Purely a visual designation (👀 badge on cards in that
+// lane); no side effects on save. localStorage-scoped so it's per-user like the others.
+let reviewLane = localStorage.getItem("planner-review-lane");
+function effReviewLane() {
+  if (reviewLane !== null) return reviewLane;
+  const s = statusList.find(x => /^(in\s?)?review$/i.test(x.name));
+  return s ? s.name : "";
+}
+function setReview(item) {
+  reviewLane = (effReviewLane() === item.name) ? "" : item.name;
+  localStorage.setItem("planner-review-lane", reviewLane || "");
+  afterListsChanged();
+}
+const REVIEW_ICON = "👀";
 // Called whenever a card's status is about to become the Backlog lane — clears due/end/planning-sprint and the
 // editable sprints-tracked list, but PRESERVES (and topsup) the historical sprints record. Returns the fields
 // blob to persist. Runs synchronously so callers (patchStatus, bulk edit) can include the same fields in their
@@ -1561,6 +1576,7 @@ function applyBacklogClear(c) {
   return f;
 }
 function schedBadge(c) { const sl = effScheduledLane(); return (sl && c.status === sl) ? '<span class="sched-check" title="Scheduled">' + SCHED_ICON + '</span> ' : ''; }
+function reviewBadge(c) { const rl = effReviewLane(); return (rl && c.status === rl) ? '<span class="sched-check" title="In review">' + REVIEW_ICON + '</span> ' : ''; }
 let filters = {};   // quick sprint filter from the List header: { sprint: Set }
 let filterRules = [];      // advanced Filter panel: [{ field, op:'is'|'isnot'|'empty'|'notempty', values:[] }]
 let filterMatch = "all";   // "all" (AND) | "any" (OR)
@@ -2886,7 +2902,7 @@ function listTaskEl(c) {
   const main = document.createElement("div"); main.className = "lt-main";
   const title = document.createElement("div"); title.className = "lt-title";
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
-  title.innerHTML = done + schedBadge(c) + esc(c.title);
+  title.innerHTML = done + schedBadge(c) + reviewBadge(c) + esc(c.title);
   title.onclick = () => openModal(c);
   main.appendChild(title);
   const meta = document.createElement("div"); meta.className = "lt-meta";
@@ -2988,7 +3004,7 @@ function cardEl(c) {
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
   const prog = subProgress(c);
   const progHtml = prog.total ? `<div class="card-prog"><div class="progress${prog.pct === 100 ? " full" : ""}"><i style="width:${prog.pct}%"></i></div><span>${prog.done}/${prog.total}</span></div>` : "";
-  el.innerHTML = `<h3>${done}${schedBadge(c)}${esc(c.title)}</h3>` +
+  el.innerHTML = `<h3>${done}${schedBadge(c) + reviewBadge(c)}${esc(c.title)}</h3>` +
     (badges ? `<div class="dimrow${curDisp().badge ? "" : " text"}">${badges}</div>` : "") +
     progHtml +
     (c.notes ? `<div class="notes">${renderNotes(c.notes)}</div>` : "");
@@ -3545,7 +3561,7 @@ function evContent(c) {
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
   const brand = ds.dims.includes("brand") ? dimChipHtml(c, "brand") : "";
   const rest = dimBadges(c, ["brand"]);
-  return `${done}${schedBadge(c)}<span class="bt">${esc(c.title)}</span>`
+  return `${done}${schedBadge(c) + reviewBadge(c)}<span class="bt">${esc(c.title)}</span>`
     + (brand ? ` <span class="barbrand">${brand}</span>` : "")
     + (rest ? ` <span class="bardims">${rest}</span>` : "");
 }
@@ -4438,11 +4454,11 @@ function manageRow(kind, item, idx) {
   left.appendChild(document.createTextNode(item.name));
   const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
   if (kind === "status") {
-    // Designation dropdown — collapses the three mutually-exclusive lane roles (Complete / Scheduled / Backlog)
-    // into one compact selector so the row doesn't wrap. Picking one designation clears the others.
-    const cur = completeLane === item.name ? "complete" : effScheduledLane() === item.name ? "scheduled" : effBacklogLane() === item.name ? "backlog" : "";
+    // Designation dropdown — collapses the four mutually-exclusive lane roles (Complete / Scheduled / Backlog /
+    // Review) into one compact selector so the row doesn't wrap. Picking one designation clears the others.
+    const cur = completeLane === item.name ? "complete" : effScheduledLane() === item.name ? "scheduled" : effBacklogLane() === item.name ? "backlog" : effReviewLane() === item.name ? "review" : "";
     const dsg = document.createElement("select"); dsg.className = "mv lane-dsg"; dsg.title = "Designate this lane's role";
-    [["", "— role —"], ["complete", "✓ Complete"], ["scheduled", "🕒 Scheduled"], ["backlog", BACKLOG_ICON + " Backlog"]].forEach(([v, l]) => {
+    [["", "— role —"], ["complete", "✓ Complete"], ["scheduled", "🕒 Scheduled"], ["review", REVIEW_ICON + " Review"], ["backlog", BACKLOG_ICON + " Backlog"]].forEach(([v, l]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === cur) o.selected = true; dsg.appendChild(o);
     });
     dsg.onchange = () => {
@@ -4450,9 +4466,11 @@ function manageRow(kind, item, idx) {
       if (cur === "complete") setComplete(item);   // toggles off (since it was on)
       if (cur === "scheduled") setScheduled(item);
       if (cur === "backlog") setBacklog(item);
+      if (cur === "review") setReview(item);
       if (v === "complete" && cur !== "complete") setComplete(item);
       if (v === "scheduled" && cur !== "scheduled") setScheduled(item);
       if (v === "backlog" && cur !== "backlog") setBacklog(item);
+      if (v === "review" && cur !== "review") setReview(item);
     };
     ctrls.appendChild(dsg);
     const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
