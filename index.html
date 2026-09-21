@@ -431,8 +431,9 @@
   .planning-lane-toggles { display: inline-flex; gap: 4px; flex-wrap: wrap; }
   .planning-lane-chip { font-size: 12px; padding: 4px 10px 4px 9px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; cursor: pointer; }
   .planning-lane-chip.on { color: var(--text); background: var(--panel-2); border-color: var(--accent); font-weight: 600; }
-  .planning-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  @media (max-width: 900px) { .planning-grid { grid-template-columns: 1fr; } }
+  .planning-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 1400px) { .planning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 760px) { .planning-grid { grid-template-columns: 1fr; } }
   .planning-sec { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; min-height: 200px; }
   .planning-sec-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
   .planning-sec-head h3 { margin: 0; font-size: 15px; }
@@ -1042,8 +1043,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.48";
+const VERSION = "2.49";
 const CHANGELOG = [
+  "v2.49 — Sprint Planning gets a “This week” section between Last week and Next week. Grid is now 4 columns on wide screens (Backlog / Last / This / Next), drops to 2 columns below ~1400px, single column on mobile. Drag-to-drop targets, per-lane counts, and clickable owner pills all work on the new section too.",
   "v2.48 — Sprint Planning gets drag-and-drop + interactive counts + safer Push. (1) Drag any card across sections: drop into Backlog sends it to the Backlog lane (with the usual wipe of sprint data); drop into Last week or Next week shifts the card's due/end to that ISO week (or sets planning sprint if no due). (2) Owner-count pills are clickable — click one to add that person to the owner filter, click again to remove. (3) Push-to-next-sprint now shows a per-week confirmation dialog naming each target week when it would land any card BEYOND next-week-from-today, so a second push is deliberate; also guarded against double-invocation from a fast double-click.",
   "v2.47 — Sprint Planning is now a full view, not a modal. Added as the 6th tab in the view toggle (📋 Planning); the “Sprint planning” button next to the sprint quick-toggle now switches to that view. Bookmarkable via ?view=planning; saved views can capture it. Everything else about the dashboard is unchanged — Backlog / Last week / Next week sections, per-lane and per-owner counts, lane-chip picker.",
   "v2.46 — Sprint-planning dashboard. New “📋 Sprint planning” button next to the Last/This/Next quick-toggle opens a 3-section overview: 📥 Backlog, ← Last week, Next week →. Each week section shows per-lane counts (with a chip picker to enable/disable which lanes to count — persisted per browser) and per-owner counts. Cards render below with lane badges; clicking one opens its modal. Owner / brand / channel / search filters flow through; sprint and overdue are ignored (this view has its own week rules). Sprint control also picked up a small “SPRINT” caption above the row.",
@@ -2431,6 +2433,7 @@ function savePlanningLanes() { if (planningLanes) localStorage.setItem("planner-
 function renderSprintPlanning() {
   const now = new Date();
   const lastWk = isoWeek(ymd(addDays(now, -7)));
+  const thisWk = isoWeek(ymd(now));
   const nextWk = isoWeek(ymd(addDays(now, 7)));
   const bl = effBacklogLane();
   const lanes = activePlanningLanes();
@@ -2460,6 +2463,7 @@ function renderSprintPlanning() {
   // that ISO week (so a card spanning multiple sprints shows in every applicable section).
   const backlog = bl ? searched.filter(c => c.status === bl) : [];
   const last = searched.filter(c => c.status !== bl && cardSprints(c).includes(lastWk));
+  const thisW = searched.filter(c => c.status !== bl && cardSprints(c).includes(thisWk));
   const next = searched.filter(c => c.status !== bl && cardSprints(c).includes(nextWk));
   const grid = document.getElementById("planningGrid"); grid.innerHTML = "";
   const sec = (title, subtitle, list, showStats, dropKind, dropWk) => {
@@ -2535,6 +2539,7 @@ function renderSprintPlanning() {
   };
   grid.appendChild(sec("📥 Backlog", bl ? "Cards on the “" + bl + "” lane" : "Set a Backlog lane in Manage → status to populate this section.", backlog, false, "backlog"));
   grid.appendChild(sec("← Last week", "Wk " + lastWk.split("-W")[1] + " · " + sprintRange(lastWk), last, true, "week", lastWk));
+  grid.appendChild(sec("This week", "Wk " + thisWk.split("-W")[1] + " · " + sprintRange(thisWk), thisW, true, "week", thisWk));
   grid.appendChild(sec("Next week →", "Wk " + nextWk.split("-W")[1] + " · " + sprintRange(nextWk), next, true, "week", nextWk));
 }
 // Move a card to a specific ISO week. If the card has a due date, we shift due (and end, if present) by the
