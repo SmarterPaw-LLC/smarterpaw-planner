@@ -53,7 +53,7 @@
   button.ghost { background: transparent; }
   /* Quick filter section: color/search/filter row on top, then per-dimension click-to-filter rows (Brand, Channel, Promotions). All left-aligned. */
   #quickFilters { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 20px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-  #quickFilters .qf-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; }
+  #quickFilters .qf-controls { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; width: 100%; }
   .qf-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .qf-row .lg-title { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); font-weight: 700; }
   .qf-row .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); cursor: pointer; user-select: none; }
@@ -1043,8 +1043,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.49";
+const VERSION = "2.50";
 const CHANGELOG = [
+  "v2.50 — Two fixes. (1) Dragging a Backlog card into a week (Last / This / Next) now actually moves it — the drop also flips the card off the Backlog lane onto the first non-Backlog/non-Complete lane (usually “To Do”) and lands it on the target week's Monday. Previously it wrote a planning sprint but the status stayed on Backlog, so the card was still hidden in the Backlog section. (2) Sprint / Color / Filter & sort controls now bottom-align in the quick-filter row, so the “SPRINT” caption above the segmented control no longer offsets the whole row.",
   "v2.49 — Sprint Planning gets a “This week” section between Last week and Next week. Grid is now 4 columns on wide screens (Backlog / Last / This / Next), drops to 2 columns below ~1400px, single column on mobile. Drag-to-drop targets, per-lane counts, and clickable owner pills all work on the new section too.",
   "v2.48 — Sprint Planning gets drag-and-drop + interactive counts + safer Push. (1) Drag any card across sections: drop into Backlog sends it to the Backlog lane (with the usual wipe of sprint data); drop into Last week or Next week shifts the card's due/end to that ISO week (or sets planning sprint if no due). (2) Owner-count pills are clickable — click one to add that person to the owner filter, click again to remove. (3) Push-to-next-sprint now shows a per-week confirmation dialog naming each target week when it would land any card BEYOND next-week-from-today, so a second push is deliberate; also guarded against double-invocation from a fast double-click.",
   "v2.47 — Sprint Planning is now a full view, not a modal. Added as the 6th tab in the view toggle (📋 Planning); the “Sprint planning” button next to the sprint quick-toggle now switches to that view. Bookmarkable via ?view=planning; saved views can capture it. Everything else about the dashboard is unchanged — Backlog / Last week / Next week sections, per-lane and per-owner counts, lane-chip picker.",
@@ -2544,24 +2545,41 @@ function renderSprintPlanning() {
 }
 // Move a card to a specific ISO week. If the card has a due date, we shift due (and end, if present) by the
 // same day-delta that would land the earliest current sprint on the target week — so a card that spans multiple
-// weeks retains its span. If the card has no due date, we just set the manual planning sprint (SPRINT_KEY).
+// weeks retains its span. If the card has no due date, we set a manual planning sprint (SPRINT_KEY).
+// Special case: cards on the Backlog lane are OFF the sprint plan entirely, so dropping one into a week must
+// also move it OFF the Backlog lane (otherwise it stays hidden in the Backlog section even after being planned).
+// We move it to the first non-Backlog, non-Complete lane — usually "To Do" — so it lands as active work.
 async function moveCardToSprint(cardId, targetWk) {
   const c = cards.find(x => x.id === cardId); if (!c) return;
+  const bl = effBacklogLane();
+  const cameFromBacklog = bl && c.status === bl;
+  const patch = {};
+  if (cameFromBacklog) {
+    const cl = completeLane;
+    const target = (statusList.find(s => s.name !== bl && s.name !== cl) || statusList.find(s => s.name !== bl) || {}).name || c.status;
+    c.status = target; patch.status = target;
+    // Land the card on the target week's Monday when it had no dates (backlog wipe cleared them). If the user
+    // had a lingering due for some reason, keep it and let the delta logic below re-anchor it to the week.
+    if (!c.due) { const mon = isoWeekStart(targetWk); if (mon) { c.due = ymdUTC(mon); patch.due = c.due; } }
+  }
   const cur = cardSprints(c).sort();
   const from = cur[0] || "";
-  const patch = {};
   if (c.due) {
     const fromMon = isoWeekStart(from) || isoWeekStart(isoWeek(c.due));
     const toMon = isoWeekStart(targetWk); if (!toMon || !fromMon) return;
     const deltaDays = Math.round((toMon.getTime() - fromMon.getTime()) / 86400000);
-    const shift = (ymdStr) => { const d = new Date(ymdStr + "T00:00:00"); d.setDate(d.getDate() + deltaDays); return ymd(d); };
-    c.due = shift(c.due); patch.due = c.due;
-    if (c.end) { c.end = shift(c.end); patch.end = c.end; }
+    if (deltaDays !== 0) {
+      const shift = (ymdStr) => { const d = new Date(ymdStr + "T00:00:00"); d.setDate(d.getDate() + deltaDays); return ymd(d); };
+      c.due = shift(c.due); patch.due = c.due;
+      if (c.end) { c.end = shift(c.end); patch.end = c.end; }
+    }
   } else {
     const fields = Object.assign({}, c.fields || {}); fields[SPRINT_KEY] = targetWk; c.fields = fields; patch.fields = fields;
   }
+  if (!Object.keys(patch).length) return;
   if (!ONLINE) { saveLocal(); render(); return; }
   const dbPatch = {};
+  if ("status" in patch) dbPatch.status = patch.status;
   if ("due" in patch) dbPatch.due = patch.due || null;
   if ("end" in patch) dbPatch.end_date = patch.end || null;
   if ("fields" in patch) dbPatch.fields = patch.fields;
