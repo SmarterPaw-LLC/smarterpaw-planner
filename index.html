@@ -1043,8 +1043,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.50";
+const VERSION = "2.51";
 const CHANGELOG = [
+  "v2.51 — Fixed “dragging a card between weeks in Sprint Planning left it in both columns.” Cause: shifting the due date moved the derived sprint, but the card's editable Sprints-tracked list (SPRINTHIST_KEY) and any manual planning sprint (SPRINT_KEY) still pointed at the old week, so cardSprints() returned both weeks. Move now rebuilds Sprints-tracked from just the new derived sprint (+ any surviving manual planning value), and drops the manual sprint when it matches the new derived one. Historical sprints (permanent record) is untouched — the pre-move sprints stay there forever.",
   "v2.50 — Two fixes. (1) Dragging a Backlog card into a week (Last / This / Next) now actually moves it — the drop also flips the card off the Backlog lane onto the first non-Backlog/non-Complete lane (usually “To Do”) and lands it on the target week's Monday. Previously it wrote a planning sprint but the status stayed on Backlog, so the card was still hidden in the Backlog section. (2) Sprint / Color / Filter & sort controls now bottom-align in the quick-filter row, so the “SPRINT” caption above the segmented control no longer offsets the whole row.",
   "v2.49 — Sprint Planning gets a “This week” section between Last week and Next week. Grid is now 4 columns on wide screens (Backlog / Last / This / Next), drops to 2 columns below ~1400px, single column on mobile. Drag-to-drop targets, per-lane counts, and clickable owner pills all work on the new section too.",
   "v2.48 — Sprint Planning gets drag-and-drop + interactive counts + safer Push. (1) Drag any card across sections: drop into Backlog sends it to the Backlog lane (with the usual wipe of sprint data); drop into Last week or Next week shifts the card's due/end to that ISO week (or sets planning sprint if no due). (2) Owner-count pills are clickable — click one to add that person to the owner filter, click again to remove. (3) Push-to-next-sprint now shows a per-week confirmation dialog naming each target week when it would land any card BEYOND next-week-from-today, so a second push is deliberate; also guarded against double-invocation from a fast double-click.",
@@ -2575,6 +2576,21 @@ async function moveCardToSprint(cardId, targetWk) {
     }
   } else {
     const fields = Object.assign({}, c.fields || {}); fields[SPRINT_KEY] = targetWk; c.fields = fields; patch.fields = fields;
+  }
+  // Prune stale sprint pointers so the card no longer appears in its OLD week's section. Rebuild the editable
+  // "Sprints tracked" list from just the new derived sprint(s) + the new manual planning sprint (if any); clear
+  // the manual planning sprint entirely when it matches the new derived — the modal treats those as equivalent.
+  // HIST_SPRINTS_KEY (the permanent record) is left alone; the pre-move sprints stay there forever.
+  {
+    const newDerived = sprintsInRange(c.due, c.end);
+    const fields = Object.assign({}, (patch.fields || c.fields) || {});
+    const manual = fields[SPRINT_KEY];
+    // If the manual planning sprint now matches the derived one (or is stale from the old week), drop it.
+    if (manual && (newDerived.includes(manual) || manual === from)) delete fields[SPRINT_KEY];
+    // Rebuild Sprints-tracked = new derived + surviving manual (if any).
+    const tracked = newDerived.slice(); if (fields[SPRINT_KEY] && !tracked.includes(fields[SPRINT_KEY])) tracked.push(fields[SPRINT_KEY]);
+    if (tracked.length) fields[SPRINTHIST_KEY] = tracked; else delete fields[SPRINTHIST_KEY];
+    c.fields = fields; patch.fields = fields;
   }
   if (!Object.keys(patch).length) return;
   if (!ONLINE) { saveLocal(); render(); return; }
