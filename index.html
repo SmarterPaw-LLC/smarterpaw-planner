@@ -451,8 +451,11 @@
   .planning-owner-pill:disabled { opacity: .7; }
   .planning-owner-pill b { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
   .planning-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-  .planning-push-all { align-self: stretch; padding: 5px 10px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px dashed var(--accent); border-radius: 6px; cursor: pointer; }
-  .planning-push-all:hover { background: var(--accent); color: #fff; border-style: solid; }
+  /* Per-card "push forward one week" button. Deliberate one-card-at-a-time affordance (no bulk push). */
+  .planning-card { position: relative; }
+  .planning-card-push { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; padding: 0; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; line-height: 1; opacity: 0; transition: opacity .12s; }
+  .planning-card:hover .planning-card-push { opacity: 1; }
+  .planning-card-push:hover { color: #fff; background: var(--accent); border-color: var(--accent); }
   .planning-empty { color: var(--muted); font-style: italic; font-size: 12px; padding: 12px 4px; text-align: center; }
   .planning-card { padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 6px; cursor: pointer; }
   .planning-card:hover { border-color: var(--accent); }
@@ -1045,8 +1048,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.54";
+const VERSION = "2.55";
 const CHANGELOG = [
+  "v2.55 — Removed the section-level “Push all to next week” button on Sprint Planning (caused accidental bulk moves). Replaced with a per-card arrow (→) that appears on hover on Last-week and This-week cards; one click pushes just that card forward by one week. Tooltip names the target sprint so it's clear where it lands.",
   "v2.54 — Sprint Planning: unchecking a lane in “Show lanes” now hides those cards from the week sections' card lists too, not just from the count grid. Backlog section is unaffected (it's driven by the backlog-lane role, not by the show-lanes toggle).",
   "v2.53 — Sprint Planning: Last week and This week sections gain a “→ Push all to <target week>” button. One click shifts every card in that section forward by one week (Last→This, This→Next). Complete-lane cards are skipped by default (they represent shipped work) and the confirm dialog spells that out. Next week has no push button (nowhere to push to inside the visible sections).",
   "v2.52 — Sprint Planning sections now match on CURRENT-plan sprints only (due-range + manual planning sprint), not the editable Sprints-tracked history. Effect: a card whose current sprint is only Wk 39 no longer also appears in Wk 40 just because Wk 40 lingers in its Sprints-tracked list from a past move. Other views' sprint filter is unchanged — it still respects tracked history so “filter to Wk 39” surfaces every card that touched that week.",
@@ -2501,24 +2505,6 @@ function renderSprintPlanning() {
     const head = document.createElement("div"); head.className = "planning-sec-head";
     head.innerHTML = `<div><h3>${esc(title)}</h3><div class="planning-sec-sub">${esc(subtitle)}</div></div><span class="planning-count">${list.length}</span>`;
     s.appendChild(head);
-    // Roll-forward: on Last week and This week, offer a single-click bulk push into the next ISO week. Skips
-    // Complete-lane cards by default (they represent shipped work); a small confirm gates the action.
-    if (dropKind === "week" && dropWk && list.length && dropWk !== nextWk) {
-      const nextForThis = isoWeek(ymdUTC(new Date(isoWeekStart(dropWk).getTime() + 7 * 86400000)));
-      const label = dropWk === lastWk ? "→ Push all to This week" : "→ Push all to Next week";
-      const btn = document.createElement("button"); btn.type = "button"; btn.className = "planning-push-all";
-      btn.textContent = label; btn.title = "Move every card in this section forward by 1 week (Complete-lane cards are skipped by default)";
-      btn.onclick = async () => {
-        const toMove = completeLane ? list.filter(c => c.status !== completeLane) : list.slice();
-        const skipped = list.length - toMove.length;
-        if (!toMove.length) { toast("Nothing to push — all cards are on the Complete lane."); return; }
-        const msg = "Push " + toMove.length + " card" + (toMove.length === 1 ? "" : "s") + " forward to " + fmtSprintFull(nextForThis) + "?" + (skipped ? "\n\n" + skipped + " Complete-lane card" + (skipped === 1 ? "" : "s") + " will stay put." : "");
-        if (!confirm(msg)) return;
-        for (const c of toMove) { await moveCardToSprint(c.id, nextForThis); }
-        toast("Pushed " + toMove.length + " card" + (toMove.length === 1 ? "" : "s") + " to " + fmtSprintFull(nextForThis) + ".");
-      };
-      s.appendChild(btn);
-    }
     if (showStats) {
       // Per-lane counts (respects the enabled-lanes toggle).
       const laneStats = document.createElement("div"); laneStats.className = "planning-stats";
@@ -2569,6 +2555,15 @@ function renderSprintPlanning() {
       item.innerHTML = `<div class="planning-card-top">${done}${schedBadge(c) + reviewBadge(c)}<span class="planning-card-title">${esc(c.title)}</span>${badge}</div>` +
         (meta ? `<div class="planning-card-meta">${esc(meta)}</div>` : "");
       item.onclick = () => openModal(c);
+      // Per-card push forward — one week at a time. Only on Last week and This week (Next week has no visible
+      // "further" section to land in). Deliberate button, no bulk sweep, so mistakes are one card at a time.
+      if (dropKind === "week" && dropWk && dropWk !== nextWk) {
+        const targetWk = isoWeek(ymdUTC(new Date(isoWeekStart(dropWk).getTime() + 7 * 86400000)));
+        const pb = document.createElement("button"); pb.type = "button"; pb.className = "planning-card-push";
+        pb.textContent = "→"; pb.title = "Push to " + fmtSprintFull(targetWk);
+        pb.onclick = e => { e.stopPropagation(); moveCardToSprint(c.id, targetWk); };
+        item.appendChild(pb);
+      }
       cardsBox.appendChild(item);
     });
     s.appendChild(cardsBox);
