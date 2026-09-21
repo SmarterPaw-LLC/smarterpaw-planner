@@ -706,6 +706,7 @@
   <div class="qf-controls">
     <select id="colorBy" title="Color cards by"></select>
     <button id="filterBtn">⚲ Filter &amp; sort</button>
+    <div class="seg" id="sprintQuick" title="Quick-set the sprint filter"><button type="button" data-w="last">← Last week</button><button type="button" data-w="this">This week</button><button type="button" data-w="next">Next week →</button></div>
   </div>
   <div id="quickFilterRows"></div>
 </div>
@@ -985,8 +986,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.44";
+const VERSION = "2.45";
 const CHANGELOG = [
+  "v2.45 — Sprint quick-toggle. New segmented control next to Filter & sort with ← Last week / This week / Next week → buttons. One click swaps the sprint filter to that ISO week; clicking the currently-active button clears the sprint filter. The active button highlights whichever week is currently the sole sprint filter.",
   "v2.44 — New lane role: 👀 Review. Parallels ✓ Complete / 🕒 Scheduled / 📥 Backlog — designate any lane as Review in Manage → status (role dropdown). Cards on that lane get a 👀 badge next to the title (Board / Calendar / List / bar chip). Visual-only, no side effects on save. Auto-detects a lane literally named “Review” or “In Review” if you haven't picked one.",
   "v2.43 — Fixed “can't open the date picker” in light mode. Cause: the dark-theme rule inverted the native calendar icon (dark→light) so it stays visible on our dark surfaces — but that inversion also applied in light mode, turning the icon white-on-white so users couldn't see where to click. Removed the invert for light mode and added a click-anywhere-to-open safety net (`input.showPicker()` on click) so the date picker opens even if you miss the icon.",
   "v2.42 — Notes view (only) now includes cards where any SUBTASK is assigned to the filtered owner, not just cards owned by them at the top level. So “You: Jason” or an owner quick-filter surfaces every deliverable where Jason is doing work — even if he isn't listed as an owner of the parent card. Other views keep the strict card-owner filter; other filters (sprint, brand, search…) still apply exactly as before.",
@@ -2309,6 +2311,11 @@ function filterKeyLabel(key) {
 function renderActiveFilters() {
   const bar = document.getElementById("activeFilters"); if (!bar) return;
   const overdueBtn = document.getElementById("overdueBtn"); if (overdueBtn) overdueBtn.classList.toggle("on", filterOverdue);
+  // Sprint quick-toggle active-state — mark whichever button matches the sole sprint filter (if any).
+  const now = new Date();
+  const wks = { last: isoWeek(ymd(addDays(now, -7))), this: isoWeek(ymd(now)), next: isoWeek(ymd(addDays(now, 7))) };
+  const soleWk = (filters.sprint && filters.sprint.size === 1) ? [...filters.sprint][0] : "";
+  document.querySelectorAll("#sprintQuick button").forEach(b => b.classList.toggle("active", wks[b.dataset.w] === soleWk));
   bar.innerHTML = "";
   const pills = [];
   if (searchText.trim()) pills.push({ k: "Search", v: '“' + searchText.trim() + '”', remove: () => { searchText = ""; const s = document.getElementById("search"); if (s) s.value = ""; } });
@@ -4898,6 +4905,17 @@ async function init() {
   document.getElementById("dispOverlay").onclick = e => { if (e.target.id === "dispOverlay") e.currentTarget.classList.remove("show"); };
   document.querySelectorAll("#dispStyle button").forEach(b => b.onclick = () => { curDisp().badge = b.dataset.s === "badge"; saveDisplay(); renderDispSettings(); render(); });
   document.getElementById("filterBtn").onclick = openFilter;
+  // Sprint quick-toggle — flips filters.sprint to last/this/next ISO week. Clicking the currently-active button
+  // clears the sprint filter (toggle-off behavior).
+  document.querySelectorAll("#sprintQuick button").forEach(b => b.onclick = () => {
+    const now = new Date();
+    const shift = b.dataset.w === "last" ? -7 : b.dataset.w === "next" ? 7 : 0;
+    const wk = isoWeek(ymd(addDays(now, shift)));
+    const already = filters.sprint && filters.sprint.size === 1 && filters.sprint.has(wk);
+    if (already) delete filters.sprint;
+    else filters.sprint = new Set([wk]);
+    updateFilterBtn(); render();
+  });
   document.getElementById("filterClose").onclick = () => document.getElementById("filterOverlay").classList.remove("show");
   document.getElementById("filterOverlay").onclick = e => { if (e.target.id === "filterOverlay") e.currentTarget.classList.remove("show"); };
   document.getElementById("filterClear").onclick = () => { filters = {}; filterRules = []; filterMatch = "all"; sortKey = ""; sortDir = 1; updateFilterBtn(); renderFilters(); render(); };
