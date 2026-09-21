@@ -1045,8 +1045,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.53";
+const VERSION = "2.54";
 const CHANGELOG = [
+  "v2.54 — Sprint Planning: unchecking a lane in “Show lanes” now hides those cards from the week sections' card lists too, not just from the count grid. Backlog section is unaffected (it's driven by the backlog-lane role, not by the show-lanes toggle).",
   "v2.53 — Sprint Planning: Last week and This week sections gain a “→ Push all to <target week>” button. One click shifts every card in that section forward by one week (Last→This, This→Next). Complete-lane cards are skipped by default (they represent shipped work) and the confirm dialog spells that out. Next week has no push button (nowhere to push to inside the visible sections).",
   "v2.52 — Sprint Planning sections now match on CURRENT-plan sprints only (due-range + manual planning sprint), not the editable Sprints-tracked history. Effect: a card whose current sprint is only Wk 39 no longer also appears in Wk 40 just because Wk 40 lingers in its Sprints-tracked list from a past move. Other views' sprint filter is unchanged — it still respects tracked history so “filter to Wk 39” surfaces every card that touched that week.",
   "v2.51 — Fixed “dragging a card between weeks in Sprint Planning left it in both columns.” Cause: shifting the due date moved the derived sprint, but the card's editable Sprints-tracked list (SPRINTHIST_KEY) and any manual planning sprint (SPRINT_KEY) still pointed at the old week, so cardSprints() returned both weeks. Move now rebuilds Sprints-tracked from just the new derived sprint (+ any surviving manual planning value), and drops the manual sprint when it matches the new derived one. Historical sprints (permanent record) is untouched — the pre-move sprints stay there forever.",
@@ -2476,9 +2477,13 @@ function renderSprintPlanning() {
   // Partition. Backlog = current status is the backlog lane. Last / Next = the card's cardSprints() includes
   // that ISO week (so a card spanning multiple sprints shows in every applicable section).
   const backlog = bl ? searched.filter(c => c.status === bl) : [];
-  const last = searched.filter(c => c.status !== bl && cardCurrentSprints(c).includes(lastWk));
-  const thisW = searched.filter(c => c.status !== bl && cardCurrentSprints(c).includes(thisWk));
-  const next = searched.filter(c => c.status !== bl && cardCurrentSprints(c).includes(nextWk));
+  // Show lanes: unchecked lanes are hidden from the card lists (and the count grids) — Backlog section is
+  // driven by the backlog-lane role, so it's not affected by this toggle.
+  const laneSet = new Set(lanes);
+  const inLane = c => laneSet.has(c.status);
+  const last = searched.filter(c => c.status !== bl && inLane(c) && cardCurrentSprints(c).includes(lastWk));
+  const thisW = searched.filter(c => c.status !== bl && inLane(c) && cardCurrentSprints(c).includes(thisWk));
+  const next = searched.filter(c => c.status !== bl && inLane(c) && cardCurrentSprints(c).includes(nextWk));
   const grid = document.getElementById("planningGrid"); grid.innerHTML = "";
   const sec = (title, subtitle, list, showStats, dropKind, dropWk) => {
     const s = document.createElement("div"); s.className = "planning-sec"; s.dataset.drop = dropKind || "";
