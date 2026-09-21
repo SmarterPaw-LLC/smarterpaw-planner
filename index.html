@@ -451,6 +451,8 @@
   .planning-owner-pill:disabled { opacity: .7; }
   .planning-owner-pill b { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
   .planning-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .planning-push-all { align-self: stretch; padding: 5px 10px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px dashed var(--accent); border-radius: 6px; cursor: pointer; }
+  .planning-push-all:hover { background: var(--accent); color: #fff; border-style: solid; }
   .planning-empty { color: var(--muted); font-style: italic; font-size: 12px; padding: 12px 4px; text-align: center; }
   .planning-card { padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 6px; cursor: pointer; }
   .planning-card:hover { border-color: var(--accent); }
@@ -1043,8 +1045,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.52";
+const VERSION = "2.53";
 const CHANGELOG = [
+  "v2.53 — Sprint Planning: Last week and This week sections gain a “→ Push all to <target week>” button. One click shifts every card in that section forward by one week (Last→This, This→Next). Complete-lane cards are skipped by default (they represent shipped work) and the confirm dialog spells that out. Next week has no push button (nowhere to push to inside the visible sections).",
   "v2.52 — Sprint Planning sections now match on CURRENT-plan sprints only (due-range + manual planning sprint), not the editable Sprints-tracked history. Effect: a card whose current sprint is only Wk 39 no longer also appears in Wk 40 just because Wk 40 lingers in its Sprints-tracked list from a past move. Other views' sprint filter is unchanged — it still respects tracked history so “filter to Wk 39” surfaces every card that touched that week.",
   "v2.51 — Fixed “dragging a card between weeks in Sprint Planning left it in both columns.” Cause: shifting the due date moved the derived sprint, but the card's editable Sprints-tracked list (SPRINTHIST_KEY) and any manual planning sprint (SPRINT_KEY) still pointed at the old week, so cardSprints() returned both weeks. Move now rebuilds Sprints-tracked from just the new derived sprint (+ any surviving manual planning value), and drops the manual sprint when it matches the new derived one. Historical sprints (permanent record) is untouched — the pre-move sprints stay there forever.",
   "v2.50 — Two fixes. (1) Dragging a Backlog card into a week (Last / This / Next) now actually moves it — the drop also flips the card off the Backlog lane onto the first non-Backlog/non-Complete lane (usually “To Do”) and lands it on the target week's Monday. Previously it wrote a planning sprint but the status stayed on Backlog, so the card was still hidden in the Backlog section. (2) Sprint / Color / Filter & sort controls now bottom-align in the quick-filter row, so the “SPRINT” caption above the segmented control no longer offsets the whole row.",
@@ -2493,6 +2496,24 @@ function renderSprintPlanning() {
     const head = document.createElement("div"); head.className = "planning-sec-head";
     head.innerHTML = `<div><h3>${esc(title)}</h3><div class="planning-sec-sub">${esc(subtitle)}</div></div><span class="planning-count">${list.length}</span>`;
     s.appendChild(head);
+    // Roll-forward: on Last week and This week, offer a single-click bulk push into the next ISO week. Skips
+    // Complete-lane cards by default (they represent shipped work); a small confirm gates the action.
+    if (dropKind === "week" && dropWk && list.length && dropWk !== nextWk) {
+      const nextForThis = isoWeek(ymdUTC(new Date(isoWeekStart(dropWk).getTime() + 7 * 86400000)));
+      const label = dropWk === lastWk ? "→ Push all to This week" : "→ Push all to Next week";
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "planning-push-all";
+      btn.textContent = label; btn.title = "Move every card in this section forward by 1 week (Complete-lane cards are skipped by default)";
+      btn.onclick = async () => {
+        const toMove = completeLane ? list.filter(c => c.status !== completeLane) : list.slice();
+        const skipped = list.length - toMove.length;
+        if (!toMove.length) { toast("Nothing to push — all cards are on the Complete lane."); return; }
+        const msg = "Push " + toMove.length + " card" + (toMove.length === 1 ? "" : "s") + " forward to " + fmtSprintFull(nextForThis) + "?" + (skipped ? "\n\n" + skipped + " Complete-lane card" + (skipped === 1 ? "" : "s") + " will stay put." : "");
+        if (!confirm(msg)) return;
+        for (const c of toMove) { await moveCardToSprint(c.id, nextForThis); }
+        toast("Pushed " + toMove.length + " card" + (toMove.length === 1 ? "" : "s") + " to " + fmtSprintFull(nextForThis) + ".");
+      };
+      s.appendChild(btn);
+    }
     if (showStats) {
       // Per-lane counts (respects the enabled-lanes toggle).
       const laneStats = document.createElement("div"); laneStats.className = "planning-stats";
