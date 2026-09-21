@@ -443,12 +443,18 @@
   .planning-stat-label { color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 600; }
   .planning-stat-val { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .planning-owners { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 4px; border-top: 1px dashed var(--line); }
-  .planning-owner-pill { display: inline-flex; gap: 6px; align-items: center; padding: 2px 9px; font-size: 11px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
+  .planning-owner-pill { display: inline-flex; gap: 6px; align-items: center; padding: 2px 9px; font-size: 11px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; color: var(--text); }
+  .planning-owner-pill:hover:not(:disabled) { border-color: var(--accent); }
+  .planning-owner-pill.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .planning-owner-pill.on b { color: #fff; }
+  .planning-owner-pill:disabled { opacity: .7; }
   .planning-owner-pill b { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
   .planning-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
   .planning-empty { color: var(--muted); font-style: italic; font-size: 12px; padding: 12px 4px; text-align: center; }
   .planning-card { padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 6px; cursor: pointer; }
   .planning-card:hover { border-color: var(--accent); }
+  .planning-card.dragging { opacity: .5; }
+  .planning-sec.drop-over { outline: 2px dashed var(--accent); outline-offset: -6px; background: rgba(109,93,252,.06); }
   .planning-card-top { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .planning-card-title { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
   .planning-card-lane { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .2px; color: #fff; padding: 1px 7px; border-radius: 999px; }
@@ -1036,8 +1042,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.47";
+const VERSION = "2.48";
 const CHANGELOG = [
+  "v2.48 — Sprint Planning gets drag-and-drop + interactive counts + safer Push. (1) Drag any card across sections: drop into Backlog sends it to the Backlog lane (with the usual wipe of sprint data); drop into Last week or Next week shifts the card's due/end to that ISO week (or sets planning sprint if no due). (2) Owner-count pills are clickable — click one to add that person to the owner filter, click again to remove. (3) Push-to-next-sprint now shows a per-week confirmation dialog naming each target week when it would land any card BEYOND next-week-from-today, so a second push is deliberate; also guarded against double-invocation from a fast double-click.",
   "v2.47 — Sprint Planning is now a full view, not a modal. Added as the 6th tab in the view toggle (📋 Planning); the “Sprint planning” button next to the sprint quick-toggle now switches to that view. Bookmarkable via ?view=planning; saved views can capture it. Everything else about the dashboard is unchanged — Backlog / Last week / Next week sections, per-lane and per-owner counts, lane-chip picker.",
   "v2.46 — Sprint-planning dashboard. New “📋 Sprint planning” button next to the Last/This/Next quick-toggle opens a 3-section overview: 📥 Backlog, ← Last week, Next week →. Each week section shows per-lane counts (with a chip picker to enable/disable which lanes to count — persisted per browser) and per-owner counts. Cards render below with lane badges; clicking one opens its modal. Owner / brand / channel / search filters flow through; sprint and overdue are ignored (this view has its own week rules). Sprint control also picked up a small “SPRINT” caption above the row.",
   "v2.45 — Sprint quick-toggle. New segmented control next to Filter & sort with ← Last week / This week / Next week → buttons. One click swaps the sprint filter to that ISO week; clicking the currently-active button clears the sprint filter. The active button highlights whichever week is currently the sole sprint filter.",
@@ -2455,8 +2462,19 @@ function renderSprintPlanning() {
   const last = searched.filter(c => c.status !== bl && cardSprints(c).includes(lastWk));
   const next = searched.filter(c => c.status !== bl && cardSprints(c).includes(nextWk));
   const grid = document.getElementById("planningGrid"); grid.innerHTML = "";
-  const sec = (title, subtitle, list, showStats) => {
-    const s = document.createElement("div"); s.className = "planning-sec";
+  const sec = (title, subtitle, list, showStats, dropKind, dropWk) => {
+    const s = document.createElement("div"); s.className = "planning-sec"; s.dataset.drop = dropKind || "";
+    // Drop target — receive dragged cards from the other sections and re-scope them.
+    if (dropKind) {
+      s.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; s.classList.add("drop-over"); });
+      s.addEventListener("dragleave", () => s.classList.remove("drop-over"));
+      s.addEventListener("drop", e => {
+        e.preventDefault(); s.classList.remove("drop-over");
+        const cid = e.dataTransfer.getData("text/plain"); if (!cid) return;
+        if (dropKind === "backlog") { if (bl) patchStatus(cid, bl); else toast("Set a Backlog lane in Manage → status first."); }
+        else if (dropKind === "week" && dropWk) moveCardToSprint(cid, dropWk);
+      });
+    }
     const head = document.createElement("div"); head.className = "planning-sec-head";
     head.innerHTML = `<div><h3>${esc(title)}</h3><div class="planning-sec-sub">${esc(subtitle)}</div></div><span class="planning-count">${list.length}</span>`;
     s.appendChild(head);
@@ -2477,9 +2495,21 @@ function renderSprintPlanning() {
       const owners = {};
       list.forEach(c => { const os = splitOwners(c.owner); if (!os.length) owners["(unassigned)"] = (owners["(unassigned)"] || 0) + 1; else os.forEach(o => owners[o] = (owners[o] || 0) + 1); });
       const ownerRow = document.createElement("div"); ownerRow.className = "planning-owners";
+      const activeOwners = filters.owner || new Set();
       Object.keys(owners).sort((a, b) => owners[b] - owners[a] || a.localeCompare(b)).forEach(name => {
-        const pill = document.createElement("span"); pill.className = "planning-owner-pill";
+        const pill = document.createElement("button"); pill.type = "button";
+        const on = activeOwners.has(name);
+        pill.className = "planning-owner-pill" + (on ? " on" : "");
         pill.innerHTML = `<span>${esc(name)}</span><b>${owners[name]}</b>`;
+        pill.title = on ? "Remove " + name + " from the owner filter" : "Filter to " + name;
+        // Skip "(unassigned)" — no owner-filter value maps to it cleanly.
+        if (name === "(unassigned)") { pill.disabled = true; pill.title = "Cards with no owner assigned"; pill.style.cursor = "default"; }
+        else pill.onclick = () => {
+          if (!filters.owner) filters.owner = new Set();
+          if (filters.owner.has(name)) { filters.owner.delete(name); if (!filters.owner.size) delete filters.owner; }
+          else filters.owner.add(name);
+          updateFilterBtn && updateFilterBtn(); render();
+        };
         ownerRow.appendChild(pill);
       });
       if (ownerRow.children.length) s.appendChild(ownerRow);
@@ -2488,8 +2518,10 @@ function renderSprintPlanning() {
     const cardsBox = document.createElement("div"); cardsBox.className = "planning-cards";
     if (!list.length) { const e = document.createElement("div"); e.className = "planning-empty"; e.textContent = "Nothing here."; cardsBox.appendChild(e); }
     else list.forEach(c => {
-      const item = document.createElement("div"); item.className = "planning-card";
+      const item = document.createElement("div"); item.className = "planning-card"; item.draggable = true;
       item.style.borderLeftColor = colorFor(c);
+      item.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; item.classList.add("dragging"); });
+      item.addEventListener("dragend", () => { item.classList.remove("dragging"); document.querySelectorAll(".planning-sec.drop-over").forEach(el => el.classList.remove("drop-over")); });
       const meta = [c.brand, c.channel, c.owner].filter(Boolean).join(" · ");
       const badge = `<span class="planning-card-lane" style="background:${statusColor(c.status)}">${esc(c.status || "")}</span>`;
       const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
@@ -2501,11 +2533,41 @@ function renderSprintPlanning() {
     s.appendChild(cardsBox);
     return s;
   };
-  grid.appendChild(sec("📥 Backlog", bl ? "Cards on the “" + bl + "” lane" : "Set a Backlog lane in Manage → status to populate this section.", backlog, false));
-  grid.appendChild(sec("← Last week", "Wk " + lastWk.split("-W")[1] + " · " + sprintRange(lastWk), last, true));
-  grid.appendChild(sec("Next week →", "Wk " + nextWk.split("-W")[1] + " · " + sprintRange(nextWk), next, true));
+  grid.appendChild(sec("📥 Backlog", bl ? "Cards on the “" + bl + "” lane" : "Set a Backlog lane in Manage → status to populate this section.", backlog, false, "backlog"));
+  grid.appendChild(sec("← Last week", "Wk " + lastWk.split("-W")[1] + " · " + sprintRange(lastWk), last, true, "week", lastWk));
+  grid.appendChild(sec("Next week →", "Wk " + nextWk.split("-W")[1] + " · " + sprintRange(nextWk), next, true, "week", nextWk));
 }
+// Move a card to a specific ISO week. If the card has a due date, we shift due (and end, if present) by the
+// same day-delta that would land the earliest current sprint on the target week — so a card that spans multiple
+// weeks retains its span. If the card has no due date, we just set the manual planning sprint (SPRINT_KEY).
+async function moveCardToSprint(cardId, targetWk) {
+  const c = cards.find(x => x.id === cardId); if (!c) return;
+  const cur = cardSprints(c).sort();
+  const from = cur[0] || "";
+  const patch = {};
+  if (c.due) {
+    const fromMon = isoWeekStart(from) || isoWeekStart(isoWeek(c.due));
+    const toMon = isoWeekStart(targetWk); if (!toMon || !fromMon) return;
+    const deltaDays = Math.round((toMon.getTime() - fromMon.getTime()) / 86400000);
+    const shift = (ymdStr) => { const d = new Date(ymdStr + "T00:00:00"); d.setDate(d.getDate() + deltaDays); return ymd(d); };
+    c.due = shift(c.due); patch.due = c.due;
+    if (c.end) { c.end = shift(c.end); patch.end = c.end; }
+  } else {
+    const fields = Object.assign({}, c.fields || {}); fields[SPRINT_KEY] = targetWk; c.fields = fields; patch.fields = fields;
+  }
+  if (!ONLINE) { saveLocal(); render(); return; }
+  const dbPatch = {};
+  if ("due" in patch) dbPatch.due = patch.due || null;
+  if ("end" in patch) dbPatch.end_date = patch.end || null;
+  if ("fields" in patch) dbPatch.fields = patch.fields;
+  const { error } = await db.from("deliverables").update(dbPatch).eq("id", cardId);
+  if (error) toast("Move failed: " + error.message); else refetch();
+}
+let _pushInFlight = false;
 async function pushVisibleToNextSprint() {
+  // Guard: prevent a single click from firing the push twice while the DB round-trip is in flight (double-click,
+  // fast retriggers). Cleared in the finally below.
+  if (_pushInFlight) return;
   const raw = visibleCards().slice();
   if (!raw.length) return;
   // Cards on the Backlog lane aren't in a sprint at all — pushing them makes no sense; drop them silently.
@@ -2533,23 +2595,45 @@ async function pushVisibleToNextSprint() {
   if (!targets.length) return;
   const shift = (ymdStr) => { if (!ymdStr) return ""; const d = new Date(ymdStr + "T00:00:00"); d.setDate(d.getDate() + 7); return ymd(d); };
   const shiftWeek = (w) => { if (!w) return ""; const mon = isoWeekStart(w); if (!mon) return w; mon.setUTCDate(mon.getUTCDate() + 7); return isoWeek(ymdUTC(mon)); };
-  const jobs = targets.map(async c => {
-    const patch = {};
-    if (c.due) { c.due = shift(c.due); patch.due = c.due; }
-    if (c.end) { c.end = shift(c.end); patch.end = c.end; }
-    const manual = c.fields && c.fields[SPRINT_KEY];
-    if (manual) {
-      const nw = shiftWeek(manual);
-      c.fields = Object.assign({}, c.fields); c.fields[SPRINT_KEY] = nw;
-      patch.fields = c.fields;
-    }
-    if (!Object.keys(patch).length) return;
-    if (!ONLINE) { saveLocal(); return; }
-    const { error } = await db.from("deliverables").update(patch).eq("id", c.id);
-    if (error) toast("Push failed for " + c.title + ": " + error.message);
+  // Future-target confirmation. Each card is shifting +7 days, so compute where each will land relative to
+  // "next week from today." If any card's post-push sprint is beyond next-week, that means it was already
+  // scheduled past this coming sprint — pushing again would send it further out. Show which week each one
+  // lands in and get explicit confirmation.
+  const nextWk = isoWeek(ymd(addDays(new Date(), 7)));
+  const preview = targets.map(c => {
+    // Highest current sprint (date-derived or manual) → next week is that + 1.
+    const cs = cardSprints(c).sort();
+    const cur = cs[cs.length - 1] || nextWk;
+    return { c, target: shiftWeek(cur) };
   });
-  await Promise.all(jobs);
-  render(); toast("Pushed " + targets.length + " card" + (targets.length === 1 ? "" : "s") + " forward 1 week.");
+  const beyond = preview.filter(p => p.target > nextWk);
+  if (beyond.length) {
+    // Group by target-week so the prompt is compact even for large batches.
+    const byWk = {}; beyond.forEach(p => { (byWk[p.target] = byWk[p.target] || []).push(p.c.title); });
+    const lines = Object.keys(byWk).sort().map(w => "  • " + byWk[w].length + " → " + fmtSprintFull(w));
+    const msg = beyond.length + " of the " + targets.length + " card" + (targets.length === 1 ? "" : "s") + " are already scheduled past next week (" + fmtSprintFull(nextWk) + "). Pushing will land them here:\n\n" + lines.join("\n") + "\n\nContinue?";
+    if (!confirm(msg)) return;
+  }
+  _pushInFlight = true;
+  try {
+    const jobs = targets.map(async c => {
+      const patch = {};
+      if (c.due) { c.due = shift(c.due); patch.due = c.due; }
+      if (c.end) { c.end = shift(c.end); patch.end = c.end; }
+      const manual = c.fields && c.fields[SPRINT_KEY];
+      if (manual) {
+        const nw = shiftWeek(manual);
+        c.fields = Object.assign({}, c.fields); c.fields[SPRINT_KEY] = nw;
+        patch.fields = c.fields;
+      }
+      if (!Object.keys(patch).length) return;
+      if (!ONLINE) { saveLocal(); return; }
+      const { error } = await db.from("deliverables").update(patch).eq("id", c.id);
+      if (error) toast("Push failed for " + c.title + ": " + error.message);
+    });
+    await Promise.all(jobs);
+    render(); toast("Pushed " + targets.length + " card" + (targets.length === 1 ? "" : "s") + " forward 1 week.");
+  } finally { _pushInFlight = false; }
 }
 function render() {
   writeUrl(); renderQuickFilters(); renderActiveFilters();
