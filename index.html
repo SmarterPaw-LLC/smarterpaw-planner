@@ -476,6 +476,12 @@
     padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   .tray h3 { font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 2px 4px 4px; letter-spacing: .3px; }
   .cal-grid-wrap { flex: 1; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  /* Continuous Month view — sticky day-of-week row + sticky per-month headers on top of a single stream. */
+  .cal-cont-dow { position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .cal-cont-stream { display: flex; flex-direction: column; }
+  .cal-cont-month { display: flex; flex-direction: column; }
+  .cal-cont-header { position: sticky; top: 30px; z-index: 2; padding: 6px 10px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-weight: 700; font-size: 13px; color: var(--text); text-transform: uppercase; letter-spacing: .5px; }
+  #calContinuousBtn.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
   .month { display: grid; grid-template-columns: repeat(7, 1fr); }
   .dow { padding: 7px 8px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
     border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
@@ -777,6 +783,7 @@
     <button id="calToday">Today</button>
     <button id="calNext" title="Next">›</button>
     <div class="cal-label" id="calLabel"></div>
+    <button id="calContinuousBtn" title="Toggle continuous scrolling (Month view): render neighboring months in one scrollable stream with sticky month headers.">↕ Continuous</button>
     <button id="trayToggle" class="tray-toggle"></button>
   </div>
   <div class="cal-main">
@@ -1048,8 +1055,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.55";
+const VERSION = "2.56";
 const CHANGELOG = [
+  "v2.56 — Calendar (Month view) now has a “↕ Continuous” toggle. When on, the calendar renders neighboring months in one scrollable stream with sticky month headers and a sticky day-of-week row; scrolling near either edge auto-extends the range by another 3 months in that direction. The top label updates to match whichever month is at the top of the viewport. Choice persists per browser. Off by default so the classic single-month view is unchanged.",
   "v2.55 — Removed the section-level “Push all to next week” button on Sprint Planning (caused accidental bulk moves). Replaced with a per-card arrow (→) that appears on hover on Last-week and This-week cards; one click pushes just that card forward by one week. Tooltip names the target sprint so it's clear where it lands.",
   "v2.54 — Sprint Planning: unchecking a lane in “Show lanes” now hides those cards from the week sections' card lists too, not just from the count grid. Backlog section is unaffected (it's driven by the backlog-lane role, not by the show-lanes toggle).",
   "v2.53 — Sprint Planning: Last week and This week sections gain a “→ Push all to <target week>” button. One click shifts every card in that section forward by one week (Last→This, This→Next). Complete-lane cards are skipped by default (they represent shipped work) and the confirm dialog spells that out. Next week has no push button (nowhere to push to inside the visible sections).",
@@ -1536,6 +1544,9 @@ let modalEmails = [];   // working copy of the open card's emails (fields.__emai
 let modalSprintHist = [];   // working copy of the open card's tracked-sprint history (editable via ✕ chips)
 let modalLinks = [];   // working copy of the open card's linked-deliverable ids (bidirectional; synced on save)
 let view = "board", calMode = "month", calRef = new Date();
+// Continuous scroll (Month view only) — render several months stacked in one scrollable pane with sticky month
+// headers. When the viewport nears the top or bottom, the render extends by another month automatically.
+let calContinuous = localStorage.getItem("planner-cal-continuous") === "1";
 let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
 let sortKey = "", sortDir = 1;   // unified sort across all views (Filter & Sort panel); "" = manual/creation order
 let gridCols = null;   // null = show all columns; else an ordered array of visible column keys
@@ -3957,12 +3968,72 @@ function renderTray() {
   if (un.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Nothing unscheduled"; tray.appendChild(e); return; }
   un.forEach(c => { const e = evEl(c); e.style.whiteSpace = "normal"; tray.appendChild(e); });
 }
+// Continuous-scroll Month view. Renders a window of months (centered on calRef) into one scrollable container
+// with sticky month headers, then attaches a scroll listener that extends the window as the user approaches
+// either edge. Scroll position is anchored to the current calRef month so toggling on/off feels stable.
+function renderCalendarContinuous(grid, todayKey) {
+  const dowRow = document.createElement("div"); dowRow.className = "dow-row cal-cont-dow";
+  DOW.forEach(d => { const h = document.createElement("div"); h.className = "dow"; h.textContent = d; dowRow.appendChild(h); });
+  grid.appendChild(dowRow);
+  const stream = document.createElement("div"); stream.className = "cal-cont-stream"; grid.appendChild(stream);
+  // Render a single month block (sticky header + weeks). Returns the block element.
+  const renderMonth = (y, m) => {
+    const block = document.createElement("div"); block.className = "cal-cont-month"; block.dataset.y = y; block.dataset.m = m;
+    const header = document.createElement("div"); header.className = "cal-cont-header"; header.textContent = MONTHS[m] + " " + y;
+    block.appendChild(header);
+    const first = new Date(y, m, 1); const startWeek = startOfWeek(first);
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const weeks = Math.ceil((first.getDay() + daysInMonth) / 7);
+    const bars = document.createElement("div"); bars.className = "month-bars cal-cont-bars";
+    for (let w = 0; w < weeks; w++) bars.appendChild(weekRow(addDays(startWeek, w * 7), m, todayKey, "month"));
+    block.appendChild(bars);
+    return block;
+  };
+  // Initial window: 3 back + current + 3 forward.
+  const y0 = calRef.getFullYear(), m0 = calRef.getMonth();
+  const step = (yy, mm, d) => { const nd = new Date(yy, mm + d, 1); return { y: nd.getFullYear(), m: nd.getMonth() }; };
+  let earliest = { y: y0, m: m0 }, latest = { y: y0, m: m0 };
+  for (let i = -3; i <= 3; i++) { const p = step(y0, m0, i); stream.appendChild(renderMonth(p.y, p.m)); if (i < -3 + 1) earliest = p; if (i > 3 - 1) latest = p; }
+  earliest = step(y0, m0, -3); latest = step(y0, m0, 3);
+  // Anchor scroll to the current month on first render so it lines up with where the label says we are.
+  const anchor = stream.querySelector(`.cal-cont-month[data-y="${y0}"][data-m="${m0}"]`);
+  if (anchor) grid.scrollTop = anchor.offsetTop - dowRow.offsetHeight;
+  // Extend on demand as the user nears either edge (idempotent, guarded by ranges).
+  let extending = false;
+  grid.addEventListener("scroll", () => {
+    if (extending) return;
+    const near = 400;
+    if (grid.scrollTop < near) {
+      extending = true;
+      const before = grid.scrollHeight;
+      for (let i = 0; i < 3; i++) { earliest = step(earliest.y, earliest.m, -1); stream.insertBefore(renderMonth(earliest.y, earliest.m), stream.firstChild); }
+      // Keep visual position stable by adjusting scrollTop for the added height.
+      requestAnimationFrame(() => { grid.scrollTop += grid.scrollHeight - before; extending = false; });
+    } else if (grid.scrollTop + grid.clientHeight > grid.scrollHeight - near) {
+      extending = true;
+      for (let i = 0; i < 3; i++) { latest = step(latest.y, latest.m, 1); stream.appendChild(renderMonth(latest.y, latest.m)); }
+      extending = false;
+    }
+  }, { passive: true });
+  // Update the top label as the user scrolls through months so "Sept 2026" stays accurate.
+  const labelEl = document.getElementById("calLabel");
+  const obs = new IntersectionObserver(entries => {
+    // Pick the first visible header from the top.
+    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+    if (visible.length) { const b = visible[0].target.closest(".cal-cont-month"); if (b) labelEl.textContent = MONTHS[+b.dataset.m] + " " + b.dataset.y; }
+  }, { root: grid, rootMargin: "-60px 0px -60% 0px", threshold: 0 });
+  stream.querySelectorAll(".cal-cont-header").forEach(h => obs.observe(h));
+}
 function renderCalendar() {
   const label = document.getElementById("calLabel"); const grid = document.getElementById("calGrid"); grid.innerHTML = "";
   const todayKey = ymd(new Date());
+  // Reflect continuous toggle in the button state (Month view only).
+  const contBtn = document.getElementById("calContinuousBtn");
+  if (contBtn) { contBtn.classList.toggle("active", calContinuous); contBtn.style.display = calMode === "month" ? "" : "none"; }
   if (calMode === "month") {
     const y = calRef.getFullYear(), m = calRef.getMonth();
     label.textContent = MONTHS[m] + " " + y;
+    if (calContinuous) { renderCalendarContinuous(grid, todayKey); return; }
     const first = new Date(y, m, 1); const gridStart = startOfWeek(first);
     const daysInMonth = new Date(y, m + 1, 0).getDate(); const weeks = Math.ceil((first.getDay() + daysInMonth) / 7);
     const wrap = document.createElement("div"); wrap.className = "month-bars";
@@ -5065,6 +5136,7 @@ async function init() {
   document.getElementById("calPrev").onclick = () => calNav(-1);
   document.getElementById("calNext").onclick = () => calNav(1);
   document.getElementById("calToday").onclick = () => { calRef = new Date(); render(); };
+  document.getElementById("calContinuousBtn").onclick = () => { calContinuous = !calContinuous; localStorage.setItem("planner-cal-continuous", calContinuous ? "1" : "0"); renderCalendar(); };
   document.getElementById("trayToggle").onclick = () => { showTray = !showTray; localStorage.setItem("planner-tray", showTray ? "1" : "0"); renderCalendar(); };
   document.getElementById("headerCollapse").onclick = () => { const c = document.body.classList.toggle("hdr-collapsed"); document.getElementById("headerCollapse").textContent = c ? "⌄ Controls" : "⌃ Controls"; };
 
