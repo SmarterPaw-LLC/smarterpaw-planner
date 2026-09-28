@@ -120,7 +120,17 @@
   .field input, .field select, .field textarea { width: 100%; }
   .field textarea { resize: vertical; min-height: 64px; }
   /* Title textarea: looks like a single-line input on desktop, but wraps + auto-grows so long titles are always fully visible (fixes mobile clipping). */
-  #f_title { resize: none; min-height: 38px; height: auto; overflow: hidden; line-height: 1.35; }
+  #f_title { resize: none; min-height: 38px; height: auto; overflow: hidden; line-height: 1.35; flex: 1; }
+  /* Emoji picker for the deliverable title. Button sits inline with the textarea; picker floats below. */
+  .title-wrap { display: flex; gap: 6px; align-items: flex-start; }
+  .title-emoji-btn { flex: none; padding: 6px 10px; font-size: 16px; line-height: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .title-emoji-btn:hover { border-color: var(--accent); }
+  .emoji-picker { margin-top: 6px; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; max-height: 240px; overflow-y: auto; }
+  .emoji-group-label { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 700; margin: 4px 0 4px 2px; }
+  .emoji-group-label:first-child { margin-top: 0; }
+  .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 2px; margin-bottom: 4px; }
+  .emoji-btn { padding: 4px 0; font-size: 18px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+  .emoji-btn:hover { background: var(--panel); border-color: var(--accent); }
   .rte-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
   .rte-btn { padding: 4px 10px; font-size: 13px; }
   .rte { min-height: 150px; max-height: 320px; overflow-y: auto; padding: 9px 11px; background: var(--panel-2);
@@ -811,7 +821,13 @@
     <button class="modal-x" id="modalX" title="Close">✕</button>
     <h2 id="modalTitle">New deliverable</h2>
     <input type="hidden" id="f_id" />
-    <div class="field"><label>Title</label><textarea id="f_title" rows="1" placeholder="e.g. July sale carousel"></textarea></div>
+    <div class="field"><label>Title</label>
+      <div class="title-wrap">
+        <textarea id="f_title" rows="1" placeholder="e.g. July sale carousel"></textarea>
+        <button type="button" id="f_titleEmoji" class="title-emoji-btn" title="Insert an emoji">😀</button>
+      </div>
+      <div id="f_emojiPicker" class="emoji-picker" hidden></div>
+    </div>
     <div class="row2">
       <div class="field"><label>Brand</label><select id="f_brand"></select></div>
       <div class="field"><label>Channel</label>
@@ -1055,8 +1071,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.56";
+const VERSION = "2.57";
 const CHANGELOG = [
+  "v2.57 — Emoji picker on the deliverable title. A 😀 button next to the title field opens a compact popover of common emojis grouped by intent (Status/focus, Content/channel, Marketing/promo, Pets/SmarterPaw). Click one and it inserts at the caret; the title textarea keeps focus so you can keep typing. Click outside or reopen to close.",
   "v2.56 — Calendar (Month view) now has a “↕ Continuous” toggle. When on, the calendar renders neighboring months in one scrollable stream with sticky month headers and a sticky day-of-week row; scrolling near either edge auto-extends the range by another 3 months in that direction. The top label updates to match whichever month is at the top of the viewport. Choice persists per browser. Off by default so the classic single-month view is unchanged.",
   "v2.55 — Removed the section-level “Push all to next week” button on Sprint Planning (caused accidental bulk moves). Replaced with a per-card arrow (→) that appears on hover on Last-week and This-week cards; one click pushes just that card forward by one week. Tooltip names the target sprint so it's clear where it lands.",
   "v2.54 — Sprint Planning: unchecking a lane in “Show lanes” now hides those cards from the week sections' card lists too, not just from the count grid. Backlog section is unaffected (it's driven by the backlog-lane role, not by the show-lanes toggle).",
@@ -4529,6 +4546,7 @@ function openModal(card, prefill) {
   document.getElementById("modalTitle").textContent = card ? "Edit deliverable" : "New deliverable";
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
+  const _picker = document.getElementById("f_emojiPicker"); if (_picker) _picker.hidden = true;
   document.getElementById("f_brand").value = card ? card.brand : ((prefill && prefill.brand && BRANDS.some(b => b.name === prefill.brand)) ? prefill.brand : BRANDS[0].name);
   buildChannelSelect(); buildStatusSelect();
   const chSel = document.getElementById("f_channel");
@@ -5149,6 +5167,45 @@ async function init() {
   const titleEl = document.getElementById("f_title");
   titleEl.addEventListener("input", autoResizeTitle);
   titleEl.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveModal(); } });
+  // Emoji picker — small popover of common marketing / deliverable emojis. Inserts at the current caret; keeps
+  // focus in the title so you can keep typing. Toggle button lives in the title row; also closes on outside click.
+  const EMOJI_GROUPS = [
+    ["Status / focus", ["✅","☑️","⏳","⏰","🚀","🎯","📌","🔥","⭐","⚡","💡","🎉","✨","🌟","🏆","💯","❗","❓","⚠️","🚧","🎊","👀","🤔","👍","👎","🙌","💪","🧠"]],
+    ["Content / channel", ["📧","📱","💻","🎥","📸","📷","📊","📈","📉","📝","📋","📄","📰","🎨","🖼️","🎬","🎙️","🔗","🌐","📺"]],
+    ["Marketing / promo", ["💰","💵","💸","🛒","🏷️","🎁","🎀","🛍️","💳","📢","📣","💬","🗣️","📅","🗓️","🗒️","🔔","📮","🏆","🥇"]],
+    ["Pets / SmarterPaw", ["🐱","🐶","🐾","🐈","🐕","🦴","🐟","🥫","🎾","🧡","💚","💙","💜","🍬","🍪","🌿","🍃","🌱","🐭","🐹"]],
+  ];
+  const pickerEl = document.getElementById("f_emojiPicker");
+  const buildPicker = () => {
+    if (pickerEl.childNodes.length) return;
+    EMOJI_GROUPS.forEach(([label, list]) => {
+      const h = document.createElement("div"); h.className = "emoji-group-label"; h.textContent = label; pickerEl.appendChild(h);
+      const g = document.createElement("div"); g.className = "emoji-grid";
+      list.forEach(em => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "emoji-btn"; b.textContent = em; b.title = em;
+        b.addEventListener("mousedown", e => e.preventDefault());   // keep focus on the title textarea
+        b.onclick = () => insertEmojiIntoTitle(em);
+        g.appendChild(b);
+      });
+      pickerEl.appendChild(g);
+    });
+  };
+  const insertEmojiIntoTitle = em => {
+    const t = titleEl; const s = t.selectionStart || 0, e = t.selectionEnd || 0;
+    t.value = t.value.slice(0, s) + em + t.value.slice(e);
+    const pos = s + em.length; t.setSelectionRange(pos, pos); t.focus();
+    autoResizeTitle();
+  };
+  document.getElementById("f_titleEmoji").onclick = e => {
+    e.stopPropagation(); buildPicker();
+    pickerEl.hidden = !pickerEl.hidden;
+  };
+  // Click outside closes the picker (except when clicking the toggle button itself).
+  document.addEventListener("click", e => {
+    if (pickerEl.hidden) return;
+    if (pickerEl.contains(e.target) || e.target.id === "f_titleEmoji") return;
+    pickerEl.hidden = true;
+  });
   titleEl.addEventListener("paste", e => {
     const cd = e.clipboardData || window.clipboardData; if (!cd) return;
     const txt = cd.getData("text/plain"); if (!/[\r\n]/.test(txt)) return;   // let normal paste through when there's nothing to strip
