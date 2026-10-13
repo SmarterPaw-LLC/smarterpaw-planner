@@ -1164,8 +1164,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.78";
+const VERSION = "2.79";
 const CHANGELOG = [
+  "v2.79 — Hotfix: Notes view rendered empty on v2.78 because the body-render loop referenced a variable scoped to the outer cards loop. Fixed, Notes feed renders again.",
   "v2.78 — Reverted v2.77's per-entry splitting. Notes feed is one card per entry again, but each card's body now surfaces its dated journal entries as a scrollable, read-only list (date column + text), newest first. Supports M.D.YY, MM.DD.YY, M/D/YY, M-D-YY, 2–4 digit years. The inline editor below the list still edits the full notes blob — prefix a new line with today's date and it joins the list on next render. 📋 Copy updates still filters by per-entry date so emailed summaries land on the right day.",
   "v2.77 — Notes feed now splits imported journal-style notes into dated entries. If a card's notes contain inline date prefixes (4.30.26 - … / 5.13.26 - … / 06.09.26 - …) each chunk becomes its own Notes-view entry with that date, so the feed shows every update by when it was written instead of lumping everything under one “updated today” stamp. Supports M.D.YY, MM.DD.YY, M/D/YY, M-D-YY, 2–4 digit years. The modal still lets you edit the full notes blob — the split is a feed-view only.",
   "v2.76 — Role icons are editable too. The role-labels editor now has an emoji input next to each label — change ✓ to ✅, 🕒 to 📅, 📥 to ⏸️, etc. Icons flow through to card badges (done check, scheduled clock, review eye, backlog) and the role dropdown. Innovation defaults to ✅ Approved / 📅 Scheduled / 👀 In Review / ⏸️ Hold. Reset button restores workspace defaults.",
@@ -3453,7 +3454,8 @@ function renderNotesView() {
       tools.appendChild(emailBtn); body.appendChild(tools);
       // Dated journal entries — if the notes blob has inline date prefixes (4.30.26 - …), surface each as its own
       // dated row in a scrollable read-only list, newest first. Editing still happens in the modal / editor below.
-      const dated = hasNoteText ? splitDatedNoteEntries(c.notes) : [];
+      const hasAnyNoteText = !!(c.notes && c.notes.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim());
+      const dated = hasAnyNoteText ? splitDatedNoteEntries(c.notes) : [];
       if (dated.length) {
         const sorted = dated.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
         const caption = document.createElement("div"); caption.className = "notes-dated-count";
