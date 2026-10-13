@@ -774,6 +774,24 @@
 </header>
 
 <!-- "Who are you?" picker — shown on first session load if no persisted user; also opens from the header userBtn. -->
+<!-- Notes export: plain-text summary of the filtered Notes feed for pasting into an email. -->
+<div class="overlay" id="notesExportOverlay">
+  <div class="modal" style="max-width:720px">
+    <button class="x" id="notesExportX">✕</button>
+    <h2>Copy updates</h2>
+    <div class="field" style="display:flex; align-items:center; gap:10px">
+      <label style="margin:0">Entries from the last</label>
+      <input id="notesExportDays" type="number" min="1" max="365" value="7" style="width:80px" />
+      <span>days</span>
+      <span style="flex:1"></span>
+      <button type="button" id="notesExportCopy" class="primary">📋 Copy to clipboard</button>
+    </div>
+    <div class="field"><label>Preview <span class="opt" id="notesExportCount"></span></label>
+      <textarea id="notesExportText" rows="18" style="width:100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px" readonly></textarea>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="userOverlay">
   <div class="modal" style="max-width:420px">
     <button class="x" id="userOverlayX">✕</button>
@@ -1097,8 +1115,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.71";
+const VERSION = "2.72";
 const CHANGELOG = [
+  "v2.72 — Notes view gets a “📋 Copy updates” button next to Expand/Collapse. Opens a dialog with a last-N-days input (default 7) and a plain-text preview of every note / email / subtask entry in that window from the current Notes filter set. Clipboard button copies the whole thing in email-friendly plain text (## headings per deliverable, 📧 email summaries, 📝 note bodies, ✅ subtask checklists). Change the day count and the preview re-renders live.",
   "v2.71 — Calendar's date anchor is now configurable per workspace. New dropdown next to the month label lists “📅 Due date” and every date-type custom field on the current workspace — pick one and the calendar re-anchors to that field (events, bars, pack order, tray's “undated” filter all follow). Planner stays on Due date; Innovation can anchor on Next Design Due Date / Date Available / Sample Received / etc. Choice persists per workspace in localStorage. Picker hides itself when there are no date-type custom fields.",
   "v2.70 — Two link fixes. (1) Line Review importer now reads Excel hyperlinks correctly — cells like “Egg Zoomers” that linked to a Google Doc now land as the actual URL in Design Assets Link / Spec Sheet Link / Sample Request Link, not just the display text. (2) Custom text fields show a “🔗 Open” button when the value looks like a URL (shows on any http/https) so you can jump to it without copy-pasting. Re-import to pick up the real URLs for products you've already imported — the upsert won't duplicate them.",
   "v2.69 — Design Status is now a multi-select (a card can be e.g. “Paper Doll Ready” AND “HOLD - Backlog” at once). Seed uses the right type for new workspaces; existing Innovation workspaces get a one-time in-place upgrade of the field config on next load. Existing data values already stored as “A, B” comma-pairs parse directly into multi-select selections — no data migration needed.",
@@ -3144,6 +3163,76 @@ function notesVisibleCards() {
     return cardSubtasks(c).some(s => s.owner && of.has(s.owner));
   });
 }
+// Export dialog for the Notes feed. Builds a plain-text summary of entries within the last N days (configurable)
+// that pastes cleanly into an email. Groups by deliverable; within each deliverable, orders entries newest-first.
+let _notesExportFeed = [];
+function openNotesExport(feed) {
+  _notesExportFeed = feed || [];
+  document.getElementById("notesExportOverlay").classList.add("show");
+  buildNotesExportText();
+  const inp = document.getElementById("notesExportDays"); if (inp) setTimeout(() => inp.focus(), 40);
+}
+function closeNotesExport() { document.getElementById("notesExportOverlay").classList.remove("show"); }
+function buildNotesExportText() {
+  const daysInp = document.getElementById("notesExportDays");
+  const days = Math.max(1, Math.min(365, parseInt(daysInp.value, 10) || 7));
+  const now = new Date();
+  const cutoffMs = now.getTime() - days * 86400000;
+  const cutoffYmd = ymd(new Date(cutoffMs));
+  // Group by card, newest entry first within each card. An entry qualifies when its date is >= cutoff OR
+  // (for emails) its addedAt timestamp is >= cutoff — covers both planned-date and received-date intents.
+  const byCard = new Map();
+  const stripTags = s => (s || "").replace(/<br\s*\/?\s*>/gi, "\n").replace(/<\/?p[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/\n{3,}/g, "\n\n").trim();
+  _notesExportFeed.forEach(item => {
+    const dYmd = item.date || "";
+    const dAdded = item.kind === "email" ? ((item.email && item.email.addedAt) || "") : "";
+    const inWindow = (dYmd && dYmd >= cutoffYmd) || (dAdded && new Date(dAdded).getTime() >= cutoffMs);
+    if (!inWindow) return;
+    if (!byCard.has(item.card.id)) byCard.set(item.card.id, { card: item.card, entries: [] });
+    byCard.get(item.card.id).entries.push(item);
+  });
+  const lines = [];
+  const header = "Updates from the last " + days + " day" + (days === 1 ? "" : "s") + (currentUser ? " — " + currentUser : "");
+  lines.push(header);
+  lines.push("=".repeat(header.length));
+  lines.push("");
+  if (!byCard.size) { lines.push("(No entries in this window.)"); }
+  else {
+    [...byCard.values()].forEach(({ card, entries }) => {
+      const meta = [card.brand, card.channel, card.owner].filter(Boolean).join(" · ");
+      lines.push("## " + card.title + (meta ? "  (" + meta + ")" : ""));
+      entries.sort((a, b) => (b.date || "").localeCompare(a.date || "")).forEach(e => {
+        const when = e.date ? fmtDue(e.date) : "";
+        if (e.kind === "email") {
+          const em = e.email || {};
+          const from = em.from ? " from " + em.from : "";
+          const subj = em.subject ? ' re: "' + em.subject + '"' : "";
+          lines.push("- 📧 " + (when || "email") + from + subj);
+          const body = stripTags(em.content || "").split("\n").filter(x => x.trim()).slice(0, 20).join("\n   ");
+          if (body) lines.push("   " + body);
+        } else {
+          const noteBody = stripTags(card.notes || "");
+          if (noteBody) { lines.push("- 📝 " + when); lines.push("   " + noteBody.split("\n").join("\n   ")); }
+          const subs = cardSubtasks(card).filter(s => s.type !== "header");
+          if (subs.length) {
+            lines.push("- ✅ Subtasks:");
+            subs.forEach(s => { const mark = s.done ? "[x]" : "[ ]"; const o = s.owner ? " (" + s.owner + ")" : ""; lines.push("   " + mark + " " + (s.text || "(untitled)") + o); });
+          }
+        }
+      });
+      lines.push("");
+    });
+  }
+  const text = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  document.getElementById("notesExportText").value = text;
+  const n = byCard.size;
+  document.getElementById("notesExportCount").textContent = "— " + n + " deliverable" + (n === 1 ? "" : "s") + " with recent entries";
+}
+async function copyNotesExport() {
+  const ta = document.getElementById("notesExportText");
+  try { await navigator.clipboard.writeText(ta.value); toast("Copied " + ta.value.length + " characters."); }
+  catch (e) { ta.select(); try { document.execCommand("copy"); toast("Copied."); } catch (e2) { toast("Copy failed — select the text manually."); } }
+}
 function renderNotesView() {
   const root = document.getElementById("notes"); root.innerHTML = "";
   const cardsIn = notesVisibleCards();
@@ -3164,7 +3253,9 @@ function renderNotesView() {
   const count = document.createElement("span"); count.className = "notes-count"; count.textContent = feed.length + " entr" + (feed.length === 1 ? "y" : "ies") + (sortKey ? "" : " · newest first");
   const expAll = document.createElement("button"); expAll.type = "button"; expAll.className = "notes-btn"; expAll.textContent = "▾ Expand all"; expAll.onclick = () => { notesCollapsed = new Set(); notesAllCollapsed = false; renderNotesView(); };
   const colAll = document.createElement("button"); colAll.type = "button"; colAll.className = "notes-btn"; colAll.textContent = "▸ Collapse all"; colAll.onclick = () => { notesCollapsed = new Set(feed.map(f => f.key)); notesAllCollapsed = true; renderNotesView(); };
-  head.appendChild(count); head.appendChild(expAll); head.appendChild(colAll); root.appendChild(head);
+  const exportBtn = document.createElement("button"); exportBtn.type = "button"; exportBtn.className = "notes-btn"; exportBtn.textContent = "📋 Copy updates"; exportBtn.title = "Copy a plain-text summary of the filtered entries for pasting into an email";
+  exportBtn.onclick = () => openNotesExport(feed);
+  head.appendChild(count); head.appendChild(expAll); head.appendChild(colAll); head.appendChild(exportBtn); root.appendChild(head);
   if (!feed.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No entries here. Adjust the search or filters."; root.appendChild(empty); return; }
   feed.forEach(item => {
     const c = item.card;
@@ -5772,6 +5863,10 @@ async function init() {
   document.getElementById("exportXlsxBtn").onclick = () => { closeExport(); exportXLSX(); };
   document.getElementById("exportPdfBtn").onclick = () => { closeExport(); setTimeout(printView, 60); };   // let the overlay hide before printing
   document.getElementById("userBtn").onclick = openUserPicker;
+  document.getElementById("notesExportX").onclick = closeNotesExport;
+  document.getElementById("notesExportOverlay").onclick = e => { if (e.target.id === "notesExportOverlay") closeNotesExport(); };
+  document.getElementById("notesExportCopy").onclick = copyNotesExport;
+  document.getElementById("notesExportDays").addEventListener("input", buildNotesExportText);
   document.getElementById("workspaceSelect").onchange = e => switchWorkspace(e.target.value);
   document.getElementById("overdueBtn").onclick = () => { filterOverdue = !filterOverdue; render(); };
   document.getElementById("userOverlayX").onclick = () => document.getElementById("userOverlay").classList.remove("show");
@@ -5854,7 +5949,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); document.getElementById("notesExportOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
