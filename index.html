@@ -528,6 +528,11 @@
   /* Workspace switcher — same chip style as the user picker, with the active workspace's icon + label inline. */
   .ws-btn { color: var(--text); }
   .ws-btn b { color: var(--accent); font-weight: 700; margin: 0 2px; }
+  /* Custom text-field row with an optional "🔗 Open" button for URL values (shown only when input looks like a URL). */
+  .field-link-row { display: flex; gap: 6px; align-items: stretch; }
+  .field-link-row input { flex: 1; min-width: 0; }
+  .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .field-link-open:hover { border-color: var(--accent); background: rgba(109,93,252,.06); }
   .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
   .af-push { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 4px 13px; background: transparent; }
   .af-push:hover { background: var(--accent); color: #fff; }
@@ -1089,8 +1094,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.69";
+const VERSION = "2.70";
 const CHANGELOG = [
+  "v2.70 — Two link fixes. (1) Line Review importer now reads Excel hyperlinks correctly — cells like “Egg Zoomers” that linked to a Google Doc now land as the actual URL in Design Assets Link / Spec Sheet Link / Sample Request Link, not just the display text. (2) Custom text fields show a “🔗 Open” button when the value looks like a URL (shows on any http/https) so you can jump to it without copy-pasting. Re-import to pick up the real URLs for products you've already imported — the upsert won't duplicate them.",
   "v2.69 — Design Status is now a multi-select (a card can be e.g. “Paper Doll Ready” AND “HOLD - Backlog” at once). Seed uses the right type for new workspaces; existing Innovation workspaces get a one-time in-place upgrade of the field config on next load. Existing data values already stored as “A, B” comma-pairs parse directly into multi-select selections — no data migration needed.",
   "v2.68 — Two fixes. (1) Line Review importer is now upsert-by-title (case-insensitive) — re-running the import on the same workbook updates existing products in place instead of duplicating them. Workbook field values overwrite the matching keys; other field keys the user may have added (notes, subtasks, emails, etc.) are preserved via shallow merge. Toast shows: inserted N, updated M, skipped X empty. (2) Removed the “Innovation workspace seeded” toast — it fired every time a missing field got filled in and was noise. The seed still runs silently (adding what's missing on each refresh is intentional, so new fields like Design Status land without a manual action).",
   "v2.67 — Added a “Design Status” custom field to the Innovation seed (dropdown: Idea / Paper Doll Needed / Paper Doll Ready / HOLD - Backlog / Finalized Pricing / Approved / Production), so the Line Review column lands verbatim as a field alongside its mapped status lane. Seed is now additive by field name — missing fields are inserted on next refresh without duplicating anything you already have. Import also captures Design Status in the new field.",
@@ -4738,9 +4744,23 @@ function renderFieldInputs(values) {
       });
       wrap.appendChild(pick); wrap.appendChild(hidden);
     } else {
+      // Text/number/date fields. For plain text that holds a URL, we wrap the input in a flex row and append a
+      // small "🔗 Open" button so the hyperlink is one click away from the modal (text inputs can't be
+      // intrinsically clickable). The button hides itself if the user clears or overwrites the URL.
       const inp = document.createElement("input"); inp.dataset.field = f.name; inp.value = cur;
       if (f.type === "number") inp.type = "number"; else if (f.type === "date") inp.type = "date";
-      wrap.appendChild(inp);
+      if (f.type === "text" || !f.type) {
+        const row = document.createElement("div"); row.className = "field-link-row";
+        row.appendChild(inp);
+        const open = document.createElement("button"); open.type = "button"; open.className = "field-link-open"; open.textContent = "🔗 Open"; open.title = "Open the URL in a new tab";
+        const refresh = () => { open.style.display = /^https?:\/\//i.test(inp.value || "") ? "" : "none"; };
+        open.onclick = () => { try { window.open(inp.value, "_blank", "noopener,noreferrer"); } catch (e) {} };
+        inp.addEventListener("input", refresh); refresh();
+        row.appendChild(open);
+        wrap.appendChild(row);
+      } else {
+        wrap.appendChild(inp);
+      }
     }
     box.appendChild(wrap);
   });
@@ -5189,8 +5209,29 @@ async function importXlsxLineReview(file) {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) { toast("Workbook has no sheets."); return; }
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
-  if (!rows.length) { toast("First sheet is empty."); return; }
+  // Walk the sheet cell-by-cell instead of sheet_to_json so hyperlinks (`cell.l.Target`) survive — those are
+  // critical for Design Assets / Spec Sheet / Sample Request link columns. Falls back to the plain value.
+  const ref = ws["!ref"]; if (!ref) { toast("First sheet is empty."); return; }
+  const range = XLSX.utils.decode_range(ref);
+  const headers = [];
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: range.s.r, c })];
+    headers.push(cell ? (cell.v || "").toString().trim() : "");
+  }
+  const rows = [];
+  for (let r = range.s.r + 1; r <= range.e.r; r++) {
+    const row = {}; let any = false;
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const h = headers[c - range.s.c]; if (!h) continue;
+      const cell = ws[XLSX.utils.encode_cell({ r, c })]; if (!cell) continue;
+      // Prefer the hyperlink target over the display text so links round-trip. Fall back to value.
+      const href = cell.l && cell.l.Target ? cell.l.Target : "";
+      row[h] = href || cell.v;
+      if (row[h] !== "" && row[h] != null) any = true;
+    }
+    if (any) rows.push(row);
+  }
+  if (!rows.length) { toast("First sheet has no data rows."); return; }
   // Column aliases → Innovation custom-field names. Keys are matched case-insensitively with punctuation
   // stripped; values are the exact field names seeded in Innovation (seedWorkspaceDefaults).
   const norm = s => (s || "").toString().toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -5243,7 +5284,7 @@ async function importXlsxLineReview(file) {
   };
   const dateFieldNames = new Set(["Date Available", "Next Design Due Date", "Sample Requested", "Sample Received"]);
   // Build a reverse lookup of workbook header → mapping target.
-  const headers = Object.keys(rows[0] || {});
+  // (`headers` is already set from the manual sheet walk above — mirrors the keys in each row.)
   const headerToField = {};
   headers.forEach(h => { const key = norm(h); if (FIELD_MAP[key]) headerToField[h] = FIELD_MAP[key]; });
   const payloads = [];
