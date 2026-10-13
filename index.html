@@ -1086,8 +1086,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.64";
+const VERSION = "2.65";
 const CHANGELOG = [
+  "v2.65 — Three things. (1) Fixed “Workspace seed failed: duplicate key” — the lists table had UNIQUE(kind, name) which blocked Innovation from having its own `(person, Jason)` / `(brand, Meowi)` rows. Migration 0008 makes the constraint (kind, name, workspace) so each workspace keeps its own namespace. (2) Seed inserts per-kind now, so one collision only skips that group instead of rolling the whole batch back; the toast tells you exactly which SQL to run. (3) Noun swap per workspace: the “+ Deliverable” button and modal title read “Product” on Innovation. (4) Display picker's AVAILABLE dims and Grid columns pick up Innovation's custom fields automatically once the seed completes.",
   "v2.64 — Chunk 4/4: Innovation seed. First visit now also populates brands (Meowi/Doggi/Kitty/KKZ), people (Jason/Katie/Brennan/Miles), accounts (PetSmart/Petco/Pet Supplies Plus/Chewy/Amazon/Faire/Walmart/DTC), and 23 custom fields mirroring the SP Line Review 2027 workbook (Species, Class, UPC, Style #, Estimated Gross Cost, MSRP, MAP, MOQ, GM %, Vendor #, Primary Vendor Name, Date Available, Dropship / Canada Eligible, Pricing Status, Pricing Details, Next Design Due Date, Design Assets Link, Spec Sheet Link, Sample Request Link / Requested / Received, Latest Sample Image URL). Seeding is per-kind, so re-visiting Innovation after v2.62's lanes-only seed fills in just the categories still empty.",
   "v2.63 — Workspace is now in the URL (?ws=innovation). Shareable: paste the link anywhere and the recipient lands in the same workspace. Planner stays bare for back-compat with old bookmarks. Reads before loadLists so the right rows pull on first paint; writes on every render via writeUrl.",
   "v2.62 — Fixed “Rename failed: invalid input syntax for type uuid: undefined” on the Innovation workspace. Cause: when a non-Planner workspace returned zero `lists` rows, we filled statusList with bare {name} objects (no DB id), so renaming tried to update by `id = undefined`. Fix: don't apply bare-object fallbacks for non-Planner workspaces; auto-seed Innovation on first visit with a milestone-shaped lane set (Idea / Sample Needed / Sample Received / Pricing Review / Approved / Production / Hold) as real DB rows so rename/delete work. Also added a safety net: if renameList encounters a bare item (no id), it inserts a row first and then renames.",
@@ -1542,8 +1543,8 @@ function splitMulti(v) { return (v || "").split(",").map(s => s.trim()).filter(B
 // it. Persisted in localStorage. Declared HERE (before anything that uses wsKey) because `let` has a temporal
 // dead zone — accessing `currentWorkspace` before this line would ReferenceError and kill the whole script.
 const WORKSPACES = [
-  { id: "planner", label: "Channel Planner", icon: "📣", accent: "#6d5dfc" },
-  { id: "innovation", label: "Product Innovation", icon: "🧪", accent: "#f07830" },
+  { id: "planner", label: "Channel Planner", icon: "📣", accent: "#6d5dfc", noun: "Deliverable", nounLower: "deliverable" },
+  { id: "innovation", label: "Product Innovation", icon: "🧪", accent: "#f07830", noun: "Product", nounLower: "product" },
 ];
 let currentWorkspace = localStorage.getItem("planner-workspace") || "planner";
 if (!WORKSPACES.some(w => w.id === currentWorkspace)) currentWorkspace = "planner";
@@ -1557,6 +1558,8 @@ function applyWorkspace() {
     sel.value = currentWorkspace;
   }
   document.body.classList.toggle("ws-innovation", currentWorkspace === "innovation");
+  // Noun swap — "Deliverable" on Planner, "Product" on Innovation. Modal titles update per-open via openModal.
+  const add = document.getElementById("addBtn"); if (add) add.textContent = "+ " + wsDef().noun;
 }
 function wsKey(k) { return currentWorkspace === "planner" ? k : k + "-" + currentWorkspace; }
 let WS_COL_MISSING = false;
@@ -2107,13 +2110,22 @@ async function seedWorkspaceDefaults() {
       { kind: "field", name: "Latest Sample Image URL", color: fcfg("text"), position: 23 },
     ] : [],
   };
-  const defaults = [].concat(kinds.status, kinds.brand, kinds.person, kinds.channel, kinds.field);
-  if (!defaults.length) return;
-  const rows = defaults.map(d => wsStamp(d));
-  const { error } = await db.from("lists").insert(rows);
-  if (error) { toast("Workspace seed failed: " + error.message); return; }
-  await loadLists();   // re-pull so the new rows have DB ids attached
-  toast("Innovation workspace seeded.");
+  // Insert per-kind so a single conflict (e.g. a stale name collision) only skips that kind rather than
+  // rolling the whole seed back. Each kind's rows are a single insert — safe batch within one category.
+  let anyInserted = false, firstErr = null;
+  for (const groupName of ["status", "brand", "person", "channel", "field"]) {
+    const group = kinds[groupName]; if (!group.length) continue;
+    const { error } = await db.from("lists").insert(group.map(d => wsStamp(d)));
+    if (error) { if (!firstErr) firstErr = error; continue; }
+    anyInserted = true;
+  }
+  if (firstErr) {
+    const msg = /lists_kind_name_key|duplicate key/.test(firstErr.message || "")
+      ? "Run supabase/migrations/0008_lists_workspace_unique.sql — the lists uniqueness constraint needs to include workspace."
+      : "Workspace seed partially failed: " + firstErr.message;
+    toast(msg);
+  }
+  if (anyInserted) { await loadLists(); toast("Innovation workspace seeded."); }
 }
 function listFor(kind) { return { channel: channelsList, person: peopleList, status: statusList, brand: brandsList, field: fieldsList }[kind]; }
 // Persist promoOverrides to the sentinel row (insert it on first write; delete it when the map is empty).
@@ -4716,7 +4728,7 @@ function renderFieldInputs(values) {
 /* ---------- modal ---------- */
 function openModal(card, prefill) {
   modalOpen = true;
-  document.getElementById("modalTitle").textContent = card ? "Edit deliverable" : "New deliverable";
+  document.getElementById("modalTitle").textContent = (card ? "Edit " : "New ") + wsDef().nounLower;
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
   const _picker = document.getElementById("f_emojiPicker"); if (_picker) _picker.hidden = true;
