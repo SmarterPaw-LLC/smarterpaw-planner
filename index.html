@@ -563,7 +563,8 @@
   .role-editor-hint { font-size: 11px; color: var(--muted); line-height: 1.4; }
   .role-row { display: flex; align-items: center; gap: 8px; }
   .role-icon { flex: none; width: 24px; text-align: center; font-size: 14px; }
-  .role-row input { flex: 1; padding: 5px 8px; font-size: 12px; }
+  .role-icon-inp { flex: none; width: 44px; padding: 5px 6px; text-align: center; font-size: 14px; }
+  .role-row input:not(.role-icon-inp) { flex: 1; padding: 5px 8px; font-size: 12px; }
   .role-editor-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   .mv:hover { border-color: var(--accent); }
   .mv:disabled { opacity: .25; cursor: default; border-color: transparent; }
@@ -979,12 +980,12 @@
       <div class="manage-list" id="manageStatuses"></div>
       <div class="add-row"><input id="mAddStatus" placeholder="New lane…" /><button class="primary" id="mAddStatusBtn">Add</button></div>
       <div id="mRoleEditor" class="role-editor" style="display:none">
-        <div class="role-editor-title">Role labels for this workspace</div>
-        <div class="role-editor-hint">Rename a role to change how it reads in the role dropdown. Leave empty to hide that role entirely. Behavior stays the same (Complete still marks shipped; Backlog still wipes sprint data).</div>
-        <div class="role-row"><span class="role-icon">✓</span><input data-role="complete" placeholder="Hide this role" /></div>
-        <div class="role-row"><span class="role-icon">🕒</span><input data-role="scheduled" placeholder="Hide this role" /></div>
-        <div class="role-row"><span class="role-icon">👀</span><input data-role="review" placeholder="Hide this role" /></div>
-        <div class="role-row"><span class="role-icon">📥</span><input data-role="backlog" placeholder="Hide this role" /></div>
+        <div class="role-editor-title">Role labels &amp; icons for this workspace</div>
+        <div class="role-editor-hint">Rename or re-icon each role. Leave the label empty to hide that role from the dropdown. Behavior stays tied to the internal role (Complete still marks shipped; Backlog still wipes sprint data).</div>
+        <div class="role-row"><input data-role-icon="complete" class="role-icon-inp" maxlength="4" /><input data-role="complete" placeholder="Hide this role" /></div>
+        <div class="role-row"><input data-role-icon="scheduled" class="role-icon-inp" maxlength="4" /><input data-role="scheduled" placeholder="Hide this role" /></div>
+        <div class="role-row"><input data-role-icon="review" class="role-icon-inp" maxlength="4" /><input data-role="review" placeholder="Hide this role" /></div>
+        <div class="role-row"><input data-role-icon="backlog" class="role-icon-inp" maxlength="4" /><input data-role="backlog" placeholder="Hide this role" /></div>
         <div class="role-editor-actions"><button type="button" id="mRolesReset" class="ghost">Reset to defaults</button><button type="button" id="mRolesSave" class="primary">Save</button></div>
       </div>
     </div>
@@ -1155,8 +1156,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.75";
+const VERSION = "2.76";
 const CHANGELOG = [
+  "v2.76 — Role icons are editable too. The role-labels editor now has an emoji input next to each label — change ✓ to ✅, 🕒 to 📅, 📥 to ⏸️, etc. Icons flow through to card badges (done check, scheduled clock, review eye, backlog) and the role dropdown. Innovation defaults to ✅ Approved / 📅 Scheduled / 👀 In Review / ⏸️ Hold. Reset button restores workspace defaults.",
   "v2.75 — Role labels are now per-workspace and editable. In Manage → Board lanes, a new “✎ Edit role labels” link opens a small panel where you can rename each of the four lane roles for the current workspace (or leave a label empty to hide that role entirely from the dropdown). Behavior stays tied to the internal roles (Complete still marks shipped, Backlog still wipes sprint data), only the names change. Innovation defaults to Approved / Scheduled / In Review / Hold; Planner stays on Complete / Scheduled / In Review / Backlog. Choice persists per workspace.",
   "v2.74 — Fixed broken-image placeholders on Innovation Board cards. Line Review “Latest Sample Image URL” cells often point at Google Drive / SharePoint hyperlinks or dead URLs that aren't actually images — those were rendering as broken img icons. Now those hosts are filtered out upfront, and any image that still fails to load removes itself via onerror.",
   "v2.73 — Cover photo for every deliverable. New section at the top of the modal: click to upload (resized client-side to 1200px wide, stored as a data URL in the card's fields), paste an image or URL, or drag-and-drop a file. Clear with the ✕ in the top-right. Board cards show a 16:9 thumbnail at the top when a cover is set. On Innovation, cards without an explicit cover fall back to “Latest Sample Image URL” automatically so Line Review imports show their samples right away.",
@@ -1643,20 +1645,30 @@ function applyWorkspace() {
   const xField = document.getElementById("importXlsxField"); if (xField) xField.style.display = currentWorkspace === "innovation" ? "" : "none";
 }
 function wsKey(k) { return currentWorkspace === "planner" ? k : k + "-" + currentWorkspace; }
-// Per-workspace labels for the four lane roles. Behavior is tied to the internal keys (complete / scheduled /
-// review / backlog); only the DISPLAY labels + icons change per workspace. Set an empty string to hide a role
-// from the dropdown entirely. Defaults are tuned per workspace: Innovation uses product-development vocabulary.
+// Per-workspace labels + icons for the four lane roles. Behavior stays tied to the internal keys (complete /
+// scheduled / review / backlog); only the DISPLAY changes. Empty label hides the role from the dropdown.
+// ROLE_LABELS stores just the text; ROLE_ICONS stores the emoji badge shown on cards and in the dropdown.
 const DEFAULT_ROLE_LABELS = {
   planner: { complete: "Complete", scheduled: "Scheduled", review: "In Review", backlog: "Backlog" },
   innovation: { complete: "Approved", scheduled: "Scheduled", review: "In Review", backlog: "Hold" },
 };
-let ROLE_LABELS = loadRoleLabels();
-function loadRoleLabels() {
-  try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-role-labels")) || "null"); if (raw && typeof raw === "object") return Object.assign({}, DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner, raw); }
+const DEFAULT_ROLE_ICONS = {
+  planner: { complete: "✓", scheduled: "🕒", review: "👀", backlog: "📥" },
+  innovation: { complete: "✅", scheduled: "📅", review: "👀", backlog: "⏸️" },
+};
+let ROLE_LABELS = loadRolePart("labels");
+let ROLE_ICONS = loadRolePart("icons");
+function loadRolePart(kind) {
+  const key = kind === "icons" ? "planner-role-icons" : "planner-role-labels";
+  const defaults = (kind === "icons" ? DEFAULT_ROLE_ICONS : DEFAULT_ROLE_LABELS)[currentWorkspace] || (kind === "icons" ? DEFAULT_ROLE_ICONS.planner : DEFAULT_ROLE_LABELS.planner);
+  try { const raw = JSON.parse(localStorage.getItem(wsKey(key)) || "null"); if (raw && typeof raw === "object") return Object.assign({}, defaults, raw); }
   catch (e) {}
-  return Object.assign({}, DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner);
+  return Object.assign({}, defaults);
 }
+function loadRoleLabels() { return loadRolePart("labels"); }
+function loadRoleIcons() { return loadRolePart("icons"); }
 function saveRoleLabels() { localStorage.setItem(wsKey("planner-role-labels"), JSON.stringify(ROLE_LABELS)); }
+function saveRoleIcons() { localStorage.setItem(wsKey("planner-role-icons"), JSON.stringify(ROLE_ICONS)); }
 let WS_COL_MISSING = false;
 function isColumnMissingError(err) {
   if (!err) return false;
@@ -1752,7 +1764,7 @@ async function switchWorkspace(id) {
   loadQuickFilterRows();
   colorBy = localStorage.getItem(wsKey("planner-colorby")) || "brand";
   calendarAnchor = localStorage.getItem(wsKey("planner-cal-anchor")) || "due";
-  ROLE_LABELS = loadRoleLabels();
+  ROLE_LABELS = loadRoleLabels(); ROLE_ICONS = loadRoleIcons();
   try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-planning-lanes")) || "null"); planningLanes = Array.isArray(raw) ? new Set(raw) : null; } catch (e) { planningLanes = null; }
   // Reset session-only filter state so a Planner-era sprint pick doesn't leak into Innovation (which has no sprints).
   filters = {}; filterRules = []; filterMatch = "all"; filterOverdue = false;
@@ -1870,8 +1882,10 @@ function applyBacklogClear(c) {
   c.fields = f;
   return f;
 }
-function schedBadge(c) { const sl = effScheduledLane(); return (sl && c.status === sl) ? '<span class="sched-check" title="Scheduled">' + SCHED_ICON + '</span> ' : ''; }
-function reviewBadge(c) { const rl = effReviewLane(); return (rl && c.status === rl) ? '<span class="sched-check" title="In review">' + REVIEW_ICON + '</span> ' : ''; }
+function schedBadge(c) { const sl = effScheduledLane(); return (sl && c.status === sl) ? '<span class="sched-check" title="' + esc(ROLE_LABELS.scheduled || "Scheduled") + '">' + (ROLE_ICONS.scheduled || SCHED_ICON) + '</span> ' : ''; }
+function reviewBadge(c) { const rl = effReviewLane(); return (rl && c.status === rl) ? '<span class="sched-check" title="' + esc(ROLE_LABELS.review || "In review") + '">' + (ROLE_ICONS.review || REVIEW_ICON) + '</span> ' : ''; }
+// Shared done-check for every card renderer so the icon follows ROLE_ICONS.complete.
+function doneBadge(c) { return (completeLane && c.status === completeLane) ? '<span class="done-check" title="' + esc(ROLE_LABELS.complete || "Complete") + '">' + (ROLE_ICONS.complete || "✓") + '</span> ' : ''; }
 let filters = {};   // quick sprint filter from the List header: { sprint: Set }
 let filterRules = [];      // advanced Filter panel: [{ field, op:'is'|'isnot'|'empty'|'notempty', values:[] }]
 let filterMatch = "all";   // "all" (AND) | "any" (OR)
@@ -2884,7 +2898,7 @@ function renderSprintPlanning() {
       item.addEventListener("dragend", () => { item.classList.remove("dragging"); document.querySelectorAll(".planning-sec.drop-over").forEach(el => el.classList.remove("drop-over")); });
       const meta = [c.brand, c.channel, c.owner].filter(Boolean).join(" · ");
       const badge = `<span class="planning-card-lane" style="background:${statusColor(c.status)}">${esc(c.status || "")}</span>`;
-      const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
+      const done = doneBadge(c);
       item.innerHTML = `<div class="planning-card-top">${done}${schedBadge(c) + reviewBadge(c)}<span class="planning-card-title">${esc(c.title)}</span>${badge}</div>` +
         (meta ? `<div class="planning-card-meta">${esc(meta)}</div>` : "");
       item.onclick = () => openModal(c);
@@ -3614,7 +3628,7 @@ function listTaskEl(c) {
   top.appendChild(chev);
   const main = document.createElement("div"); main.className = "lt-main";
   const title = document.createElement("div"); title.className = "lt-title";
-  const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
+  const done = doneBadge(c);
   title.innerHTML = done + schedBadge(c) + reviewBadge(c) + esc(c.title);
   title.onclick = () => openModal(c);
   main.appendChild(title);
@@ -3714,7 +3728,7 @@ function cardEl(c) {
   const el = document.createElement("div"); el.className = "card";
   el.style.borderLeftColor = colorFor(c); el.draggable = true; applyPromo(el, c);
   const badges = dimBadges(c);
-  const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
+  const done = doneBadge(c);
   const prog = subProgress(c);
   const progHtml = prog.total ? `<div class="card-prog"><div class="progress${prog.pct === 100 ? " full" : ""}"><i style="width:${prog.pct}%"></i></div><span>${prog.done}/${prog.total}</span></div>` : "";
   const coverSrc = (c.fields && (c.fields[COVER_KEY] || c.fields["Latest Sample Image URL"])) || "";
@@ -4279,7 +4293,7 @@ function packLanes(evs, ws) {
 }
 function evContent(c) {
   const ds = curDisp();
-  const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
+  const done = doneBadge(c);
   const brand = ds.dims.includes("brand") ? dimChipHtml(c, "brand") : "";
   const rest = dimBadges(c, ["brand"]);
   return `${done}${schedBadge(c) + reviewBadge(c)}<span class="bt">${esc(c.title)}</span>`
@@ -5319,10 +5333,11 @@ function manageRow(kind, item, idx) {
     const cur = completeLane === item.name ? "complete" : effScheduledLane() === item.name ? "scheduled" : effBacklogLane() === item.name ? "backlog" : effReviewLane() === item.name ? "review" : "";
     const dsg = document.createElement("select"); dsg.className = "mv lane-dsg"; dsg.title = "Designate this lane's role";
     const roleRows = [["", "— role —"]];
-    if (ROLE_LABELS.complete) roleRows.push(["complete", "✓ " + ROLE_LABELS.complete]);
-    if (ROLE_LABELS.scheduled) roleRows.push(["scheduled", "🕒 " + ROLE_LABELS.scheduled]);
-    if (ROLE_LABELS.review) roleRows.push(["review", REVIEW_ICON + " " + ROLE_LABELS.review]);
-    if (ROLE_LABELS.backlog) roleRows.push(["backlog", BACKLOG_ICON + " " + ROLE_LABELS.backlog]);
+    const roleOpt = k => roleRows.push([k, ((ROLE_ICONS[k] || "") + " " + ROLE_LABELS[k]).trim()]);
+    if (ROLE_LABELS.complete) roleOpt("complete");
+    if (ROLE_LABELS.scheduled) roleOpt("scheduled");
+    if (ROLE_LABELS.review) roleOpt("review");
+    if (ROLE_LABELS.backlog) roleOpt("backlog");
     roleRows.forEach(([v, l]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === cur) o.selected = true; dsg.appendChild(o);
     });
@@ -6044,13 +6059,21 @@ async function init() {
   // Role-label editor — collapsible panel in the Board lanes section. Save persists to localStorage per
   // workspace; the role dropdown re-renders via afterListsChanged (which calls renderManage + afterLists).
   const roleEditor = document.getElementById("mRoleEditor");
-  const populateRoleEditor = () => { roleEditor.querySelectorAll("input[data-role]").forEach(inp => { inp.value = ROLE_LABELS[inp.dataset.role] || ""; }); };
+  const populateRoleEditor = () => {
+    roleEditor.querySelectorAll("input[data-role]").forEach(inp => { inp.value = ROLE_LABELS[inp.dataset.role] || ""; });
+    roleEditor.querySelectorAll("input[data-role-icon]").forEach(inp => { inp.value = ROLE_ICONS[inp.dataset.roleIcon] || ""; });
+  };
   document.getElementById("mEditRolesBtn").onclick = () => { const show = roleEditor.style.display === "none"; roleEditor.style.display = show ? "" : "none"; if (show) populateRoleEditor(); };
   document.getElementById("mRolesSave").onclick = () => {
     roleEditor.querySelectorAll("input[data-role]").forEach(inp => { ROLE_LABELS[inp.dataset.role] = (inp.value || "").trim(); });
-    saveRoleLabels(); roleEditor.style.display = "none"; afterListsChanged(); toast("Role labels saved for " + wsDef().label + ".");
+    roleEditor.querySelectorAll("input[data-role-icon]").forEach(inp => { ROLE_ICONS[inp.dataset.roleIcon] = (inp.value || "").trim(); });
+    saveRoleLabels(); saveRoleIcons(); roleEditor.style.display = "none"; afterListsChanged(); render(); toast("Role labels saved for " + wsDef().label + ".");
   };
-  document.getElementById("mRolesReset").onclick = () => { ROLE_LABELS = Object.assign({}, DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner); saveRoleLabels(); populateRoleEditor(); afterListsChanged(); toast("Role labels reset to defaults."); };
+  document.getElementById("mRolesReset").onclick = () => {
+    ROLE_LABELS = Object.assign({}, DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner);
+    ROLE_ICONS = Object.assign({}, DEFAULT_ROLE_ICONS[currentWorkspace] || DEFAULT_ROLE_ICONS.planner);
+    saveRoleLabels(); saveRoleIcons(); populateRoleEditor(); afterListsChanged(); render(); toast("Role labels + icons reset to defaults.");
+  };
   document.getElementById("manageClose").onclick = closeManage;
   document.getElementById("manageOverlay").onclick = e => { if (e.target.id === "manageOverlay") closeManage(); };
   const addCh = () => { const i = document.getElementById("mAddChannel"); addList("channel", i.value).then(ok => { if (ok) i.value = ""; }); };
