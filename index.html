@@ -1086,8 +1086,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.60";
+const VERSION = "2.61";
 const CHANGELOG = [
+  "v2.61 — Fixed the blank-page regression from v2.60. Cause: `let colorBy = localStorage.getItem(wsKey(...))` ran before `let currentWorkspace = …` was declared; `let` has a temporal dead zone, so the first wsKey() call threw ReferenceError and killed the whole script. Moved the workspace block above everything that touches it. Also added graceful fallback so the app still works if the workspace migration hasn't been run yet (treats everyone as `planner` until the column exists).",
   "v2.60 — Workspaces Chunk 2/4. Switcher is now a native dropdown (one click, pick, done). Per-workspace scoping extended to local prefs: lane roles (Scheduled / Backlog / Review), personal saved views, quick-filter row visibility, color-by setting, Sprint-Planning show-lanes picker. Each workspace remembers its own defaults; Planner's existing values are preserved (back-compat on the bare key).",
   "v2.59 — Workspaces (Chunk 1 of 4). New `workspace` column on deliverables / lists / views (default `planner`); run supabase/migrations/0007_workspaces.sql once. Header shows the current workspace next to the SmarterPaw logo; click it to switch between Channel Planner and Product Innovation. Each workspace has its own deliverables, custom fields, status lanes, saved views, and lane-role designations — they can't cross-contaminate. The accent color follows the active workspace so you always know which app you're in. Chunks 2–4 (per-workspace Manage panel scoping, sprint-vs-milestone rhythm toggle, Innovation seed data) land next.",
   "v2.58 — Two fixes and one upgrade. (1) The tray-toggle button rendered as an empty oval in Continuous mode — the continuous-render path returned before renderTray() ran, so the button lost its label; now it labels itself in both modes. (2) Deliverable-title emoji picker is now a full picker: search bar at the top, category chip row that jumps you to the section, and a comprehensive grouped catalog (Smileys / People / Animals / Food / Activity / Travel / Objects / Symbols / Flags). Click any tile to insert at the caret; keeps focus in the title so you can keep typing.",
@@ -1533,6 +1534,36 @@ const FIELD_TYPE_VALS = FIELD_TYPES.map(t => t.v);
 function fieldHasOptions(f) { return f.type === "select" || f.type === "multi"; }
 function fieldByName(n) { return fieldsList.find(f => f.name === n); }
 function splitMulti(v) { return (v || "").split(",").map(s => s.trim()).filter(Boolean); }
+// Workspace scope — "planner" (Channel Planner) or "innovation" (Product Innovation). All reads from
+// deliverables, lists (custom fields + status lanes), and views are filtered to this value. Creates default to
+// it. Persisted in localStorage. Declared HERE (before anything that uses wsKey) because `let` has a temporal
+// dead zone — accessing `currentWorkspace` before this line would ReferenceError and kill the whole script.
+const WORKSPACES = [
+  { id: "planner", label: "Channel Planner", icon: "📣", accent: "#6d5dfc" },
+  { id: "innovation", label: "Product Innovation", icon: "🧪", accent: "#f07830" },
+];
+let currentWorkspace = localStorage.getItem("planner-workspace") || "planner";
+if (!WORKSPACES.some(w => w.id === currentWorkspace)) currentWorkspace = "planner";
+function wsDef() { return WORKSPACES.find(w => w.id === currentWorkspace) || WORKSPACES[0]; }
+function applyWorkspace() {
+  localStorage.setItem("planner-workspace", currentWorkspace);
+  document.documentElement.style.setProperty("--accent", wsDef().accent);
+  const sel = document.getElementById("workspaceSelect");
+  if (sel) {
+    if (!sel.options.length) WORKSPACES.forEach(w => { const o = document.createElement("option"); o.value = w.id; o.textContent = w.icon + "  " + w.label; sel.appendChild(o); });
+    sel.value = currentWorkspace;
+  }
+  document.body.classList.toggle("ws-innovation", currentWorkspace === "innovation");
+}
+function wsKey(k) { return currentWorkspace === "planner" ? k : k + "-" + currentWorkspace; }
+let WS_COL_MISSING = false;
+function isColumnMissingError(err) {
+  if (!err) return false;
+  const m = (err.message || "") + " " + (err.hint || "") + " " + (err.details || "");
+  return /column .*workspace.* does not exist/i.test(m) || err.code === "42703";
+}
+function wsEq(q) { return WS_COL_MISSING ? q : q.eq("workspace", currentWorkspace); }
+function wsStamp(row) { return WS_COL_MISSING ? row : Object.assign({}, row, { workspace: currentWorkspace }); }
 let colorBy = localStorage.getItem(wsKey("planner-colorby")) || "brand";
 const DISP_DEFAULT = { dims: ["brand", "channel", "owners", "dates"], badge: true };
 const LIST_DISP_DEFAULT = { dims: ["status", "channel", "owners", "promotion", "dates"], badge: true };
@@ -1602,31 +1633,6 @@ let completeLane = "";
 // that person's work. Persists in localStorage across sessions — the prompt only re-appears if the choice is
 // cleared. "" means "All" (no owner filter).
 let currentUser = localStorage.getItem("planner-current-user") || "";
-// Workspace scope — "planner" (Channel Planner) or "innovation" (Product Innovation). All reads from
-// deliverables, lists (custom fields + status lanes), and views are filtered to this value. Creates default to
-// it. Persisted in localStorage. Chunks 2+ add per-workspace field editors, lane roles, saved views, and the
-// sprint-vs-milestone rhythm toggle.
-const WORKSPACES = [
-  { id: "planner", label: "Channel Planner", icon: "📣", accent: "#6d5dfc" },
-  { id: "innovation", label: "Product Innovation", icon: "🧪", accent: "#f07830" },
-];
-let currentWorkspace = localStorage.getItem("planner-workspace") || "planner";
-if (!WORKSPACES.some(w => w.id === currentWorkspace)) currentWorkspace = "planner";
-function wsDef() { return WORKSPACES.find(w => w.id === currentWorkspace) || WORKSPACES[0]; }
-function applyWorkspace() {
-  localStorage.setItem("planner-workspace", currentWorkspace);
-  document.documentElement.style.setProperty("--accent", wsDef().accent);
-  const sel = document.getElementById("workspaceSelect");
-  if (sel) {
-    if (!sel.options.length) WORKSPACES.forEach(w => { const o = document.createElement("option"); o.value = w.id; o.textContent = w.icon + "  " + w.label; sel.appendChild(o); });
-    sel.value = currentWorkspace;
-  }
-  document.body.classList.toggle("ws-innovation", currentWorkspace === "innovation");
-}
-// Per-workspace localStorage key. Planner uses the bare key for back-compat with every save made before
-// workspaces existed; other workspaces get a `-innovation`-style suffix. ALL workspace-scoped prefs (lane
-// roles, personal views, planning-lane picker, quick-filter rows, color-by) go through this.
-function wsKey(k) { return currentWorkspace === "planner" ? k : k + "-" + currentWorkspace; }
 async function switchWorkspace(id) {
   if (id === currentWorkspace || !WORKSPACES.some(w => w.id === id)) return;
   currentWorkspace = id; applyWorkspace();
@@ -1853,16 +1859,23 @@ function loadLocal() { try { return JSON.parse(localStorage.getItem(STORE_KEY)) 
 function saveLocal() { localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
 async function refetch() {
   if (!ONLINE) { cards = loadLocal(); render(); return; }
-  const { data, error } = await db.from("deliverables").select("*").eq("workspace", currentWorkspace).order("created_at", { ascending: true });
+  let { data, error } = await wsEq(db.from("deliverables").select("*")).order("created_at", { ascending: true });
+  if (error && isColumnMissingError(error)) {
+    WS_COL_MISSING = true;
+    toast("Run supabase/migrations/0007_workspaces.sql — workspaces are degraded until then.");
+    ({ data, error } = await db.from("deliverables").select("*").order("created_at", { ascending: true }));
+  }
   if (error) { toast("Load failed: " + error.message); return; }
   cards = data.map(r => ({ id: r.id, title: r.title, brand: r.brand, channel: r.channel,
     owner: r.owner || "", due: r.due || "", end: r.end_date || "", status: r.status, notes: r.notes || "",
     fields: r.fields || {}, createdAt: r.created_at || "" }));
   render();
 }
-function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
-  due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {},
-  workspace: currentWorkspace }; }
+function dbObj(d) {
+  const base = { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
+    due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {} };
+  return WS_COL_MISSING ? base : Object.assign(base, { workspace: currentWorkspace });
+}
 async function createCard(d) {
   const weeks = recordedSprints(d);
   if (weeks.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = weeks; d.fields[HIST_SPRINTS_KEY] = weeks.slice(); }
@@ -1989,7 +2002,11 @@ async function loadLists() {
     }
     return;
   }
-  const { data, error } = await db.from("lists").select("*").eq("workspace", currentWorkspace).order("position", { ascending: true });
+  let { data, error } = await wsEq(db.from("lists").select("*")).order("position", { ascending: true });
+  if (error && isColumnMissingError(error)) {
+    WS_COL_MISSING = true;
+    ({ data, error } = await db.from("lists").select("*").order("position", { ascending: true }));
+  }
   if (error) {
     channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
     statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = [];
@@ -2023,7 +2040,7 @@ async function savePromoOverrides() {
     if (empty) { const { error } = await db.from("lists").delete().eq("id", _promoOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } _promoOverrideRowId = null; }
     else { const { error } = await db.from("lists").update({ color: JSON.stringify(promoOverrides) }).eq("id", _promoOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } }
   } else if (!empty) {
-    const { data, error } = await db.from("lists").insert({ kind: "field", name: PROMO_COLORS_KEY, color: JSON.stringify(promoOverrides), position: 99999, workspace: currentWorkspace }).select("id").single();
+    const { data, error } = await db.from("lists").insert(wsStamp({ kind: "field", name: PROMO_COLORS_KEY, color: JSON.stringify(promoOverrides), position: 99999 })).select("id").single();
     if (error) { toast("Save failed: " + error.message); return; }
     _promoOverrideRowId = data.id;
   }
@@ -2049,8 +2066,8 @@ async function maybeMigrateBacklogTodo() {
   if (hasTodo || !oldBl) { localStorage.setItem(wsKey("planner-backlog-todo-migrated-v1"), "1"); return; }
   try {
     await db.from("lists").update({ name: "To Do" }).eq("id", oldBl.id);
-    await db.from("deliverables").update({ status: "To Do" }).eq("status", oldBl.name).eq("workspace", currentWorkspace);
-    await db.from("lists").insert({ kind: "status", name: "Backlog", position: statusList.length + 1, workspace: currentWorkspace });
+    await wsEq(db.from("deliverables").update({ status: "To Do" }).eq("status", oldBl.name));
+    await db.from("lists").insert(wsStamp({ kind: "status", name: "Backlog", position: statusList.length + 1 }));
     await reloadListsAndUI();
     const newBl = statusList.find(s => /^backlog$/i.test(s.name));
     if (newBl) { backlogLane = newBl.name; localStorage.setItem(wsKey("planner-backlog-lane"), backlogLane); }
@@ -2071,7 +2088,7 @@ async function addList(kind, name) {
   const arr = listFor(kind);
   if (arr.some(x => x.name.toLowerCase() === name.toLowerCase())) { toast('"' + name + '" already exists'); return false; }
   if (!ONLINE) { arr.push({ name }); saveListsLocal(); afterListsChanged(); return true; }
-  const { error } = await db.from("lists").insert({ kind, name, position: arr.length + 1, workspace: currentWorkspace });
+  const { error } = await db.from("lists").insert(wsStamp({ kind, name, position: arr.length + 1 }));
   if (error) { toast("Add failed: " + error.message); return false; }
   await reloadListsAndUI(); return true;
 }
@@ -2110,7 +2127,7 @@ async function moveStatus(item, dir) {
 async function setComplete(item) {
   const makeComplete = completeLane !== item.name;
   if (!ONLINE) { completeLane = makeComplete ? item.name : ""; saveListsLocal(); afterListsChanged(); return; }
-  const r1 = await db.from("lists").update({ is_complete: false }).eq("kind", "status").eq("workspace", currentWorkspace);
+  const r1 = await wsEq(db.from("lists").update({ is_complete: false }).eq("kind", "status"));
   if (r1.error) { toast("Needs the v1.10 SQL (0005): " + r1.error.message); return; }
   if (makeComplete) { const { error } = await db.from("lists").update({ is_complete: true }).eq("id", item.id); if (error) { toast("Failed: " + error.message); return; } }
   await reloadListsAndUI();
@@ -2125,8 +2142,8 @@ function cascadeRenameLocal(kind, old, neu) {
   });
 }
 async function cascadeRenameDB(kind, old, neu) {
-  if (kind === "status") { await db.from("deliverables").update({ status: neu }).eq("status", old).eq("workspace", currentWorkspace); return; }
-  if (kind === "channel") { await db.from("deliverables").update({ channel: neu }).eq("channel", old).eq("workspace", currentWorkspace); return; }
+  if (kind === "status") { await wsEq(db.from("deliverables").update({ status: neu }).eq("status", old)); return; }
+  if (kind === "channel") { await wsEq(db.from("deliverables").update({ channel: neu }).eq("channel", old)); return; }
   if (kind === "person") {
     const affected = cards.filter(c => splitOwners(c.owner).includes(old));
     await Promise.all(affected.map(c => db.from("deliverables").update({ owner: splitOwners(c.owner).map(x => x === old ? neu : x).join(", ") }).eq("id", c.id)));
@@ -5082,7 +5099,11 @@ function loadPersonalViews() { try { return JSON.parse(localStorage.getItem(wsKe
 function savePersonalViews(arr) { localStorage.setItem(wsKey("planner-views"), JSON.stringify(arr)); }
 async function loadSharedViews() {
   if (!ONLINE) { sharedViews = []; return; }
-  const { data, error } = await db.from("views").select("*").eq("workspace", currentWorkspace).order("name", { ascending: true });
+  let { data, error } = await wsEq(db.from("views").select("*")).order("name", { ascending: true });
+  if (error && isColumnMissingError(error)) {
+    WS_COL_MISSING = true;
+    ({ data, error } = await db.from("views").select("*").order("name", { ascending: true }));
+  }
   if (error) { sharedViews = []; _viewsTableMissing = true; return; }
   _viewsTableMissing = false; sharedViews = data.map(r => ({ id: r.id, name: r.name, params: r.params || "" }));
 }
@@ -5091,7 +5112,7 @@ async function addView(name, scope) {
   const params = currentParams();
   if (scope === "shared") {
     if (!ONLINE) { toast("App-wide views need the online backend."); return; }
-    const { error } = await db.from("views").insert({ name, params, workspace: currentWorkspace });
+    const { error } = await db.from("views").insert(wsStamp({ name, params }));
     if (error) { toast("App-wide save failed — run the views SQL (0006): " + error.message); return; }
     await loadSharedViews();
   } else { const arr = loadPersonalViews(); arr.push({ name, params }); savePersonalViews(arr); }
