@@ -541,14 +541,6 @@
   .cover-clear:hover { background: rgba(0,0,0,.8); }
   /* Thumbnail at the top of Board cards and Grid rows for anything with a cover photo. */
   .card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px 8px 0 0; margin: -11px -11px 8px; }
-  /* Dated note chunks in the Notes feed — read-only, scrollable list of journal entries, each labeled with its date. */
-  .notes-dated-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 6px; background: rgba(255,255,255,.02); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; }
-  html[data-theme="light"] .notes-dated-list { background: rgba(0,0,0,.02); }
-  .notes-dated-row { display: grid; grid-template-columns: 92px 1fr; gap: 10px; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,.02); }
-  html[data-theme="light"] .notes-dated-row { background: rgba(0,0,0,.03); }
-  .notes-dated-row .notes-dated-when { font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .02em; padding-top: 2px; white-space: nowrap; }
-  .notes-dated-row .notes-dated-text { white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; color: var(--text); }
-  .notes-dated-count { font-size: 11px; color: var(--muted); margin: 0 2px 4px; }
   .field-link-row { display: flex; gap: 6px; align-items: stretch; }
   .field-link-row input { flex: 1; min-width: 0; }
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
@@ -1164,11 +1156,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.79";
+const VERSION = "2.80";
 const CHANGELOG = [
-  "v2.79 — Hotfix: Notes view rendered empty on v2.78 because the body-render loop referenced a variable scoped to the outer cards loop. Fixed, Notes feed renders again.",
-  "v2.78 — Reverted v2.77's per-entry splitting. Notes feed is one card per entry again, but each card's body now surfaces its dated journal entries as a scrollable, read-only list (date column + text), newest first. Supports M.D.YY, MM.DD.YY, M/D/YY, M-D-YY, 2–4 digit years. The inline editor below the list still edits the full notes blob — prefix a new line with today's date and it joins the list on next render. 📋 Copy updates still filters by per-entry date so emailed summaries land on the right day.",
-  "v2.77 — Notes feed now splits imported journal-style notes into dated entries. If a card's notes contain inline date prefixes (4.30.26 - … / 5.13.26 - … / 06.09.26 - …) each chunk becomes its own Notes-view entry with that date, so the feed shows every update by when it was written instead of lumping everything under one “updated today” stamp. Supports M.D.YY, MM.DD.YY, M/D/YY, M-D-YY, 2–4 digit years. The modal still lets you edit the full notes blob — the split is a feed-view only.",
+  "v2.80 — Fully reverted the dated-notes work (v2.77 – v2.79). Notes view is back to one entry per card with the inline editor, as it was before. The notes blob is a plain editable field — nothing parses it or re-renders dated chunks.",
   "v2.76 — Role icons are editable too. The role-labels editor now has an emoji input next to each label — change ✓ to ✅, 🕒 to 📅, 📥 to ⏸️, etc. Icons flow through to card badges (done check, scheduled clock, review eye, backlog) and the role dropdown. Innovation defaults to ✅ Approved / 📅 Scheduled / 👀 In Review / ⏸️ Hold. Reset button restores workspace defaults.",
   "v2.75 — Role labels are now per-workspace and editable. In Manage → Board lanes, a new “✎ Edit role labels” link opens a small panel where you can rename each of the four lane roles for the current workspace (or leave a label empty to hide that role entirely from the dropdown). Behavior stays tied to the internal roles (Complete still marks shipped, Backlog still wipes sprint data), only the names change. Innovation defaults to Approved / Scheduled / In Review / Hold; Planner stays on Complete / Scheduled / In Review / Backlog. Choice persists per workspace.",
   "v2.74 — Fixed broken-image placeholders on Innovation Board cards. Line Review “Latest Sample Image URL” cells often point at Google Drive / SharePoint hyperlinks or dead URLs that aren't actually images — those were rendering as broken img icons. Now those hosts are filtered out upfront, and any image that still fails to load removes itself via onerror.",
@@ -3269,14 +3259,7 @@ function buildNotesExportText() {
   _notesExportFeed.forEach(item => {
     const dYmd = item.date || "";
     const dAdded = item.kind === "email" ? ((item.email && item.email.addedAt) || "") : "";
-    // A note entry also qualifies when any of its dated journal chunks falls inside the window — the card's
-    // "last note" date may be older than the cutoff even though recent dated chunks exist.
-    let hasDatedInWindow = false;
-    if (item.kind === "note") {
-      const dated = splitDatedNoteEntries(item.card.notes || "");
-      hasDatedInWindow = dated.some(d => d.date && d.date >= cutoffYmd);
-    }
-    const inWindow = (dYmd && dYmd >= cutoffYmd) || (dAdded && new Date(dAdded).getTime() >= cutoffMs) || hasDatedInWindow;
+    const inWindow = (dYmd && dYmd >= cutoffYmd) || (dAdded && new Date(dAdded).getTime() >= cutoffMs);
     if (!inWindow) return;
     if (!byCard.has(item.card.id)) byCard.set(item.card.id, { card: item.card, entries: [] });
     byCard.get(item.card.id).entries.push(item);
@@ -3301,17 +3284,8 @@ function buildNotesExportText() {
           const body = stripTags(em.content || "").split("\n").filter(x => x.trim()).slice(0, 20).join("\n   ");
           if (body) lines.push("   " + body);
         } else {
-          // Prefer per-entry dated chunks when present — only emit the ones that fall inside the window.
-          const dated = splitDatedNoteEntries(card.notes || "");
-          if (dated.length) {
-            dated.filter(d => d.date >= cutoffYmd).sort((a, b) => (b.date || "").localeCompare(a.date || "")).forEach(d => {
-              lines.push("- 📝 " + fmtDue(d.date));
-              lines.push("   " + (d.text || "").split("\n").join("\n   "));
-            });
-          } else {
-            const noteBody = stripTags(card.notes || "");
-            if (noteBody) { lines.push("- 📝 " + when); lines.push("   " + noteBody.split("\n").join("\n   ")); }
-          }
+          const noteBody = stripTags(card.notes || "");
+          if (noteBody) { lines.push("- 📝 " + when); lines.push("   " + noteBody.split("\n").join("\n   ")); }
           const subs = cardSubtasks(card).filter(s => s.type !== "header");
           if (subs.length) {
             lines.push("- ✅ Subtasks:");
@@ -3331,36 +3305,6 @@ async function copyNotesExport() {
   const ta = document.getElementById("notesExportText");
   try { await navigator.clipboard.writeText(ta.value); toast("Copied " + ta.value.length + " characters."); }
   catch (e) { ta.select(); try { document.execCommand("copy"); toast("Copied."); } catch (e2) { toast("Copy failed — select the text manually."); } }
-}
-// Split a notes blob into dated chunks. Many imported Line Review notes carry inline journal entries like
-// "4.30.26 - Catnip Fish Skeleton with Silvervine…" / "5.13.26 - Meowijuana Candy Store…". Each is treated as
-// its own feed entry so the Notes view can show them separately by date instead of lumping everything under
-// the card's last-updated stamp. Accepts M.D.YY, MM.DD.YY, M/D/YY, MM/DD/YY, M-D-YY (any 2–4 digit year).
-function splitDatedNoteEntries(notes) {
-  if (!notes) return [];
-  const plain = notes.replace(/<br\s*\/?>/gi, "\n").replace(/<\/?p[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
-  const lines = plain.split(/\r?\n/);
-  const dateRe = /^\s*(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})\s*[-–:]\s*/;
-  const entries = []; let pre = ""; let cur = null;
-  for (const line of lines) {
-    const m = dateRe.exec(line);
-    if (m) {
-      if (cur) entries.push(cur);
-      let yr = parseInt(m[3], 10); if (yr < 100) yr += 2000;
-      const mo = String(parseInt(m[1], 10)).padStart(2, "0");
-      const dy = String(parseInt(m[2], 10)).padStart(2, "0");
-      cur = { date: `${yr}-${mo}-${dy}`, text: line.slice(m[0].length) };
-    } else if (cur) {
-      cur.text += "\n" + line;
-    } else {
-      pre += (pre ? "\n" : "") + line;
-    }
-  }
-  if (cur) entries.push(cur);
-  // Trim and drop empty-body entries.
-  const out = entries.map(e => ({ date: e.date, text: e.text.replace(/\s+$/g, "").replace(/^\s+/, "") })).filter(e => e.text);
-  if (pre.trim() && !out.length) return [];   // no dates found → fall back to single-entry behavior
-  return out;
 }
 function renderNotesView() {
   const root = document.getElementById("notes"); root.innerHTML = "";
@@ -3452,26 +3396,7 @@ function renderNotesView() {
       emailBtn.addEventListener("mousedown", e => e.preventDefault());
       emailBtn.onclick = () => { if (typeof window.openEmailPasteDialog === "function") window.openEmailPasteDialog({ kind: "card", cardId: c.id }); };
       tools.appendChild(emailBtn); body.appendChild(tools);
-      // Dated journal entries — if the notes blob has inline date prefixes (4.30.26 - …), surface each as its own
-      // dated row in a scrollable read-only list, newest first. Editing still happens in the modal / editor below.
-      const hasAnyNoteText = !!(c.notes && c.notes.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim());
-      const dated = hasAnyNoteText ? splitDatedNoteEntries(c.notes) : [];
-      if (dated.length) {
-        const sorted = dated.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-        const caption = document.createElement("div"); caption.className = "notes-dated-count";
-        caption.textContent = sorted.length + " dated entr" + (sorted.length === 1 ? "y" : "ies") + " · newest first";
-        body.appendChild(caption);
-        const list = document.createElement("div"); list.className = "notes-dated-list";
-        sorted.forEach(e => {
-          const row = document.createElement("div"); row.className = "notes-dated-row";
-          const when = document.createElement("div"); when.className = "notes-dated-when"; when.textContent = e.date ? fmtDue(e.date) : "—";
-          const txt = document.createElement("div"); txt.className = "notes-dated-text"; txt.textContent = e.text || "";
-          row.appendChild(when); row.appendChild(txt); list.appendChild(row);
-        });
-        body.appendChild(list);
-      }
-      // Inline-editable notes — full blob, so a new entry can be prefixed with today's date and shows up as a
-      // new dated row on next render.
+      // Inline-editable notes
       const editor = document.createElement("div"); editor.className = "notes-editable"; editor.setAttribute("contenteditable", "true"); editor.setAttribute("data-ph", "Click to write a note…");
       let _initialHtml = c.notes ? sanitizeNotes(c.notes) : "";
       if (/^\s*<div class="email"/.test(_initialHtml)) _initialHtml = "<br>" + _initialHtml;
@@ -3483,8 +3408,6 @@ function renderNotesView() {
       body.appendChild(editor);
     }
     if (item.kind !== "email") {
-      // Subtasks render once per card — on either the single note entry (undated) or the dedicated subs entry
-      // when the notes blob was split into multiple dated chunks.
       const subs = cardSubtasks(c);
       if (subs.length) {
         const sbox = document.createElement("div"); sbox.className = "notes-subs";
