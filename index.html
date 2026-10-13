@@ -746,7 +746,7 @@
 <body>
 <header>
   <div class="brand-title">Smarter<span>Paw</span></div>
-  <button id="workspaceBtn" class="user-btn ws-btn" title="Switch workspace"></button>
+  <select id="workspaceSelect" class="user-btn ws-btn" title="Switch workspace"></select>
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
   <button id="userBtn" class="user-btn" title="Filter to your work (click to change)">You: <b id="userBtnName">All</b> ▾</button>
@@ -765,16 +765,6 @@
     <button class="ghost" id="menuBtn">⋯</button>
   </div>
 </header>
-
-<!-- Workspace switcher. Each workspace has its own deliverables, custom fields, status lanes, and saved views. -->
-<div class="overlay" id="workspaceOverlay">
-  <div class="modal" style="max-width:420px">
-    <button class="x" id="workspaceOverlayX">✕</button>
-    <h2>Switch workspace</h2>
-    <p style="color:var(--muted); font-size:13px; margin:0 0 14px">Deliverables, custom fields, status lanes, and saved views are scoped per workspace. You won't see Channel Planner work in Product Innovation (and vice versa).</p>
-    <div id="workspaceOverlayChoices" style="display:flex; flex-direction:column; gap:8px"></div>
-  </div>
-</div>
 
 <!-- "Who are you?" picker — shown on first session load if no persisted user; also opens from the header userBtn. -->
 <div class="overlay" id="userOverlay">
@@ -1096,8 +1086,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.59";
+const VERSION = "2.60";
 const CHANGELOG = [
+  "v2.60 — Workspaces Chunk 2/4. Switcher is now a native dropdown (one click, pick, done). Per-workspace scoping extended to local prefs: lane roles (Scheduled / Backlog / Review), personal saved views, quick-filter row visibility, color-by setting, Sprint-Planning show-lanes picker. Each workspace remembers its own defaults; Planner's existing values are preserved (back-compat on the bare key).",
   "v2.59 — Workspaces (Chunk 1 of 4). New `workspace` column on deliverables / lists / views (default `planner`); run supabase/migrations/0007_workspaces.sql once. Header shows the current workspace next to the SmarterPaw logo; click it to switch between Channel Planner and Product Innovation. Each workspace has its own deliverables, custom fields, status lanes, saved views, and lane-role designations — they can't cross-contaminate. The accent color follows the active workspace so you always know which app you're in. Chunks 2–4 (per-workspace Manage panel scoping, sprint-vs-milestone rhythm toggle, Innovation seed data) land next.",
   "v2.58 — Two fixes and one upgrade. (1) The tray-toggle button rendered as an empty oval in Continuous mode — the continuous-render path returned before renderTray() ran, so the button lost its label; now it labels itself in both modes. (2) Deliverable-title emoji picker is now a full picker: search bar at the top, category chip row that jumps you to the section, and a comprehensive grouped catalog (Smileys / People / Animals / Food / Activity / Travel / Objects / Symbols / Flags). Click any tile to insert at the caret; keeps focus in the title so you can keep typing.",
   "v2.57 — Emoji picker on the deliverable title. A 😀 button next to the title field opens a compact popover of common emojis grouped by intent (Status/focus, Content/channel, Marketing/promo, Pets/SmarterPaw). Click one and it inserts at the caret; the title textarea keeps focus so you can keep typing. Click outside or reopen to close.",
@@ -1542,7 +1533,7 @@ const FIELD_TYPE_VALS = FIELD_TYPES.map(t => t.v);
 function fieldHasOptions(f) { return f.type === "select" || f.type === "multi"; }
 function fieldByName(n) { return fieldsList.find(f => f.name === n); }
 function splitMulti(v) { return (v || "").split(",").map(s => s.trim()).filter(Boolean); }
-let colorBy = localStorage.getItem("planner-colorby") || "brand";
+let colorBy = localStorage.getItem(wsKey("planner-colorby")) || "brand";
 const DISP_DEFAULT = { dims: ["brand", "channel", "owners", "dates"], badge: true };
 const LIST_DISP_DEFAULT = { dims: ["status", "channel", "owners", "promotion", "dates"], badge: true };
 function loadDisplay() {
@@ -1599,8 +1590,13 @@ let gridCollapsed = new Set();             // ancestry-path strings for currentl
 let gridSelected = new Set();              // card ids currently checked in the Grid view (for bulk edit / delete)
 // Quick filter rows: which dimensions get their own "click to filter" row in the quick-filter section (below the header).
 // Configured in Display; each dimension has its own filter state in `filters[dim]`.
-let quickFilterRows = (() => { try { const raw = JSON.parse(localStorage.getItem("planner-quick-rows") || "null"); return Array.isArray(raw) ? new Set(raw) : new Set(["brand","channel","promotion"]); } catch (e) { return new Set(["brand","channel","promotion"]); } })();
-function saveQuickFilterRows() { localStorage.setItem("planner-quick-rows", JSON.stringify([...quickFilterRows])); }
+let quickFilterRows = new Set(["brand","channel","promotion"]);
+function loadQuickFilterRows() {
+  try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-quick-rows")) || "null"); quickFilterRows = Array.isArray(raw) ? new Set(raw) : new Set(["brand","channel","promotion"]); }
+  catch (e) { quickFilterRows = new Set(["brand","channel","promotion"]); }
+}
+loadQuickFilterRows();
+function saveQuickFilterRows() { localStorage.setItem(wsKey("planner-quick-rows"), JSON.stringify([...quickFilterRows])); }
 let completeLane = "";
 // Current-user filter: on session load we ask "who are you?" (see #userOverlay) and set filters.owner to just
 // that person's work. Persists in localStorage across sessions — the prompt only re-appears if the choice is
@@ -1620,9 +1616,30 @@ function wsDef() { return WORKSPACES.find(w => w.id === currentWorkspace) || WOR
 function applyWorkspace() {
   localStorage.setItem("planner-workspace", currentWorkspace);
   document.documentElement.style.setProperty("--accent", wsDef().accent);
-  const btn = document.getElementById("workspaceBtn");
-  if (btn) btn.innerHTML = `${wsDef().icon} <b>${esc(wsDef().label)}</b> ▾`;
+  const sel = document.getElementById("workspaceSelect");
+  if (sel) {
+    if (!sel.options.length) WORKSPACES.forEach(w => { const o = document.createElement("option"); o.value = w.id; o.textContent = w.icon + "  " + w.label; sel.appendChild(o); });
+    sel.value = currentWorkspace;
+  }
   document.body.classList.toggle("ws-innovation", currentWorkspace === "innovation");
+}
+// Per-workspace localStorage key. Planner uses the bare key for back-compat with every save made before
+// workspaces existed; other workspaces get a `-innovation`-style suffix. ALL workspace-scoped prefs (lane
+// roles, personal views, planning-lane picker, quick-filter rows, color-by) go through this.
+function wsKey(k) { return currentWorkspace === "planner" ? k : k + "-" + currentWorkspace; }
+async function switchWorkspace(id) {
+  if (id === currentWorkspace || !WORKSPACES.some(w => w.id === id)) return;
+  currentWorkspace = id; applyWorkspace();
+  loadLaneRoles();
+  loadQuickFilterRows();
+  colorBy = localStorage.getItem(wsKey("planner-colorby")) || "brand";
+  try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-planning-lanes")) || "null"); planningLanes = Array.isArray(raw) ? new Set(raw) : null; } catch (e) { planningLanes = null; }
+  // Reset session-only filter state so a Planner-era sprint pick doesn't leak into Innovation (which has no sprints).
+  filters = {}; filterRules = []; filterMatch = "all"; filterOverdue = false;
+  try { sessionStorage.removeItem("planner-session-init"); } catch (e) {}
+  await loadLists(); await refetch();
+  const cs = document.getElementById("colorBy"); if (cs) cs.value = colorBy;
+  render();
 }
 // Theme — "dark" (default) or "light". Applied via a data-theme attribute on <html> so the CSS override kicks
 // in without a re-render. Persisted in localStorage; the toggle lives in the ⋯ Settings dialog.
@@ -1656,25 +1673,6 @@ function applyCurrentUserFilter() {
   updateFilterBtn && updateFilterBtn();
   const nameEl = document.getElementById("userBtnName"); if (nameEl) nameEl.textContent = currentUser || "All";
 }
-function openWorkspacePicker() {
-  const box = document.getElementById("workspaceOverlayChoices"); if (!box) return;
-  box.innerHTML = "";
-  WORKSPACES.forEach(w => {
-    const b = document.createElement("button"); b.type = "button";
-    b.innerHTML = `${w.icon} <b style="margin-left:4px">${esc(w.label)}</b>`;
-    if (currentWorkspace === w.id) b.classList.add("on");
-    b.onclick = async () => {
-      if (currentWorkspace === w.id) { document.getElementById("workspaceOverlay").classList.remove("show"); return; }
-      currentWorkspace = w.id; applyWorkspace();
-      document.getElementById("workspaceOverlay").classList.remove("show");
-      // Reload everything scoped to the new workspace. loadLists + refetch read currentWorkspace via scoped
-      // queries, so after this call the UI is entirely re-populated for the new workspace.
-      await loadLists(); await refetch(); render();
-    };
-    box.appendChild(b);
-  });
-  document.getElementById("workspaceOverlay").classList.add("show");
-}
 function openUserPicker() {
   const box = document.getElementById("userOverlayChoices"); if (!box) return;
   box.innerHTML = "";
@@ -1690,7 +1688,16 @@ function openUserPicker() {
 }
 // The "Scheduled" lane gets a clock badge (parallel to the green ✓ complete lane). Stored locally (no SQL);
 // null = never set, so we auto-detect a lane literally named "Scheduled" as the default.
-let scheduledLane = localStorage.getItem("planner-scheduled-lane");
+// Lane-role designations (Scheduled / Backlog / Review) are per-workspace. They're held as mutable module
+// vars so existing read sites (there are many) don't need to change; loadLaneRoles() re-populates them from
+// the workspace-scoped keys on init and every workspace switch.
+let scheduledLane = null, backlogLane = null, reviewLane = null;
+function loadLaneRoles() {
+  scheduledLane = localStorage.getItem(wsKey("planner-scheduled-lane"));
+  backlogLane = localStorage.getItem(wsKey("planner-backlog-lane"));
+  reviewLane = localStorage.getItem(wsKey("planner-review-lane"));
+}
+loadLaneRoles();
 function effScheduledLane() {
   if (scheduledLane !== null) return scheduledLane;
   const s = statusList.find(x => /^scheduled$/i.test(x.name));
@@ -1698,14 +1705,10 @@ function effScheduledLane() {
 }
 function setScheduled(item) {
   scheduledLane = (effScheduledLane() === item.name) ? "" : item.name;
-  localStorage.setItem("planner-scheduled-lane", scheduledLane);
+  localStorage.setItem(wsKey("planner-scheduled-lane"), scheduledLane);
   afterListsChanged();
 }
 const SCHED_ICON = "🕒";
-// Backlog lane — parallels Complete and Scheduled. Cards moved to the Backlog lane get their sprint data
-// stripped (due, end, planning sprint, sprints-tracked history) — EXCEPT the append-only Historical sprints
-// list — because they're intentionally being un-planned. localStorage-scoped like scheduledLane.
-let backlogLane = localStorage.getItem("planner-backlog-lane");
 function effBacklogLane() {
   if (backlogLane !== null) return backlogLane;
   const s = statusList.find(x => /^backlog$/i.test(x.name));
@@ -1713,13 +1716,10 @@ function effBacklogLane() {
 }
 function setBacklog(item) {
   backlogLane = (effBacklogLane() === item.name) ? "" : item.name;
-  localStorage.setItem("planner-backlog-lane", backlogLane || "");
+  localStorage.setItem(wsKey("planner-backlog-lane"), backlogLane || "");
   afterListsChanged();
 }
 const BACKLOG_ICON = "📥";
-// Review lane — parallels Complete / Scheduled / Backlog. Purely a visual designation (👀 badge on cards in that
-// lane); no side effects on save. localStorage-scoped so it's per-user like the others.
-let reviewLane = localStorage.getItem("planner-review-lane");
 function effReviewLane() {
   if (reviewLane !== null) return reviewLane;
   const s = statusList.find(x => /^(in\s?)?review$/i.test(x.name));
@@ -1727,7 +1727,7 @@ function effReviewLane() {
 }
 function setReview(item) {
   reviewLane = (effReviewLane() === item.name) ? "" : item.name;
-  localStorage.setItem("planner-review-lane", reviewLane || "");
+  localStorage.setItem(wsKey("planner-review-lane"), reviewLane || "");
   afterListsChanged();
 }
 const REVIEW_ICON = "👀";
@@ -2043,18 +2043,18 @@ async function reloadListsAndUI() { await loadLists(); afterListsChanged(); }
 // "To Do" already exists). Only runs online — offline installs shouldn't reshape a shared DB.
 async function maybeMigrateBacklogTodo() {
   if (!ONLINE) return;
-  if (localStorage.getItem("planner-backlog-todo-migrated-v1")) return;
+  if (localStorage.getItem(wsKey("planner-backlog-todo-migrated-v1"))) return;
   const hasTodo = statusList.some(s => /^to\s?do$/i.test(s.name));
   const oldBl = statusList.find(s => /^backlog$/i.test(s.name));
-  if (hasTodo || !oldBl) { localStorage.setItem("planner-backlog-todo-migrated-v1", "1"); return; }
+  if (hasTodo || !oldBl) { localStorage.setItem(wsKey("planner-backlog-todo-migrated-v1"), "1"); return; }
   try {
     await db.from("lists").update({ name: "To Do" }).eq("id", oldBl.id);
     await db.from("deliverables").update({ status: "To Do" }).eq("status", oldBl.name).eq("workspace", currentWorkspace);
     await db.from("lists").insert({ kind: "status", name: "Backlog", position: statusList.length + 1, workspace: currentWorkspace });
     await reloadListsAndUI();
     const newBl = statusList.find(s => /^backlog$/i.test(s.name));
-    if (newBl) { backlogLane = newBl.name; localStorage.setItem("planner-backlog-lane", backlogLane); }
-    localStorage.setItem("planner-backlog-todo-migrated-v1", "1");
+    if (newBl) { backlogLane = newBl.name; localStorage.setItem(wsKey("planner-backlog-lane"), backlogLane); }
+    localStorage.setItem(wsKey("planner-backlog-todo-migrated-v1"), "1");
     toast("Migrated: “Backlog” → “To Do”; new empty “Backlog” lane added (moving cards here clears sprint data).");
   } catch (e) { toast("Backlog migration failed: " + (e && e.message)); }
 }
@@ -2534,12 +2534,12 @@ function renderActiveFilters() {
 // get done, click one button, everything rolls forward together.
 // Which status lanes are visible in the Sprint-planning dashboard's per-lane counts. Defaults to every lane
 // present in statusList; user toggles them via checkboxes in the dashboard header. Persisted per-browser.
-let planningLanes = (() => { try { const raw = JSON.parse(localStorage.getItem("planner-planning-lanes") || "null"); return Array.isArray(raw) ? new Set(raw) : null; } catch (e) { return null; } })();
+let planningLanes = (() => { try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-planning-lanes")) || "null"); return Array.isArray(raw) ? new Set(raw) : null; } catch (e) { return null; } })();
 function activePlanningLanes() {
   if (planningLanes) return statusList.map(s => s.name).filter(n => planningLanes.has(n));
   return statusList.map(s => s.name);
 }
-function savePlanningLanes() { if (planningLanes) localStorage.setItem("planner-planning-lanes", JSON.stringify([...planningLanes])); else localStorage.removeItem("planner-planning-lanes"); }
+function savePlanningLanes() { if (planningLanes) localStorage.setItem(wsKey("planner-planning-lanes"), JSON.stringify([...planningLanes])); else localStorage.removeItem(wsKey("planner-planning-lanes")); }
 // Sprint-planning view (a real view alongside Board / Calendar / etc, not an overlay). Applies the current
 // quick-filters (owner, brand, channel, etc.) so scoping to "Jason" or "Meowi" flows through, but ignores
 // sprint filter and the overdue toggle — this view has its own week semantics (backlog / last / next).
@@ -5078,8 +5078,8 @@ function currentParams() {
 function writeUrl() { const qs = currentParams(); try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {} }
 // ── Saved views (personal → localStorage; app-wide → Supabase 'views' table) ──
 let sharedViews = [], _viewsTableMissing = false;
-function loadPersonalViews() { try { return JSON.parse(localStorage.getItem("planner-views") || "[]"); } catch (e) { return []; } }
-function savePersonalViews(arr) { localStorage.setItem("planner-views", JSON.stringify(arr)); }
+function loadPersonalViews() { try { return JSON.parse(localStorage.getItem(wsKey("planner-views")) || "[]"); } catch (e) { return []; } }
+function savePersonalViews(arr) { localStorage.setItem(wsKey("planner-views"), JSON.stringify(arr)); }
 async function loadSharedViews() {
   if (!ONLINE) { sharedViews = []; return; }
   const { data, error } = await db.from("views").select("*").eq("workspace", currentWorkspace).order("name", { ascending: true });
@@ -5208,7 +5208,7 @@ async function init() {
     db.channel("planner-lists").on("postgres_changes", { event: "*", schema: "public", table: "lists" }, reloadListsAndUI).subscribe();
   }
 
-  document.getElementById("colorBy").onchange = e => { colorBy = e.target.value; localStorage.setItem("planner-colorby", colorBy); render(); };
+  document.getElementById("colorBy").onchange = e => { colorBy = e.target.value; localStorage.setItem(wsKey("planner-colorby"), colorBy); render(); };
   document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
 
   document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => {
@@ -5418,9 +5418,7 @@ async function init() {
   document.getElementById("exportXlsxBtn").onclick = () => { closeExport(); exportXLSX(); };
   document.getElementById("exportPdfBtn").onclick = () => { closeExport(); setTimeout(printView, 60); };   // let the overlay hide before printing
   document.getElementById("userBtn").onclick = openUserPicker;
-  document.getElementById("workspaceBtn").onclick = openWorkspacePicker;
-  document.getElementById("workspaceOverlayX").onclick = () => document.getElementById("workspaceOverlay").classList.remove("show");
-  document.getElementById("workspaceOverlay").onclick = e => { if (e.target.id === "workspaceOverlay") e.currentTarget.classList.remove("show"); };
+  document.getElementById("workspaceSelect").onchange = e => switchWorkspace(e.target.value);
   document.getElementById("overdueBtn").onclick = () => { filterOverdue = !filterOverdue; render(); };
   document.getElementById("userOverlayX").onclick = () => document.getElementById("userOverlay").classList.remove("show");
   document.getElementById("userOverlay").onclick = e => { if (e.target.id === "userOverlay") e.currentTarget.classList.remove("show"); };
@@ -5495,7 +5493,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); document.getElementById("workspaceOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
