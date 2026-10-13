@@ -499,6 +499,8 @@
   .cal-cont-month { display: flex; flex-direction: column; }
   .cal-cont-header { position: sticky; top: 30px; z-index: 2; padding: 6px 10px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-weight: 700; font-size: 13px; color: var(--text); text-transform: uppercase; letter-spacing: .5px; }
   #calContinuousBtn.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  .cal-anchor-sel { padding: 5px 10px; font-size: 12px; font-weight: 600; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .cal-anchor-sel:hover { border-color: var(--accent); }
   .month { display: grid; grid-template-columns: repeat(7, 1fr); }
   .dow { padding: 7px 8px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
     border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
@@ -809,6 +811,7 @@
     <button id="calToday">Today</button>
     <button id="calNext" title="Next">›</button>
     <div class="cal-label" id="calLabel"></div>
+    <select id="calAnchorSel" class="cal-anchor-sel" title="Which date field drives the calendar"></select>
     <button id="calContinuousBtn" title="Toggle continuous scrolling (Month view): render neighboring months in one scrollable stream with sticky month headers.">↕ Continuous</button>
     <button id="trayToggle" class="tray-toggle"></button>
   </div>
@@ -1094,8 +1097,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.70";
+const VERSION = "2.71";
 const CHANGELOG = [
+  "v2.71 — Calendar's date anchor is now configurable per workspace. New dropdown next to the month label lists “📅 Due date” and every date-type custom field on the current workspace — pick one and the calendar re-anchors to that field (events, bars, pack order, tray's “undated” filter all follow). Planner stays on Due date; Innovation can anchor on Next Design Due Date / Date Available / Sample Received / etc. Choice persists per workspace in localStorage. Picker hides itself when there are no date-type custom fields.",
   "v2.70 — Two link fixes. (1) Line Review importer now reads Excel hyperlinks correctly — cells like “Egg Zoomers” that linked to a Google Doc now land as the actual URL in Design Assets Link / Spec Sheet Link / Sample Request Link, not just the display text. (2) Custom text fields show a “🔗 Open” button when the value looks like a URL (shows on any http/https) so you can jump to it without copy-pasting. Re-import to pick up the real URLs for products you've already imported — the upsert won't duplicate them.",
   "v2.69 — Design Status is now a multi-select (a card can be e.g. “Paper Doll Ready” AND “HOLD - Backlog” at once). Seed uses the right type for new workspaces; existing Innovation workspaces get a one-time in-place upgrade of the field config on next load. Existing data values already stored as “A, B” comma-pairs parse directly into multi-select selections — no data migration needed.",
   "v2.68 — Two fixes. (1) Line Review importer is now upsert-by-title (case-insensitive) — re-running the import on the same workbook updates existing products in place instead of duplicating them. Workbook field values overwrite the matching keys; other field keys the user may have added (notes, subtasks, emails, etc.) are preserved via shallow merge. Toast shows: inserted N, updated M, skipped X empty. (2) Removed the “Innovation workspace seeded” toast — it fired every time a missing field got filled in and was noise. The seed still runs silently (adding what's missing on each refresh is intentional, so new fields like Design Status land without a manual action).",
@@ -1634,6 +1638,17 @@ let view = "board", calMode = "month", calRef = new Date();
 // Continuous scroll (Month view only) — render several months stacked in one scrollable pane with sticky month
 // headers. When the viewport nears the top or bottom, the render extends by another month automatically.
 let calContinuous = localStorage.getItem("planner-cal-continuous") === "1";
+// Which field drives the Calendar — "due" (the core due/end pair) or "field:<FieldName>" for any date-type
+// custom field. Per workspace: Planner stays on "due"; Innovation can anchor on Next Design Due Date / Date
+// Available / Sample Received etc. Set via the Calendar controls dropdown.
+let calendarAnchor = localStorage.getItem(wsKey("planner-cal-anchor")) || "due";
+// Returns the start/end date pair a given card should contribute to the calendar, respecting calendarAnchor.
+function cardCalRange(c) {
+  if (calendarAnchor === "due") return { start: c.due || "", end: c.end || "" };
+  const name = calendarAnchor.indexOf("field:") === 0 ? calendarAnchor.slice(6) : "";
+  const v = name && c.fields ? (c.fields[name] || "") : "";
+  return { start: v, end: v };
+}
 let showTray = localStorage.getItem("planner-tray") !== "0";   // show/hide the calendar's Unscheduled panel
 let sortKey = "", sortDir = 1;   // unified sort across all views (Filter & Sort panel); "" = manual/creation order
 let gridCols = null;   // null = show all columns; else an ordered array of visible column keys
@@ -1660,6 +1675,7 @@ async function switchWorkspace(id) {
   loadLaneRoles();
   loadQuickFilterRows();
   colorBy = localStorage.getItem(wsKey("planner-colorby")) || "brand";
+  calendarAnchor = localStorage.getItem(wsKey("planner-cal-anchor")) || "due";
   try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-planning-lanes")) || "null"); planningLanes = Array.isArray(raw) ? new Set(raw) : null; } catch (e) { planningLanes = null; }
   // Reset session-only filter state so a Planner-era sprint pick doesn't leak into Innovation (which has no sprints).
   filters = {}; filterRules = []; filterMatch = "all"; filterOverdue = false;
@@ -4074,28 +4090,28 @@ const BAR_H = 22, WEEK_HEAD_H = 22;
 function eventsFor(date) {
   const k = ymd(date);
   return visibleCards().filter(c => {
-    if (!c.due && !c.end) return false;
-    const a = c.due || c.end, b = c.end || c.due; const s = a < b ? a : b, e = a < b ? b : a;
+    const r = cardCalRange(c); if (!r.start && !r.end) return false;
+    const a = r.start || r.end, b = r.end || r.start; const s = a < b ? a : b, e = a < b ? b : a;
     return k >= s && k <= e;
   });
 }
 function weekEvents(ws, we) {
   const wsK = ymd(ws), weK = ymd(we);
   return visibleCards().filter(c => {
-    if (!c.due && !c.end) return false;
-    const a = c.due || c.end, b = c.end || c.due; const s = a < b ? a : b, e = a < b ? b : a;
+    const r = cardCalRange(c); if (!r.start && !r.end) return false;
+    const a = r.start || r.end, b = r.end || r.start; const s = a < b ? a : b, e = a < b ? b : a;
     return !(e < wsK || s > weK);
   }).sort((x, y) => {
     // Multi-day spans first (longest at the very top), then single-day items, each by start date.
-    const len = c => { const a = c.due || c.end, b = c.end || c.due; const s = a < b ? a : b, e = a < b ? b : a; return parseYmd(e) - parseYmd(s); };
+    const len = c => { const r = cardCalRange(c); const a = r.start || r.end, b = r.end || r.start; const s = a < b ? a : b, e = a < b ? b : a; return parseYmd(e) - parseYmd(s); };
     const dl = len(y) - len(x); if (dl !== 0) return dl;
-    const xs = x.due || x.end, ys = y.due || y.end; return xs < ys ? -1 : xs > ys ? 1 : 0;
+    const xs = cardCalRange(x).start || cardCalRange(x).end, ys = cardCalRange(y).start || cardCalRange(y).end; return xs < ys ? -1 : xs > ys ? 1 : 0;
   });
 }
 function packLanes(evs, ws) {
   const lanes = []; const placed = [];
   evs.forEach(c => {
-    const a = c.due || c.end, b = c.end || c.due; const S = a < b ? a : b, E = a < b ? b : a;
+    const r = cardCalRange(c); const a = r.start || r.end, b = r.end || r.start; const S = a < b ? a : b, E = a < b ? b : a;
     let s = Math.round((parseYmd(S) - ws) / 86400000), e = Math.round((parseYmd(E) - ws) / 86400000);
     s = Math.max(0, s); e = Math.min(6, e); if (e < s) e = s;
     let lane = 0;
@@ -4193,7 +4209,7 @@ function renderTray() {
   if (!showTray) return;
   tray.innerHTML = "<h3>Unscheduled</h3>";
   // Undated items only: show those with no sprint, or whose set sprint falls within the visible calendar window.
-  const un = visibleCards().filter(c => { if (c.due || c.end) return false; const sp = cardSprint(c); return !sp || sprintInView(sp); });
+  const un = visibleCards().filter(c => { const r = cardCalRange(c); if (r.start || r.end) return false; const sp = cardSprint(c); return !sp || sprintInView(sp); });
   if (un.length === 0) { const e = document.createElement("div"); e.className = "empty"; e.textContent = "Nothing unscheduled"; tray.appendChild(e); return; }
   un.forEach(c => { const e = evEl(c); e.style.whiteSpace = "normal"; tray.appendChild(e); });
 }
@@ -4259,6 +4275,26 @@ function renderCalendar() {
   // Reflect continuous toggle in the button state (Month view only).
   const contBtn = document.getElementById("calContinuousBtn");
   if (contBtn) { contBtn.classList.toggle("active", calContinuous); contBtn.style.display = calMode === "month" ? "" : "none"; }
+  // Populate the anchor picker with core "Due date" + every date-type custom field. Only shown when there's
+  // at least one date-type field to pick from (otherwise it'd just be "Due date" always).
+  const anchorSel = document.getElementById("calAnchorSel");
+  if (anchorSel) {
+    const dateFields = fieldsList.filter(f => f.type === "date");
+    anchorSel.style.display = dateFields.length ? "" : "none";
+    if (dateFields.length) {
+      const want = "due|" + dateFields.map(f => f.name).join("|");
+      if (anchorSel.dataset.sig !== want) {
+        anchorSel.innerHTML = "";
+        const addOpt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; anchorSel.appendChild(o); };
+        addOpt("due", "📅 Due date");
+        dateFields.forEach(f => addOpt("field:" + f.name, "📅 " + f.name));
+        anchorSel.dataset.sig = want;
+      }
+      // Reset to "due" if the previously-selected field has been renamed or deleted.
+      if (![...anchorSel.options].some(o => o.value === calendarAnchor)) { calendarAnchor = "due"; localStorage.setItem(wsKey("planner-cal-anchor"), calendarAnchor); }
+      anchorSel.value = calendarAnchor;
+    }
+  }
   if (calMode === "month") {
     const y = calRef.getFullYear(), m = calRef.getMonth();
     label.textContent = MONTHS[m] + " " + y;
@@ -5538,6 +5574,7 @@ async function init() {
   document.getElementById("calNext").onclick = () => calNav(1);
   document.getElementById("calToday").onclick = () => { calRef = new Date(); render(); };
   document.getElementById("calContinuousBtn").onclick = () => { calContinuous = !calContinuous; localStorage.setItem("planner-cal-continuous", calContinuous ? "1" : "0"); renderCalendar(); };
+  document.getElementById("calAnchorSel").onchange = e => { calendarAnchor = e.target.value; localStorage.setItem(wsKey("planner-cal-anchor"), calendarAnchor); renderCalendar(); };
   document.getElementById("trayToggle").onclick = () => { showTray = !showTray; localStorage.setItem("planner-tray", showTray ? "1" : "0"); renderCalendar(); };
   document.getElementById("headerCollapse").onclick = () => { const c = document.body.classList.toggle("hdr-collapsed"); document.getElementById("headerCollapse").textContent = c ? "⌄ Controls" : "⌃ Controls"; };
 
