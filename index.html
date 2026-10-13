@@ -525,6 +525,9 @@
   .user-btn { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); cursor: pointer; }
   .user-btn:hover { color: var(--text); border-color: var(--accent); }
   .user-btn b { color: var(--accent); font-weight: 700; }
+  /* Workspace switcher — same chip style as the user picker, with the active workspace's icon + label inline. */
+  .ws-btn { color: var(--text); }
+  .ws-btn b { color: var(--accent); font-weight: 700; margin: 0 2px; }
   .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
   .af-push { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 4px 13px; background: transparent; }
   .af-push:hover { background: var(--accent); color: #fff; }
@@ -742,7 +745,8 @@
 </head>
 <body>
 <header>
-  <div class="brand-title">Smarter<span>Paw</span> · Channel Planner</div>
+  <div class="brand-title">Smarter<span>Paw</span></div>
+  <button id="workspaceBtn" class="user-btn ws-btn" title="Switch workspace"></button>
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
   <button id="userBtn" class="user-btn" title="Filter to your work (click to change)">You: <b id="userBtnName">All</b> ▾</button>
@@ -761,6 +765,16 @@
     <button class="ghost" id="menuBtn">⋯</button>
   </div>
 </header>
+
+<!-- Workspace switcher. Each workspace has its own deliverables, custom fields, status lanes, and saved views. -->
+<div class="overlay" id="workspaceOverlay">
+  <div class="modal" style="max-width:420px">
+    <button class="x" id="workspaceOverlayX">✕</button>
+    <h2>Switch workspace</h2>
+    <p style="color:var(--muted); font-size:13px; margin:0 0 14px">Deliverables, custom fields, status lanes, and saved views are scoped per workspace. You won't see Channel Planner work in Product Innovation (and vice versa).</p>
+    <div id="workspaceOverlayChoices" style="display:flex; flex-direction:column; gap:8px"></div>
+  </div>
+</div>
 
 <!-- "Who are you?" picker — shown on first session load if no persisted user; also opens from the header userBtn. -->
 <div class="overlay" id="userOverlay">
@@ -1082,8 +1096,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.58";
+const VERSION = "2.59";
 const CHANGELOG = [
+  "v2.59 — Workspaces (Chunk 1 of 4). New `workspace` column on deliverables / lists / views (default `planner`); run supabase/migrations/0007_workspaces.sql once. Header shows the current workspace next to the SmarterPaw logo; click it to switch between Channel Planner and Product Innovation. Each workspace has its own deliverables, custom fields, status lanes, saved views, and lane-role designations — they can't cross-contaminate. The accent color follows the active workspace so you always know which app you're in. Chunks 2–4 (per-workspace Manage panel scoping, sprint-vs-milestone rhythm toggle, Innovation seed data) land next.",
   "v2.58 — Two fixes and one upgrade. (1) The tray-toggle button rendered as an empty oval in Continuous mode — the continuous-render path returned before renderTray() ran, so the button lost its label; now it labels itself in both modes. (2) Deliverable-title emoji picker is now a full picker: search bar at the top, category chip row that jumps you to the section, and a comprehensive grouped catalog (Smileys / People / Animals / Food / Activity / Travel / Objects / Symbols / Flags). Click any tile to insert at the caret; keeps focus in the title so you can keep typing.",
   "v2.57 — Emoji picker on the deliverable title. A 😀 button next to the title field opens a compact popover of common emojis grouped by intent (Status/focus, Content/channel, Marketing/promo, Pets/SmarterPaw). Click one and it inserts at the caret; the title textarea keeps focus so you can keep typing. Click outside or reopen to close.",
   "v2.56 — Calendar (Month view) now has a “↕ Continuous” toggle. When on, the calendar renders neighboring months in one scrollable stream with sticky month headers and a sticky day-of-week row; scrolling near either edge auto-extends the range by another 3 months in that direction. The top label updates to match whichever month is at the top of the viewport. Choice persists per browser. Off by default so the classic single-month view is unchanged.",
@@ -1591,6 +1606,24 @@ let completeLane = "";
 // that person's work. Persists in localStorage across sessions — the prompt only re-appears if the choice is
 // cleared. "" means "All" (no owner filter).
 let currentUser = localStorage.getItem("planner-current-user") || "";
+// Workspace scope — "planner" (Channel Planner) or "innovation" (Product Innovation). All reads from
+// deliverables, lists (custom fields + status lanes), and views are filtered to this value. Creates default to
+// it. Persisted in localStorage. Chunks 2+ add per-workspace field editors, lane roles, saved views, and the
+// sprint-vs-milestone rhythm toggle.
+const WORKSPACES = [
+  { id: "planner", label: "Channel Planner", icon: "📣", accent: "#6d5dfc" },
+  { id: "innovation", label: "Product Innovation", icon: "🧪", accent: "#f07830" },
+];
+let currentWorkspace = localStorage.getItem("planner-workspace") || "planner";
+if (!WORKSPACES.some(w => w.id === currentWorkspace)) currentWorkspace = "planner";
+function wsDef() { return WORKSPACES.find(w => w.id === currentWorkspace) || WORKSPACES[0]; }
+function applyWorkspace() {
+  localStorage.setItem("planner-workspace", currentWorkspace);
+  document.documentElement.style.setProperty("--accent", wsDef().accent);
+  const btn = document.getElementById("workspaceBtn");
+  if (btn) btn.innerHTML = `${wsDef().icon} <b>${esc(wsDef().label)}</b> ▾`;
+  document.body.classList.toggle("ws-innovation", currentWorkspace === "innovation");
+}
 // Theme — "dark" (default) or "light". Applied via a data-theme attribute on <html> so the CSS override kicks
 // in without a re-render. Persisted in localStorage; the toggle lives in the ⋯ Settings dialog.
 function applyTheme(t) {
@@ -1601,6 +1634,7 @@ function applyTheme(t) {
   document.querySelectorAll("#themeToggle button").forEach(b => b.classList.toggle("active", b.dataset.theme === theme));
 }
 applyTheme(localStorage.getItem("planner-theme") || "dark");   // apply immediately so first paint matches
+applyWorkspace();   // paint workspace accent + button label on first render; before any DB query runs
 // Native date picker opens on the calendar-icon click by default. On some browsers (esp. after focus loss) the
 // icon doesn't reliably open the picker; call showPicker() explicitly on any input click so the picker opens
 // wherever the user clicks in the field. Wrapped in try/catch — showPicker throws if the browser doesn't allow
@@ -1621,6 +1655,25 @@ function applyCurrentUserFilter() {
   else if (filters.owner) delete filters.owner;
   updateFilterBtn && updateFilterBtn();
   const nameEl = document.getElementById("userBtnName"); if (nameEl) nameEl.textContent = currentUser || "All";
+}
+function openWorkspacePicker() {
+  const box = document.getElementById("workspaceOverlayChoices"); if (!box) return;
+  box.innerHTML = "";
+  WORKSPACES.forEach(w => {
+    const b = document.createElement("button"); b.type = "button";
+    b.innerHTML = `${w.icon} <b style="margin-left:4px">${esc(w.label)}</b>`;
+    if (currentWorkspace === w.id) b.classList.add("on");
+    b.onclick = async () => {
+      if (currentWorkspace === w.id) { document.getElementById("workspaceOverlay").classList.remove("show"); return; }
+      currentWorkspace = w.id; applyWorkspace();
+      document.getElementById("workspaceOverlay").classList.remove("show");
+      // Reload everything scoped to the new workspace. loadLists + refetch read currentWorkspace via scoped
+      // queries, so after this call the UI is entirely re-populated for the new workspace.
+      await loadLists(); await refetch(); render();
+    };
+    box.appendChild(b);
+  });
+  document.getElementById("workspaceOverlay").classList.add("show");
 }
 function openUserPicker() {
   const box = document.getElementById("userOverlayChoices"); if (!box) return;
@@ -1800,7 +1853,7 @@ function loadLocal() { try { return JSON.parse(localStorage.getItem(STORE_KEY)) 
 function saveLocal() { localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
 async function refetch() {
   if (!ONLINE) { cards = loadLocal(); render(); return; }
-  const { data, error } = await db.from("deliverables").select("*").order("created_at", { ascending: true });
+  const { data, error } = await db.from("deliverables").select("*").eq("workspace", currentWorkspace).order("created_at", { ascending: true });
   if (error) { toast("Load failed: " + error.message); return; }
   cards = data.map(r => ({ id: r.id, title: r.title, brand: r.brand, channel: r.channel,
     owner: r.owner || "", due: r.due || "", end: r.end_date || "", status: r.status, notes: r.notes || "",
@@ -1808,7 +1861,8 @@ async function refetch() {
   render();
 }
 function dbObj(d) { return { title: d.title, brand: d.brand, channel: d.channel, owner: d.owner || "",
-  due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {} }; }
+  due: d.due || null, end_date: d.end || null, status: d.status, notes: d.notes || "", fields: d.fields || {},
+  workspace: currentWorkspace }; }
 async function createCard(d) {
   const weeks = recordedSprints(d);
   if (weeks.length) { d.fields = d.fields || {}; d.fields[SPRINTHIST_KEY] = weeks; d.fields[HIST_SPRINTS_KEY] = weeks.slice(); }
@@ -1935,7 +1989,7 @@ async function loadLists() {
     }
     return;
   }
-  const { data, error } = await db.from("lists").select("*").order("position", { ascending: true });
+  const { data, error } = await db.from("lists").select("*").eq("workspace", currentWorkspace).order("position", { ascending: true });
   if (error) {
     channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
     statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = [];
@@ -1969,7 +2023,7 @@ async function savePromoOverrides() {
     if (empty) { const { error } = await db.from("lists").delete().eq("id", _promoOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } _promoOverrideRowId = null; }
     else { const { error } = await db.from("lists").update({ color: JSON.stringify(promoOverrides) }).eq("id", _promoOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } }
   } else if (!empty) {
-    const { data, error } = await db.from("lists").insert({ kind: "field", name: PROMO_COLORS_KEY, color: JSON.stringify(promoOverrides), position: 99999 }).select("id").single();
+    const { data, error } = await db.from("lists").insert({ kind: "field", name: PROMO_COLORS_KEY, color: JSON.stringify(promoOverrides), position: 99999, workspace: currentWorkspace }).select("id").single();
     if (error) { toast("Save failed: " + error.message); return; }
     _promoOverrideRowId = data.id;
   }
@@ -1995,8 +2049,8 @@ async function maybeMigrateBacklogTodo() {
   if (hasTodo || !oldBl) { localStorage.setItem("planner-backlog-todo-migrated-v1", "1"); return; }
   try {
     await db.from("lists").update({ name: "To Do" }).eq("id", oldBl.id);
-    await db.from("deliverables").update({ status: "To Do" }).eq("status", oldBl.name);
-    await db.from("lists").insert({ kind: "status", name: "Backlog", position: statusList.length + 1 });
+    await db.from("deliverables").update({ status: "To Do" }).eq("status", oldBl.name).eq("workspace", currentWorkspace);
+    await db.from("lists").insert({ kind: "status", name: "Backlog", position: statusList.length + 1, workspace: currentWorkspace });
     await reloadListsAndUI();
     const newBl = statusList.find(s => /^backlog$/i.test(s.name));
     if (newBl) { backlogLane = newBl.name; localStorage.setItem("planner-backlog-lane", backlogLane); }
@@ -2017,7 +2071,7 @@ async function addList(kind, name) {
   const arr = listFor(kind);
   if (arr.some(x => x.name.toLowerCase() === name.toLowerCase())) { toast('"' + name + '" already exists'); return false; }
   if (!ONLINE) { arr.push({ name }); saveListsLocal(); afterListsChanged(); return true; }
-  const { error } = await db.from("lists").insert({ kind, name, position: arr.length + 1 });
+  const { error } = await db.from("lists").insert({ kind, name, position: arr.length + 1, workspace: currentWorkspace });
   if (error) { toast("Add failed: " + error.message); return false; }
   await reloadListsAndUI(); return true;
 }
@@ -2056,7 +2110,7 @@ async function moveStatus(item, dir) {
 async function setComplete(item) {
   const makeComplete = completeLane !== item.name;
   if (!ONLINE) { completeLane = makeComplete ? item.name : ""; saveListsLocal(); afterListsChanged(); return; }
-  const r1 = await db.from("lists").update({ is_complete: false }).eq("kind", "status");
+  const r1 = await db.from("lists").update({ is_complete: false }).eq("kind", "status").eq("workspace", currentWorkspace);
   if (r1.error) { toast("Needs the v1.10 SQL (0005): " + r1.error.message); return; }
   if (makeComplete) { const { error } = await db.from("lists").update({ is_complete: true }).eq("id", item.id); if (error) { toast("Failed: " + error.message); return; } }
   await reloadListsAndUI();
@@ -2071,8 +2125,8 @@ function cascadeRenameLocal(kind, old, neu) {
   });
 }
 async function cascadeRenameDB(kind, old, neu) {
-  if (kind === "status") { await db.from("deliverables").update({ status: neu }).eq("status", old); return; }
-  if (kind === "channel") { await db.from("deliverables").update({ channel: neu }).eq("channel", old); return; }
+  if (kind === "status") { await db.from("deliverables").update({ status: neu }).eq("status", old).eq("workspace", currentWorkspace); return; }
+  if (kind === "channel") { await db.from("deliverables").update({ channel: neu }).eq("channel", old).eq("workspace", currentWorkspace); return; }
   if (kind === "person") {
     const affected = cards.filter(c => splitOwners(c.owner).includes(old));
     await Promise.all(affected.map(c => db.from("deliverables").update({ owner: splitOwners(c.owner).map(x => x === old ? neu : x).join(", ") }).eq("id", c.id)));
@@ -5028,7 +5082,7 @@ function loadPersonalViews() { try { return JSON.parse(localStorage.getItem("pla
 function savePersonalViews(arr) { localStorage.setItem("planner-views", JSON.stringify(arr)); }
 async function loadSharedViews() {
   if (!ONLINE) { sharedViews = []; return; }
-  const { data, error } = await db.from("views").select("*").order("name", { ascending: true });
+  const { data, error } = await db.from("views").select("*").eq("workspace", currentWorkspace).order("name", { ascending: true });
   if (error) { sharedViews = []; _viewsTableMissing = true; return; }
   _viewsTableMissing = false; sharedViews = data.map(r => ({ id: r.id, name: r.name, params: r.params || "" }));
 }
@@ -5037,7 +5091,7 @@ async function addView(name, scope) {
   const params = currentParams();
   if (scope === "shared") {
     if (!ONLINE) { toast("App-wide views need the online backend."); return; }
-    const { error } = await db.from("views").insert({ name, params });
+    const { error } = await db.from("views").insert({ name, params, workspace: currentWorkspace });
     if (error) { toast("App-wide save failed — run the views SQL (0006): " + error.message); return; }
     await loadSharedViews();
   } else { const arr = loadPersonalViews(); arr.push({ name, params }); savePersonalViews(arr); }
@@ -5364,6 +5418,9 @@ async function init() {
   document.getElementById("exportXlsxBtn").onclick = () => { closeExport(); exportXLSX(); };
   document.getElementById("exportPdfBtn").onclick = () => { closeExport(); setTimeout(printView, 60); };   // let the overlay hide before printing
   document.getElementById("userBtn").onclick = openUserPicker;
+  document.getElementById("workspaceBtn").onclick = openWorkspacePicker;
+  document.getElementById("workspaceOverlayX").onclick = () => document.getElementById("workspaceOverlay").classList.remove("show");
+  document.getElementById("workspaceOverlay").onclick = e => { if (e.target.id === "workspaceOverlay") e.currentTarget.classList.remove("show"); };
   document.getElementById("overdueBtn").onclick = () => { filterOverdue = !filterOverdue; render(); };
   document.getElementById("userOverlayX").onclick = () => document.getElementById("userOverlay").classList.remove("show");
   document.getElementById("userOverlay").onclick = e => { if (e.target.id === "userOverlay") e.currentTarget.classList.remove("show"); };
@@ -5438,7 +5495,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); document.getElementById("workspaceOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
