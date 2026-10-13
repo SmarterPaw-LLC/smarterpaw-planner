@@ -1086,8 +1086,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.61";
+const VERSION = "2.62";
 const CHANGELOG = [
+  "v2.62 — Fixed “Rename failed: invalid input syntax for type uuid: undefined” on the Innovation workspace. Cause: when a non-Planner workspace returned zero `lists` rows, we filled statusList with bare {name} objects (no DB id), so renaming tried to update by `id = undefined`. Fix: don't apply bare-object fallbacks for non-Planner workspaces; auto-seed Innovation on first visit with a milestone-shaped lane set (Idea / Sample Needed / Sample Received / Pricing Review / Approved / Production / Hold) as real DB rows so rename/delete work. Also added a safety net: if renameList encounters a bare item (no id), it inserts a row first and then renames.",
   "v2.61 — Fixed the blank-page regression from v2.60. Cause: `let colorBy = localStorage.getItem(wsKey(...))` ran before `let currentWorkspace = …` was declared; `let` has a temporal dead zone, so the first wsKey() call threw ReferenceError and killed the whole script. Moved the workspace block above everything that touches it. Also added graceful fallback so the app still works if the workspace migration hasn't been run yet (treats everyone as `planner` until the column exists).",
   "v2.60 — Workspaces Chunk 2/4. Switcher is now a native dropdown (one click, pick, done). Per-workspace scoping extended to local prefs: lane roles (Scheduled / Backlog / Review), personal saved views, quick-filter row visibility, color-by setting, Sprint-Planning show-lanes picker. Each workspace remembers its own defaults; Planner's existing values are preserved (back-compat on the bare key).",
   "v2.59 — Workspaces (Chunk 1 of 4). New `workspace` column on deliverables / lists / views (default `planner`); run supabase/migrations/0007_workspaces.sql once. Header shows the current workspace next to the SmarterPaw logo; click it to switch between Channel Planner and Product Innovation. Each workspace has its own deliverables, custom fields, status lanes, saved views, and lane-role designations — they can't cross-contaminate. The accent color follows the active workspace so you always know which app you're in. Chunks 2–4 (per-workspace Manage panel scoping, sprint-vs-milestone rhythm toggle, Innovation seed data) land next.",
@@ -2027,9 +2028,37 @@ async function loadLists() {
   promoOverrides = {}; _promoOverrideRowId = pcRow ? pcRow.id : null;
   if (pcRow && pcRow.color) { try { const m = JSON.parse(pcRow.color); if (m && typeof m === "object") promoOverrides = m; } catch (e) {} }
   completeLane = (data.find(r => r.kind === "status" && r.is_complete) || {}).name || "";
-  if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
-  if (statusList.length === 0) statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
-  if (brandsList.length === 0) brandsList = defaultBrands();
+  // Bare-object defaults (no DB id) are a last resort for the Planner workspace where migrations may be partial.
+  // Non-default workspaces (Innovation) start empty and are seeded with real DB rows on first visit by
+  // seedWorkspaceDefaults() so rename/delete work (they key off DB ids, which bare defaults don't have).
+  if (currentWorkspace === "planner") {
+    if (channelsList.length === 0) channelsList = DEFAULT_CHANNELS.map(n => ({ name: n }));
+    if (statusList.length === 0) statusList = DEFAULT_STATUSES.map(n => ({ name: n }));
+    if (brandsList.length === 0) brandsList = defaultBrands();
+  } else if (!WS_COL_MISSING) {
+    await seedWorkspaceDefaults();
+  }
+}
+// First-visit seed for a non-Planner workspace: inserts a minimal lane set as real DB rows so the user can
+// edit/rename/delete them. Returns silently if any rows already exist for this workspace.
+async function seedWorkspaceDefaults() {
+  if (statusList.length || channelsList.length || peopleList.length || brandsList.length || fieldsList.length) return;
+  const defaults = currentWorkspace === "innovation"
+    ? [
+        { kind: "status", name: "Idea", position: 1 },
+        { kind: "status", name: "Sample Needed", position: 2 },
+        { kind: "status", name: "Sample Received", position: 3 },
+        { kind: "status", name: "Pricing Review", position: 4 },
+        { kind: "status", name: "Approved", position: 5 },
+        { kind: "status", name: "Production", position: 6 },
+        { kind: "status", name: "Hold", position: 7 },
+      ]
+    : [];
+  if (!defaults.length) return;
+  const rows = defaults.map(d => wsStamp(d));
+  const { error } = await db.from("lists").insert(rows);
+  if (error) { toast("Workspace seed failed: " + error.message); return; }
+  await loadLists();   // re-pull so the new rows have DB ids attached
 }
 function listFor(kind) { return { channel: channelsList, person: peopleList, status: statusList, brand: brandsList, field: fieldsList }[kind]; }
 // Persist promoOverrides to the sentinel row (insert it on first write; delete it when the map is empty).
@@ -2161,6 +2190,12 @@ async function renameList(kind, item, newName) {
   if (list.some(x => x !== item && x.name.toLowerCase() === newName.toLowerCase())) { toast('"' + newName + '" already exists'); return; }
   const old = item.name;
   if (!ONLINE) { item.name = newName; cascadeRenameLocal(kind, old, newName); saveListsLocal(); saveLocal(); afterListsChanged(); return; }
+  // Bare-default items (no DB id yet) can happen for Planner on partial migrations. Promote to a real row first.
+  if (!item.id) {
+    const { data, error } = await db.from("lists").insert(wsStamp({ kind, name: old, position: list.length + 1 })).select("id").single();
+    if (error) { toast("Rename failed: " + error.message); return; }
+    item.id = data.id;
+  }
   const { error } = await db.from("lists").update({ name: newName }).eq("id", item.id);
   if (error) { toast("Rename failed: " + error.message); return; }
   await cascadeRenameDB(kind, old, newName);
