@@ -1089,8 +1089,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.67";
+const VERSION = "2.68";
 const CHANGELOG = [
+  "v2.68 — Two fixes. (1) Line Review importer is now upsert-by-title (case-insensitive) — re-running the import on the same workbook updates existing products in place instead of duplicating them. Workbook field values overwrite the matching keys; other field keys the user may have added (notes, subtasks, emails, etc.) are preserved via shallow merge. Toast shows: inserted N, updated M, skipped X empty. (2) Removed the “Innovation workspace seeded” toast — it fired every time a missing field got filled in and was noise. The seed still runs silently (adding what's missing on each refresh is intentional, so new fields like Design Status land without a manual action).",
   "v2.67 — Added a “Design Status” custom field to the Innovation seed (dropdown: Idea / Paper Doll Needed / Paper Doll Ready / HOLD - Backlog / Finalized Pricing / Approved / Production), so the Line Review column lands verbatim as a field alongside its mapped status lane. Seed is now additive by field name — missing fields are inserted on next refresh without duplicating anything you already have. Import also captures Design Status in the new field.",
   "v2.66 — Spreadsheet importer for Innovation. In the ⋯ Settings dialog (only when on the Innovation workspace), a new “⬆ Import SP Line Review (.xlsx) → Products” button reads your Line Review workbook, maps each column onto the right core field or custom field (Species, Class, UPC, Style #, Pricing Status, Vendor, MSRP/MAP/MOQ, GM %, Date Available, Dropship / Canada Eligible, Next Design Due Date, sample dates and links, Latest Sample Image URL), picks a status lane from Design Status (Hold / Production / Approved / Pricing Review / Sample Received / Sample Needed / Idea), joins Notes + Sourcing Notes, and inserts one product per row with a Description. Dates parsed from Excel serials or ISO strings. Chunked 100-at-a-time; toasts a final count with any first error.",
   "v2.65 — Three things. (1) Fixed “Workspace seed failed: duplicate key” — the lists table had UNIQUE(kind, name) which blocked Innovation from having its own `(person, Jason)` / `(brand, Meowi)` rows. Migration 0008 makes the constraint (kind, name, workspace) so each workspace keeps its own namespace. (2) Seed inserts per-kind now, so one collision only skips that group instead of rolling the whole batch back; the toast tells you exactly which SQL to run. (3) Noun swap per workspace: the “+ Deliverable” button and modal title read “Product” on Innovation. (4) Display picker's AVAILABLE dims and Grid columns pick up Innovation's custom fields automatically once the seed completes.",
@@ -2134,7 +2135,7 @@ async function seedWorkspaceDefaults() {
       : "Workspace seed partially failed: " + firstErr.message;
     toast(msg);
   }
-  if (anyInserted) { await loadLists(); toast("Innovation workspace seeded."); }
+  if (anyInserted) await loadLists();
 }
 function listFor(kind) { return { channel: channelsList, person: peopleList, status: statusList, brand: brandsList, field: fieldsList }[kind]; }
 // Persist promoOverrides to the sentinel row (insert it on first write; delete it when the map is empty).
@@ -5253,17 +5254,37 @@ async function importXlsxLineReview(file) {
     payloads.push(wsStamp({ title, brand, channel, owner: "", due: null, end_date: null, status, notes, fields }));
   }
   if (!payloads.length) { toast("No rows with a Description cell — nothing to import."); return; }
-  toast("Importing " + payloads.length + " row" + (payloads.length === 1 ? "" : "s") + "…");
-  // Chunk to keep the request size reasonable.
-  const chunk = 100; let inserted = 0, firstErr = null;
-  for (let i = 0; i < payloads.length; i += chunk) {
-    const slice = payloads.slice(i, i + chunk);
+  // Upsert by title (case-insensitive). If a product with the same Description already exists in Innovation,
+  // we UPDATE its fields in place instead of inserting a duplicate — so re-running the import on the same
+  // workbook is safe. Field values from the workbook OVERWRITE the matching entries; other field keys the
+  // user may have added manually (notes, subtasks, emails, etc.) are preserved via a shallow merge.
+  const byTitle = {}; cards.forEach(c => { const k = (c.title || "").trim().toLowerCase(); if (k) byTitle[k] = c; });
+  const inserts = [], updates = [];
+  payloads.forEach(p => {
+    const existing = byTitle[(p.title || "").trim().toLowerCase()];
+    if (existing) {
+      const mergedFields = Object.assign({}, existing.fields || {}, p.fields || {});
+      updates.push({ id: existing.id, patch: { title: p.title, brand: p.brand || existing.brand, channel: p.channel || existing.channel, status: p.status || existing.status, notes: p.notes || existing.notes, fields: mergedFields } });
+    } else {
+      inserts.push(p);
+    }
+  });
+  toast("Importing: " + inserts.length + " new, " + updates.length + " to update…");
+  const chunk = 100; let inserted = 0, updated = 0, firstErr = null;
+  for (let i = 0; i < inserts.length; i += chunk) {
+    const slice = inserts.slice(i, i + chunk);
     const { error } = await db.from("deliverables").insert(slice);
     if (error) { if (!firstErr) firstErr = error; continue; }
     inserted += slice.length;
   }
-  if (firstErr) toast("Imported " + inserted + " of " + payloads.length + ". First error: " + firstErr.message);
-  else toast("Imported " + inserted + " product" + (inserted === 1 ? "" : "s") + ". Skipped " + skipped + " empty row" + (skipped === 1 ? "" : "s") + ".");
+  // Updates must go one-by-one (different patches per row).
+  for (const u of updates) {
+    const { error } = await db.from("deliverables").update(u.patch).eq("id", u.id);
+    if (error) { if (!firstErr) firstErr = error; continue; }
+    updated++;
+  }
+  const summary = "Inserted " + inserted + ", updated " + updated + ", skipped " + skipped + " empty.";
+  toast(firstErr ? summary + " First error: " + firstErr.message : summary);
   await refetch();
 }
 async function importJSON(arr) {
