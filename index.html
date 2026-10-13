@@ -541,6 +541,9 @@
   .cover-clear:hover { background: rgba(0,0,0,.8); }
   /* Thumbnail at the top of Board cards and Grid rows for anything with a cover photo. */
   .card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px 8px 0 0; margin: -11px -11px 8px; }
+  /* Dated note chunks in the Notes feed — read-only, inline, preserves whitespace from the original journal entry. */
+  .notes-dated-body { white-space: pre-wrap; padding: 6px 8px; font-size: 13.5px; line-height: 1.55; color: var(--text); background: rgba(255,255,255,.02); border-radius: 6px; }
+  html[data-theme="light"] .notes-dated-body { background: rgba(0,0,0,.03); }
   .field-link-row { display: flex; gap: 6px; align-items: stretch; }
   .field-link-row input { flex: 1; min-width: 0; }
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
@@ -1156,8 +1159,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.76";
+const VERSION = "2.77";
 const CHANGELOG = [
+  "v2.77 — Notes feed now splits imported journal-style notes into dated entries. If a card's notes contain inline date prefixes (4.30.26 - … / 5.13.26 - … / 06.09.26 - …) each chunk becomes its own Notes-view entry with that date, so the feed shows every update by when it was written instead of lumping everything under one “updated today” stamp. Supports M.D.YY, MM.DD.YY, M/D/YY, M-D-YY, 2–4 digit years. The modal still lets you edit the full notes blob — the split is a feed-view only.",
   "v2.76 — Role icons are editable too. The role-labels editor now has an emoji input next to each label — change ✓ to ✅, 🕒 to 📅, 📥 to ⏸️, etc. Icons flow through to card badges (done check, scheduled clock, review eye, backlog) and the role dropdown. Innovation defaults to ✅ Approved / 📅 Scheduled / 👀 In Review / ⏸️ Hold. Reset button restores workspace defaults.",
   "v2.75 — Role labels are now per-workspace and editable. In Manage → Board lanes, a new “✎ Edit role labels” link opens a small panel where you can rename each of the four lane roles for the current workspace (or leave a label empty to hide that role entirely from the dropdown). Behavior stays tied to the internal roles (Complete still marks shipped, Backlog still wipes sprint data), only the names change. Innovation defaults to Approved / Scheduled / In Review / Hold; Planner stays on Complete / Scheduled / In Review / Backlog. Choice persists per workspace.",
   "v2.74 — Fixed broken-image placeholders on Innovation Board cards. Line Review “Latest Sample Image URL” cells often point at Google Drive / SharePoint hyperlinks or dead URLs that aren't actually images — those were rendering as broken img icons. Now those hosts are filtered out upfront, and any image that still fails to load removes itself via onerror.",
@@ -3305,6 +3309,36 @@ async function copyNotesExport() {
   try { await navigator.clipboard.writeText(ta.value); toast("Copied " + ta.value.length + " characters."); }
   catch (e) { ta.select(); try { document.execCommand("copy"); toast("Copied."); } catch (e2) { toast("Copy failed — select the text manually."); } }
 }
+// Split a notes blob into dated chunks. Many imported Line Review notes carry inline journal entries like
+// "4.30.26 - Catnip Fish Skeleton with Silvervine…" / "5.13.26 - Meowijuana Candy Store…". Each is treated as
+// its own feed entry so the Notes view can show them separately by date instead of lumping everything under
+// the card's last-updated stamp. Accepts M.D.YY, MM.DD.YY, M/D/YY, MM/DD/YY, M-D-YY (any 2–4 digit year).
+function splitDatedNoteEntries(notes) {
+  if (!notes) return [];
+  const plain = notes.replace(/<br\s*\/?>/gi, "\n").replace(/<\/?p[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+  const lines = plain.split(/\r?\n/);
+  const dateRe = /^\s*(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})\s*[-–:]\s*/;
+  const entries = []; let pre = ""; let cur = null;
+  for (const line of lines) {
+    const m = dateRe.exec(line);
+    if (m) {
+      if (cur) entries.push(cur);
+      let yr = parseInt(m[3], 10); if (yr < 100) yr += 2000;
+      const mo = String(parseInt(m[1], 10)).padStart(2, "0");
+      const dy = String(parseInt(m[2], 10)).padStart(2, "0");
+      cur = { date: `${yr}-${mo}-${dy}`, text: line.slice(m[0].length) };
+    } else if (cur) {
+      cur.text += "\n" + line;
+    } else {
+      pre += (pre ? "\n" : "") + line;
+    }
+  }
+  if (cur) entries.push(cur);
+  // Trim and drop empty-body entries.
+  const out = entries.map(e => ({ date: e.date, text: e.text.replace(/\s+$/g, "").replace(/^\s+/, "") })).filter(e => e.text);
+  if (pre.trim() && !out.length) return [];   // no dates found → fall back to single-entry behavior
+  return out;
+}
 function renderNotesView() {
   const root = document.getElementById("notes"); root.innerHTML = "";
   const cardsIn = notesVisibleCards();
@@ -3313,9 +3347,15 @@ function renderNotesView() {
     const emails = cardEmails(c);
     const hasNoteText = !!(c.notes && c.notes.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim());
     const hasSubs = cardSubtasks(c).length > 0;
-    // Emit a note entry when there's a reason to show it: actual note text, ANY subtasks (they render inside the
-    // note body), or when the card has no emails either (so an untouched card stays visible for the writer).
-    if (hasNoteText || hasSubs || !emails.length) feed.push({ kind: "note", card: c, date: noteEntryDate(c), key: "note:" + c.id });
+    const dated = hasNoteText ? splitDatedNoteEntries(c.notes) : [];
+    if (dated.length) {
+      // One feed entry per dated chunk. Newest first within the card; also show one "note" row for subtasks
+      // (undated) if any — subtasks stay a card-level concern, not per-note.
+      dated.forEach((e, i) => feed.push({ kind: "note", card: c, date: e.date, key: "note:" + c.id + ":" + i, noteText: e.text, dated: true }));
+      if (hasSubs) feed.push({ kind: "note", card: c, date: noteEntryDate(c), key: "note:" + c.id + ":subs", subsOnly: true });
+    } else if (hasNoteText || hasSubs || !emails.length) {
+      feed.push({ kind: "note", card: c, date: noteEntryDate(c), key: "note:" + c.id });
+    }
     emails.forEach(em => feed.push({ kind: "email", card: c, email: em, date: (em.addedAt || "").slice(0, 10) || noteEntryDate(c), key: "email:" + c.id + ":" + em.id }));
   });
   // Sort — global sortKey overrides; otherwise date desc.
@@ -3387,7 +3427,13 @@ function renderNotesView() {
     if (item.kind === "email") {
       const wrap = document.createElement("div"); wrap.innerHTML = sanitizeNotes(item.email.content || "");
       body.appendChild(wrap);
-    } else {
+    } else if (item.dated) {
+      // Dated chunk — read-only view of just this piece of the note. Clicking the title opens the modal where
+      // the full notes blob (all dated chunks together) is editable.
+      const wrap = document.createElement("div"); wrap.className = "notes-dated-body";
+      wrap.textContent = item.noteText || "";
+      body.appendChild(wrap);
+    } else if (!item.subsOnly) {
       // 📧 Email button — adds a new email entry to this card.
       const tools = document.createElement("div"); tools.className = "notes-tools";
       const emailBtn = document.createElement("button"); emailBtn.type = "button"; emailBtn.className = "notes-tool-btn"; emailBtn.textContent = "📧 Add email";
@@ -3405,7 +3451,10 @@ function renderNotesView() {
       editor.addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
       editor.addEventListener("paste", e => { const cd = e.clipboardData || window.clipboardData; if (!cd) return; e.preventDefault(); document.execCommand("insertHTML", false, notesPasteToHtml(cd)); });
       body.appendChild(editor);
-      // Subtasks
+    }
+    if (item.kind !== "email" && (item.subsOnly || !item.dated)) {
+      // Subtasks render once per card — on either the single note entry (undated) or the dedicated subs entry
+      // when the notes blob was split into multiple dated chunks.
       const subs = cardSubtasks(c);
       if (subs.length) {
         const sbox = document.createElement("div"); sbox.className = "notes-subs";
