@@ -1086,8 +1086,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.62";
+const VERSION = "2.63";
 const CHANGELOG = [
+  "v2.63 — Workspace is now in the URL (?ws=innovation). Shareable: paste the link anywhere and the recipient lands in the same workspace. Planner stays bare for back-compat with old bookmarks. Reads before loadLists so the right rows pull on first paint; writes on every render via writeUrl.",
   "v2.62 — Fixed “Rename failed: invalid input syntax for type uuid: undefined” on the Innovation workspace. Cause: when a non-Planner workspace returned zero `lists` rows, we filled statusList with bare {name} objects (no DB id), so renaming tried to update by `id = undefined`. Fix: don't apply bare-object fallbacks for non-Planner workspaces; auto-seed Innovation on first visit with a milestone-shaped lane set (Idea / Sample Needed / Sample Received / Pricing Review / Approved / Production / Hold) as real DB rows so rename/delete work. Also added a safety net: if renameList encounters a bare item (no id), it inserts a row first and then renames.",
   "v2.61 — Fixed the blank-page regression from v2.60. Cause: `let colorBy = localStorage.getItem(wsKey(...))` ran before `let currentWorkspace = …` was declared; `let` has a temporal dead zone, so the first wsKey() call threw ReferenceError and killed the whole script. Moved the workspace block above everything that touches it. Also added graceful fallback so the app still works if the workspace migration hasn't been run yet (treats everyone as `planner` until the column exists).",
   "v2.60 — Workspaces Chunk 2/4. Switcher is now a native dropdown (one click, pick, done). Per-workspace scoping extended to local prefs: lane roles (Scheduled / Backlog / Review), personal saved views, quick-filter row visibility, color-by setting, Sprint-Planning show-lanes picker. Each workspace remembers its own defaults; Planner's existing values are preserved (back-compat on the bare key).",
@@ -5113,6 +5114,8 @@ function renderChangelog() {
 const VIEW_KEYS = ["board", "calendar", "grid", "list", "notes", "planning"];
 function currentParams() {
   const p = new URLSearchParams();
+  // Workspace rides at the front — `planner` stays bare for back-compat with existing bookmarks.
+  if (currentWorkspace !== "planner") p.set("ws", currentWorkspace);
   if (view !== "board") p.set("view", view);
   if (colorBy !== "brand") p.set("color", colorBy);
   if (searchText.trim()) p.set("q", searchText.trim());
@@ -5224,6 +5227,16 @@ function readUrl() {
 }
 async function init() {
   fillStaticSelects();
+  // Workspace from URL must land BEFORE loadLists so the scoped queries pull the right rows. localStorage is
+  // the fallback. Also re-applies lane roles / quick-rows / colorBy for the URL-chosen workspace.
+  try {
+    const urlWs = new URLSearchParams(location.search).get("ws");
+    if (urlWs && WORKSPACES.some(w => w.id === urlWs) && urlWs !== currentWorkspace) {
+      currentWorkspace = urlWs; applyWorkspace(); loadLaneRoles(); loadQuickFilterRows();
+      colorBy = localStorage.getItem(wsKey("planner-colorby")) || "brand";
+      try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-planning-lanes")) || "null"); planningLanes = Array.isArray(raw) ? new Set(raw) : null; } catch (e) { planningLanes = null; }
+    }
+  } catch (e) {}
   await loadLists();
   await maybeMigrateBacklogTodo();   // one-time: rename Backlog→To Do + add new Backlog lane w/ special semantics
   readUrl();   // restore view + filters from the URL so a bookmarked link reopens the same view
