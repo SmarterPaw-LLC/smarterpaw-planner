@@ -995,7 +995,9 @@
     <div class="field"><button id="exportJsonBtn" style="width:100%">⬇ Export backup (.json)</button></div>
     <div class="field"><button id="importJsonBtn" style="width:100%">⬆ Import backup (.json)</button></div>
     <div class="field"><button id="csvBtn" style="width:100%">Export CSV</button></div>
+    <div class="field" id="importXlsxField" style="display:none"><button id="importXlsxBtn" style="width:100%">⬆ Import SP Line Review (.xlsx) → Products</button></div>
     <input type="file" id="importFile" accept="application/json" style="display:none" />
+    <input type="file" id="importXlsxFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" />
     <div class="modal-actions"><div class="spacer"></div><button id="menuClose">Close</button></div>
     <div class="hint" id="menuHint"></div>
   </div>
@@ -1077,6 +1079,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="./config.js"></script>
 <script>
 "use strict";
@@ -1086,8 +1089,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.65";
+const VERSION = "2.66";
 const CHANGELOG = [
+  "v2.66 — Spreadsheet importer for Innovation. In the ⋯ Settings dialog (only when on the Innovation workspace), a new “⬆ Import SP Line Review (.xlsx) → Products” button reads your Line Review workbook, maps each column onto the right core field or custom field (Species, Class, UPC, Style #, Pricing Status, Vendor, MSRP/MAP/MOQ, GM %, Date Available, Dropship / Canada Eligible, Next Design Due Date, sample dates and links, Latest Sample Image URL), picks a status lane from Design Status (Hold / Production / Approved / Pricing Review / Sample Received / Sample Needed / Idea), joins Notes + Sourcing Notes, and inserts one product per row with a Description. Dates parsed from Excel serials or ISO strings. Chunked 100-at-a-time; toasts a final count with any first error.",
   "v2.65 — Three things. (1) Fixed “Workspace seed failed: duplicate key” — the lists table had UNIQUE(kind, name) which blocked Innovation from having its own `(person, Jason)` / `(brand, Meowi)` rows. Migration 0008 makes the constraint (kind, name, workspace) so each workspace keeps its own namespace. (2) Seed inserts per-kind now, so one collision only skips that group instead of rolling the whole batch back; the toast tells you exactly which SQL to run. (3) Noun swap per workspace: the “+ Deliverable” button and modal title read “Product” on Innovation. (4) Display picker's AVAILABLE dims and Grid columns pick up Innovation's custom fields automatically once the seed completes.",
   "v2.64 — Chunk 4/4: Innovation seed. First visit now also populates brands (Meowi/Doggi/Kitty/KKZ), people (Jason/Katie/Brennan/Miles), accounts (PetSmart/Petco/Pet Supplies Plus/Chewy/Amazon/Faire/Walmart/DTC), and 23 custom fields mirroring the SP Line Review 2027 workbook (Species, Class, UPC, Style #, Estimated Gross Cost, MSRP, MAP, MOQ, GM %, Vendor #, Primary Vendor Name, Date Available, Dropship / Canada Eligible, Pricing Status, Pricing Details, Next Design Due Date, Design Assets Link, Spec Sheet Link, Sample Request Link / Requested / Received, Latest Sample Image URL). Seeding is per-kind, so re-visiting Innovation after v2.62's lanes-only seed fills in just the categories still empty.",
   "v2.63 — Workspace is now in the URL (?ws=innovation). Shareable: paste the link anywhere and the recipient lands in the same workspace. Planner stays bare for back-compat with old bookmarks. Reads before loadLists so the right rows pull on first paint; writes on every render via writeUrl.",
@@ -1560,6 +1564,8 @@ function applyWorkspace() {
   document.body.classList.toggle("ws-innovation", currentWorkspace === "innovation");
   // Noun swap — "Deliverable" on Planner, "Product" on Innovation. Modal titles update per-open via openModal.
   const add = document.getElementById("addBtn"); if (add) add.textContent = "+ " + wsDef().noun;
+  // XLSX importer visible on Innovation only; it's targeted at the SP Line Review workbook.
+  const xField = document.getElementById("importXlsxField"); if (xField) xField.style.display = currentWorkspace === "innovation" ? "" : "none";
 }
 function wsKey(k) { return currentWorkspace === "planner" ? k : k + "-" + currentWorkspace; }
 let WS_COL_MISSING = false;
@@ -5157,6 +5163,105 @@ function exportXLSX(){
 }
 
 /* ---------- import ---------- */
+// Import the SP Line Review 2027 workbook (.xlsx) into the Innovation workspace. Reads the first sheet, maps
+// each column to either a core deliverable field (title / brand / channel / status / notes) or one of the 23
+// seeded custom fields. Dates are parsed from Excel serial numbers. Multi-line Account cells use the first
+// line. One deliverable per non-empty Description row. Shows a progress toast and a final summary.
+async function importXlsxLineReview(file) {
+  if (currentWorkspace !== "innovation") { toast("Switch to Product Innovation first."); return; }
+  if (typeof XLSX === "undefined") { toast("XLSX library didn't load. Hard refresh and retry."); return; }
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) { toast("Workbook has no sheets."); return; }
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+  if (!rows.length) { toast("First sheet is empty."); return; }
+  // Column aliases → Innovation custom-field names. Keys are matched case-insensitively with punctuation
+  // stripped; values are the exact field names seeded in Innovation (seedWorkspaceDefaults).
+  const norm = s => (s || "").toString().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const FIELD_MAP = {
+    "species": "Species",
+    "classcategory": "Class", "class": "Class",
+    "upc": "UPC",
+    "style": "Style #",
+    "estimatedgrosscost": "Estimated Gross Cost",
+    "msrp": "MSRP",
+    "map": "MAP",
+    "moq": "MOQ",
+    "psmgm": "GM %", "gm": "GM %",
+    "vendor": "Vendor #",
+    "primaryvendorname": "Primary Vendor Name",
+    "dateavailable": "Date Available",
+    "availablefordropship": "Dropship Eligible",
+    "eligibletocanada": "Canada Eligible",
+    "pricingstatus": "Pricing Status",
+    "pricingdetails": "Pricing Details",
+    "nextdesignduedate": "Next Design Due Date",
+    "linkstodesignassetspresentation": "Design Assets Link",
+    "artworkspecsheetsmockups": "Spec Sheet Link",
+    "samplerequestsheetlink": "Sample Request Link",
+    "samplerequesteddate": "Sample Requested",
+    "samplereceiveddate": "Sample Received",
+    "latestsampleimage": "Latest Sample Image URL",
+  };
+  // Design Status (Line Review value) → status lane (Innovation lane name)
+  const laneFor = (ds) => {
+    const t = (ds || "").toLowerCase();
+    if (!t) return "Idea";
+    if (/hold/.test(t)) return "Hold";
+    if (/production|produced/.test(t)) return "Production";
+    if (/approved|finalized/.test(t)) return "Approved";
+    if (/pricing/.test(t)) return "Pricing Review";
+    if (/paper doll ready|sample received/.test(t)) return "Sample Received";
+    if (/paper doll needed|sample needed|needs sample/.test(t)) return "Sample Needed";
+    return "Idea";
+  };
+  // Case-insensitive brand/channel resolution against the current Innovation lists.
+  const matchName = (list, raw) => { if (!raw) return ""; const n = raw.toString().split(/\r?\n/)[0].trim(); const hit = list.find(x => x.name.toLowerCase() === n.toLowerCase()); return hit ? hit.name : n; };
+  // Excel sometimes returns a Date for date cells (because cellDates:true) and sometimes an ISO/MM/DD string.
+  // Convert everything that looks like a date to YYYY-MM-DD; return the raw string for everything else.
+  const toYmd = v => {
+    if (v instanceof Date && !isNaN(v.getTime())) { const yr = v.getFullYear(), mo = String(v.getMonth() + 1).padStart(2, "0"), dy = String(v.getDate()).padStart(2, "0"); return `${yr}-${mo}-${dy}`; }
+    if (typeof v === "string") { const d = new Date(v); if (!isNaN(d.getTime()) && /\d{4}/.test(v)) { const yr = d.getFullYear(), mo = String(d.getMonth() + 1).padStart(2, "0"), dy = String(d.getDate()).padStart(2, "0"); return `${yr}-${mo}-${dy}`; } }
+    return "";
+  };
+  const dateFieldNames = new Set(["Date Available", "Next Design Due Date", "Sample Requested", "Sample Received"]);
+  // Build a reverse lookup of workbook header → mapping target.
+  const headers = Object.keys(rows[0] || {});
+  const headerToField = {};
+  headers.forEach(h => { const key = norm(h); if (FIELD_MAP[key]) headerToField[h] = FIELD_MAP[key]; });
+  const payloads = [];
+  let skipped = 0;
+  for (const r of rows) {
+    const title = (r["Description"] || "").toString().trim();
+    if (!title) { skipped++; continue; }
+    const brand = matchName(brandsList, r["Brand"]);
+    const channel = matchName(channelsList, r["Account"]);
+    const status = laneFor(r["Design Status"]);
+    const notes = [r["Notes"], r["Sourcing Notes"]].filter(x => x && String(x).trim()).join("\n\n");
+    const fields = {};
+    headers.forEach(h => {
+      const t = headerToField[h]; if (!t) return;
+      const v = r[h]; if (v === "" || v == null) return;
+      fields[t] = dateFieldNames.has(t) ? toYmd(v) : (v instanceof Date ? toYmd(v) : String(v).trim());
+      if (fields[t] === "") delete fields[t];
+    });
+    payloads.push(wsStamp({ title, brand, channel, owner: "", due: null, end_date: null, status, notes, fields }));
+  }
+  if (!payloads.length) { toast("No rows with a Description cell — nothing to import."); return; }
+  toast("Importing " + payloads.length + " row" + (payloads.length === 1 ? "" : "s") + "…");
+  // Chunk to keep the request size reasonable.
+  const chunk = 100; let inserted = 0, firstErr = null;
+  for (let i = 0; i < payloads.length; i += chunk) {
+    const slice = payloads.slice(i, i + chunk);
+    const { error } = await db.from("deliverables").insert(slice);
+    if (error) { if (!firstErr) firstErr = error; continue; }
+    inserted += slice.length;
+  }
+  if (firstErr) toast("Imported " + inserted + " of " + payloads.length + ". First error: " + firstErr.message);
+  else toast("Imported " + inserted + " product" + (inserted === 1 ? "" : "s") + ". Skipped " + skipped + " empty row" + (skipped === 1 ? "" : "s") + ".");
+  await refetch();
+}
 async function importJSON(arr) {
   if (!ONLINE) { cards = arr; saveLocal(); render(); return; }
   const { error } = await db.from("deliverables").insert(arr.map(dbObj));
@@ -5622,6 +5727,13 @@ async function init() {
   document.querySelectorAll("#themeToggle button").forEach(b => b.onclick = () => applyTheme(b.dataset.theme));
   document.getElementById("exportJsonBtn").onclick = exportJSON;
   document.getElementById("importJsonBtn").onclick = () => document.getElementById("importFile").click();
+  document.getElementById("importXlsxBtn").onclick = () => document.getElementById("importXlsxFile").click();
+  document.getElementById("importXlsxFile").onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try { await importXlsxLineReview(file); menu.classList.remove("show"); }
+    catch (err) { toast("Import failed: " + (err && err.message || err)); }
+    e.target.value = "";
+  };
   document.getElementById("importFile").onchange = e => { const file = e.target.files[0]; if (!file) return;
     const r = new FileReader(); r.onload = () => { try { const d = JSON.parse(r.result);
       if (Array.isArray(d)) { importJSON(d); menu.classList.remove("show"); } else alert("Not a valid backup file."); }
