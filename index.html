@@ -1136,8 +1136,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.73";
+const VERSION = "2.74";
 const CHANGELOG = [
+  "v2.74 — Fixed broken-image placeholders on Innovation Board cards. Line Review “Latest Sample Image URL” cells often point at Google Drive / SharePoint hyperlinks or dead URLs that aren't actually images — those were rendering as broken img icons. Now those hosts are filtered out upfront, and any image that still fails to load removes itself via onerror.",
   "v2.73 — Cover photo for every deliverable. New section at the top of the modal: click to upload (resized client-side to 1200px wide, stored as a data URL in the card's fields), paste an image or URL, or drag-and-drop a file. Clear with the ✕ in the top-right. Board cards show a 16:9 thumbnail at the top when a cover is set. On Innovation, cards without an explicit cover fall back to “Latest Sample Image URL” automatically so Line Review imports show their samples right away.",
   "v2.72 — Notes view gets a “📋 Copy updates” button next to Expand/Collapse. Opens a dialog with a last-N-days input (default 7) and a plain-text preview of every note / email / subtask entry in that window from the current Notes filter set. Clipboard button copies the whole thing in email-friendly plain text (## headings per deliverable, 📧 email summaries, 📝 note bodies, ✅ subtask checklists). Change the day count and the preview re-renders live.",
   "v2.71 — Calendar's date anchor is now configurable per workspace. New dropdown next to the month label lists “📅 Due date” and every date-type custom field on the current workspace — pick one and the calendar re-anchors to that field (events, bars, pack order, tray's “undated” filter all follow). Planner stays on Due date; Innovation can anchor on Next Design Due Date / Date Available / Sample Received / etc. Choice persists per workspace in localStorage. Picker hides itself when there are no date-type custom fields.",
@@ -3682,7 +3683,11 @@ function cardEl(c) {
   const prog = subProgress(c);
   const progHtml = prog.total ? `<div class="card-prog"><div class="progress${prog.pct === 100 ? " full" : ""}"><i style="width:${prog.pct}%"></i></div><span>${prog.done}/${prog.total}</span></div>` : "";
   const coverSrc = (c.fields && (c.fields[COVER_KEY] || c.fields["Latest Sample Image URL"])) || "";
-  const coverHtml = coverSrc && /^(https?:|data:)/i.test(coverSrc) ? `<img class="card-cover" src="${esc(coverSrc)}" alt="" loading="lazy" />` : "";
+  // Only render an <img> for actual image URLs/data. Many Line Review “Latest Sample Image URL” cells point at
+  // Google Drive / SharePoint links or dead URLs that return HTML, not an image — those render as broken img
+  // icons. Hide any that fail to load via onerror so a 403/404 doesn't leave a broken placeholder in the card.
+  const looksRenderable = coverSrc && /^(https?:|data:)/i.test(coverSrc) && !/drive\.google|docs\.google|sharepoint/i.test(coverSrc);
+  const coverHtml = looksRenderable ? `<img class="card-cover" src="${esc(coverSrc)}" alt="" loading="lazy" onerror="this.remove()" />` : "";
   el.innerHTML = coverHtml +
     `<h3>${done}${schedBadge(c) + reviewBadge(c)}${esc(c.title)}</h3>` +
     (badges ? `<div class="dimrow${curDisp().badge ? "" : " text"}">${badges}</div>` : "") +
