@@ -555,6 +555,16 @@
   .mv { padding: 2px 8px; color: var(--text); border-color: transparent; background: transparent; font-weight: 700; }
   .lane-dsg { padding: 3px 6px; font-size: 12px; font-weight: 600; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
   .lane-dsg:hover { border-color: var(--accent); }
+  /* Role label editor — small panel below the Board lanes section header. */
+  .role-edit-link { margin-left: 10px; padding: 2px 10px; font-size: 11px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+  .role-edit-link:hover { color: var(--text); border-color: var(--accent); }
+  .role-editor { margin-top: 10px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .role-editor-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); }
+  .role-editor-hint { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .role-row { display: flex; align-items: center; gap: 8px; }
+  .role-icon { flex: none; width: 24px; text-align: center; font-size: 14px; }
+  .role-row input { flex: 1; padding: 5px 8px; font-size: 12px; }
+  .role-editor-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   .mv:hover { border-color: var(--accent); }
   .mv:disabled { opacity: .25; cursor: default; border-color: transparent; }
   .lane-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
@@ -965,9 +975,18 @@
       <div class="manage-list" id="manageBrands"></div>
     </div>
     <div class="manage-sec">
-      <span class="seclabel">Board lanes (drag order with ↑ ↓)</span>
+      <span class="seclabel">Board lanes (drag order with ↑ ↓) <button type="button" id="mEditRolesBtn" class="role-edit-link">✎ Edit role labels</button></span>
       <div class="manage-list" id="manageStatuses"></div>
       <div class="add-row"><input id="mAddStatus" placeholder="New lane…" /><button class="primary" id="mAddStatusBtn">Add</button></div>
+      <div id="mRoleEditor" class="role-editor" style="display:none">
+        <div class="role-editor-title">Role labels for this workspace</div>
+        <div class="role-editor-hint">Rename a role to change how it reads in the role dropdown. Leave empty to hide that role entirely. Behavior stays the same (Complete still marks shipped; Backlog still wipes sprint data).</div>
+        <div class="role-row"><span class="role-icon">✓</span><input data-role="complete" placeholder="Hide this role" /></div>
+        <div class="role-row"><span class="role-icon">🕒</span><input data-role="scheduled" placeholder="Hide this role" /></div>
+        <div class="role-row"><span class="role-icon">👀</span><input data-role="review" placeholder="Hide this role" /></div>
+        <div class="role-row"><span class="role-icon">📥</span><input data-role="backlog" placeholder="Hide this role" /></div>
+        <div class="role-editor-actions"><button type="button" id="mRolesReset" class="ghost">Reset to defaults</button><button type="button" id="mRolesSave" class="primary">Save</button></div>
+      </div>
     </div>
     <div class="manage-sec">
       <span class="seclabel">Channels</span>
@@ -1136,8 +1155,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.74";
+const VERSION = "2.75";
 const CHANGELOG = [
+  "v2.75 — Role labels are now per-workspace and editable. In Manage → Board lanes, a new “✎ Edit role labels” link opens a small panel where you can rename each of the four lane roles for the current workspace (or leave a label empty to hide that role entirely from the dropdown). Behavior stays tied to the internal roles (Complete still marks shipped, Backlog still wipes sprint data), only the names change. Innovation defaults to Approved / Scheduled / In Review / Hold; Planner stays on Complete / Scheduled / In Review / Backlog. Choice persists per workspace.",
   "v2.74 — Fixed broken-image placeholders on Innovation Board cards. Line Review “Latest Sample Image URL” cells often point at Google Drive / SharePoint hyperlinks or dead URLs that aren't actually images — those were rendering as broken img icons. Now those hosts are filtered out upfront, and any image that still fails to load removes itself via onerror.",
   "v2.73 — Cover photo for every deliverable. New section at the top of the modal: click to upload (resized client-side to 1200px wide, stored as a data URL in the card's fields), paste an image or URL, or drag-and-drop a file. Clear with the ✕ in the top-right. Board cards show a 16:9 thumbnail at the top when a cover is set. On Innovation, cards without an explicit cover fall back to “Latest Sample Image URL” automatically so Line Review imports show their samples right away.",
   "v2.72 — Notes view gets a “📋 Copy updates” button next to Expand/Collapse. Opens a dialog with a last-N-days input (default 7) and a plain-text preview of every note / email / subtask entry in that window from the current Notes filter set. Clipboard button copies the whole thing in email-friendly plain text (## headings per deliverable, 📧 email summaries, 📝 note bodies, ✅ subtask checklists). Change the day count and the preview re-renders live.",
@@ -1623,6 +1643,20 @@ function applyWorkspace() {
   const xField = document.getElementById("importXlsxField"); if (xField) xField.style.display = currentWorkspace === "innovation" ? "" : "none";
 }
 function wsKey(k) { return currentWorkspace === "planner" ? k : k + "-" + currentWorkspace; }
+// Per-workspace labels for the four lane roles. Behavior is tied to the internal keys (complete / scheduled /
+// review / backlog); only the DISPLAY labels + icons change per workspace. Set an empty string to hide a role
+// from the dropdown entirely. Defaults are tuned per workspace: Innovation uses product-development vocabulary.
+const DEFAULT_ROLE_LABELS = {
+  planner: { complete: "Complete", scheduled: "Scheduled", review: "In Review", backlog: "Backlog" },
+  innovation: { complete: "Approved", scheduled: "Scheduled", review: "In Review", backlog: "Hold" },
+};
+let ROLE_LABELS = loadRoleLabels();
+function loadRoleLabels() {
+  try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-role-labels")) || "null"); if (raw && typeof raw === "object") return Object.assign({}, DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner, raw); }
+  catch (e) {}
+  return Object.assign({}, DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner);
+}
+function saveRoleLabels() { localStorage.setItem(wsKey("planner-role-labels"), JSON.stringify(ROLE_LABELS)); }
 let WS_COL_MISSING = false;
 function isColumnMissingError(err) {
   if (!err) return false;
@@ -1718,6 +1752,7 @@ async function switchWorkspace(id) {
   loadQuickFilterRows();
   colorBy = localStorage.getItem(wsKey("planner-colorby")) || "brand";
   calendarAnchor = localStorage.getItem(wsKey("planner-cal-anchor")) || "due";
+  ROLE_LABELS = loadRoleLabels();
   try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-planning-lanes")) || "null"); planningLanes = Array.isArray(raw) ? new Set(raw) : null; } catch (e) { planningLanes = null; }
   // Reset session-only filter state so a Planner-era sprint pick doesn't leak into Innovation (which has no sprints).
   filters = {}; filterRules = []; filterMatch = "all"; filterOverdue = false;
@@ -5283,7 +5318,12 @@ function manageRow(kind, item, idx) {
     // Review) into one compact selector so the row doesn't wrap. Picking one designation clears the others.
     const cur = completeLane === item.name ? "complete" : effScheduledLane() === item.name ? "scheduled" : effBacklogLane() === item.name ? "backlog" : effReviewLane() === item.name ? "review" : "";
     const dsg = document.createElement("select"); dsg.className = "mv lane-dsg"; dsg.title = "Designate this lane's role";
-    [["", "— role —"], ["complete", "✓ Complete"], ["scheduled", "🕒 Scheduled"], ["review", REVIEW_ICON + " Review"], ["backlog", BACKLOG_ICON + " Backlog"]].forEach(([v, l]) => {
+    const roleRows = [["", "— role —"]];
+    if (ROLE_LABELS.complete) roleRows.push(["complete", "✓ " + ROLE_LABELS.complete]);
+    if (ROLE_LABELS.scheduled) roleRows.push(["scheduled", "🕒 " + ROLE_LABELS.scheduled]);
+    if (ROLE_LABELS.review) roleRows.push(["review", REVIEW_ICON + " " + ROLE_LABELS.review]);
+    if (ROLE_LABELS.backlog) roleRows.push(["backlog", BACKLOG_ICON + " " + ROLE_LABELS.backlog]);
+    roleRows.forEach(([v, l]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === cur) o.selected = true; dsg.appendChild(o);
     });
     dsg.onchange = () => {
@@ -6001,6 +6041,16 @@ async function init() {
   document.getElementById("f_end").addEventListener("change", updateSprintField);
 
   document.getElementById("manageBtn").onclick = openManage;
+  // Role-label editor — collapsible panel in the Board lanes section. Save persists to localStorage per
+  // workspace; the role dropdown re-renders via afterListsChanged (which calls renderManage + afterLists).
+  const roleEditor = document.getElementById("mRoleEditor");
+  const populateRoleEditor = () => { roleEditor.querySelectorAll("input[data-role]").forEach(inp => { inp.value = ROLE_LABELS[inp.dataset.role] || ""; }); };
+  document.getElementById("mEditRolesBtn").onclick = () => { const show = roleEditor.style.display === "none"; roleEditor.style.display = show ? "" : "none"; if (show) populateRoleEditor(); };
+  document.getElementById("mRolesSave").onclick = () => {
+    roleEditor.querySelectorAll("input[data-role]").forEach(inp => { ROLE_LABELS[inp.dataset.role] = (inp.value || "").trim(); });
+    saveRoleLabels(); roleEditor.style.display = "none"; afterListsChanged(); toast("Role labels saved for " + wsDef().label + ".");
+  };
+  document.getElementById("mRolesReset").onclick = () => { ROLE_LABELS = Object.assign({}, DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner); saveRoleLabels(); populateRoleEditor(); afterListsChanged(); toast("Role labels reset to defaults."); };
   document.getElementById("manageClose").onclick = closeManage;
   document.getElementById("manageOverlay").onclick = e => { if (e.target.id === "manageOverlay") closeManage(); };
   const addCh = () => { const i = document.getElementById("mAddChannel"); addList("channel", i.value).then(ok => { if (ok) i.value = ""; }); };
