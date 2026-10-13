@@ -1086,8 +1086,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.63";
+const VERSION = "2.64";
 const CHANGELOG = [
+  "v2.64 — Chunk 4/4: Innovation seed. First visit now also populates brands (Meowi/Doggi/Kitty/KKZ), people (Jason/Katie/Brennan/Miles), accounts (PetSmart/Petco/Pet Supplies Plus/Chewy/Amazon/Faire/Walmart/DTC), and 23 custom fields mirroring the SP Line Review 2027 workbook (Species, Class, UPC, Style #, Estimated Gross Cost, MSRP, MAP, MOQ, GM %, Vendor #, Primary Vendor Name, Date Available, Dropship / Canada Eligible, Pricing Status, Pricing Details, Next Design Due Date, Design Assets Link, Spec Sheet Link, Sample Request Link / Requested / Received, Latest Sample Image URL). Seeding is per-kind, so re-visiting Innovation after v2.62's lanes-only seed fills in just the categories still empty.",
   "v2.63 — Workspace is now in the URL (?ws=innovation). Shareable: paste the link anywhere and the recipient lands in the same workspace. Planner stays bare for back-compat with old bookmarks. Reads before loadLists so the right rows pull on first paint; writes on every render via writeUrl.",
   "v2.62 — Fixed “Rename failed: invalid input syntax for type uuid: undefined” on the Innovation workspace. Cause: when a non-Planner workspace returned zero `lists` rows, we filled statusList with bare {name} objects (no DB id), so renaming tried to update by `id = undefined`. Fix: don't apply bare-object fallbacks for non-Planner workspaces; auto-seed Innovation on first visit with a milestone-shaped lane set (Idea / Sample Needed / Sample Received / Pricing Review / Approved / Production / Hold) as real DB rows so rename/delete work. Also added a safety net: if renameList encounters a bare item (no id), it inserts a row first and then renames.",
   "v2.61 — Fixed the blank-page regression from v2.60. Cause: `let colorBy = localStorage.getItem(wsKey(...))` ran before `let currentWorkspace = …` was declared; `let` has a temporal dead zone, so the first wsKey() call threw ReferenceError and killed the whole script. Moved the workspace block above everything that touches it. Also added graceful fallback so the app still works if the workspace migration hasn't been run yet (treats everyone as `planner` until the column exists).",
@@ -2040,26 +2041,79 @@ async function loadLists() {
     await seedWorkspaceDefaults();
   }
 }
-// First-visit seed for a non-Planner workspace: inserts a minimal lane set as real DB rows so the user can
-// edit/rename/delete them. Returns silently if any rows already exist for this workspace.
+// First-visit seed for a non-Planner workspace: inserts a milestone-shaped lane set + full dimension set as
+// real DB rows so the user can edit/rename/delete them. Returns silently if any rows already exist. Field
+// configs ride on the `color` column (same convention Planner uses) as JSON {type, options?}.
 async function seedWorkspaceDefaults() {
-  if (statusList.length || channelsList.length || peopleList.length || brandsList.length || fieldsList.length) return;
-  const defaults = currentWorkspace === "innovation"
-    ? [
-        { kind: "status", name: "Idea", position: 1 },
-        { kind: "status", name: "Sample Needed", position: 2 },
-        { kind: "status", name: "Sample Received", position: 3 },
-        { kind: "status", name: "Pricing Review", position: 4 },
-        { kind: "status", name: "Approved", position: 5 },
-        { kind: "status", name: "Production", position: 6 },
-        { kind: "status", name: "Hold", position: 7 },
-      ]
-    : [];
+  if (currentWorkspace !== "innovation") return;
+  // Only emit rows for kinds that are currently empty. A user who already got the lane-only seed from v2.62
+  // will get the brands / people / channels / fields filled in on their next visit without duplicating lanes.
+  const fcfg = (type, options) => JSON.stringify(options ? { type, options } : { type });
+  const kinds = {
+    status: !statusList.length ? [
+      { kind: "status", name: "Idea", position: 1 },
+      { kind: "status", name: "Sample Needed", position: 2 },
+      { kind: "status", name: "Sample Received", position: 3 },
+      { kind: "status", name: "Pricing Review", position: 4 },
+      { kind: "status", name: "Approved", position: 5 },
+      { kind: "status", name: "Production", position: 6 },
+      { kind: "status", name: "Hold", position: 7 },
+    ] : [],
+    brand: !brandsList.length ? [
+      { kind: "brand", name: "Meowi", position: 1, color: "#6d5dfc" },
+      { kind: "brand", name: "Doggi", position: 2, color: "#f5a524" },
+      { kind: "brand", name: "Kitty", position: 3, color: "#ec4899" },
+      { kind: "brand", name: "KKZ", position: 4, color: "#22c55e" },
+    ] : [],
+    person: !peopleList.length ? [
+      { kind: "person", name: "Jason", position: 1 },
+      { kind: "person", name: "Katie", position: 2 },
+      { kind: "person", name: "Brennan", position: 3 },
+      { kind: "person", name: "Miles", position: 4 },
+    ] : [],
+    channel: !channelsList.length ? [
+      { kind: "channel", name: "PetSmart", position: 1 },
+      { kind: "channel", name: "Petco", position: 2 },
+      { kind: "channel", name: "Pet Supplies Plus", position: 3 },
+      { kind: "channel", name: "Chewy", position: 4 },
+      { kind: "channel", name: "Amazon", position: 5 },
+      { kind: "channel", name: "Faire", position: 6 },
+      { kind: "channel", name: "Walmart", position: 7 },
+      { kind: "channel", name: "DTC", position: 8 },
+    ] : [],
+    field: !fieldsList.length ? [
+      { kind: "field", name: "Species", color: fcfg("select", ["CAT", "DOG"]), position: 1 },
+    { kind: "field", name: "Class", color: fcfg("select", ["CATNIP", "CAT TEASER", "CAT TOY", "DOG TOY", "TREAT", "APPAREL", "OTHER"]), position: 2 },
+    { kind: "field", name: "UPC", color: fcfg("text"), position: 3 },
+    { kind: "field", name: "Style #", color: fcfg("text"), position: 4 },
+    { kind: "field", name: "Estimated Gross Cost", color: fcfg("number"), position: 5 },
+    { kind: "field", name: "MSRP", color: fcfg("number"), position: 6 },
+    { kind: "field", name: "MAP", color: fcfg("number"), position: 7 },
+    { kind: "field", name: "MOQ", color: fcfg("number"), position: 8 },
+    { kind: "field", name: "GM %", color: fcfg("text"), position: 9 },
+    { kind: "field", name: "Vendor #", color: fcfg("text"), position: 10 },
+    { kind: "field", name: "Primary Vendor Name", color: fcfg("text"), position: 11 },
+    { kind: "field", name: "Date Available", color: fcfg("date"), position: 12 },
+    { kind: "field", name: "Dropship Eligible", color: fcfg("select", ["Y", "N", "TBD"]), position: 13 },
+    { kind: "field", name: "Canada Eligible", color: fcfg("select", ["Y", "N"]), position: 14 },
+    { kind: "field", name: "Pricing Status", color: fcfg("select", ["TBD", "In Review", "Finalized", "Approved", "N/A"]), position: 15 },
+    { kind: "field", name: "Pricing Details", color: fcfg("text"), position: 16 },
+    { kind: "field", name: "Next Design Due Date", color: fcfg("date"), position: 17 },
+    { kind: "field", name: "Design Assets Link", color: fcfg("text"), position: 18 },
+    { kind: "field", name: "Spec Sheet Link", color: fcfg("text"), position: 19 },
+    { kind: "field", name: "Sample Request Link", color: fcfg("text"), position: 20 },
+    { kind: "field", name: "Sample Requested", color: fcfg("date"), position: 21 },
+    { kind: "field", name: "Sample Received", color: fcfg("date"), position: 22 },
+      { kind: "field", name: "Latest Sample Image URL", color: fcfg("text"), position: 23 },
+    ] : [],
+  };
+  const defaults = [].concat(kinds.status, kinds.brand, kinds.person, kinds.channel, kinds.field);
   if (!defaults.length) return;
   const rows = defaults.map(d => wsStamp(d));
   const { error } = await db.from("lists").insert(rows);
   if (error) { toast("Workspace seed failed: " + error.message); return; }
   await loadLists();   // re-pull so the new rows have DB ids attached
+  toast("Innovation workspace seeded.");
 }
 function listFor(kind) { return { channel: channelsList, person: peopleList, status: statusList, brand: brandsList, field: fieldsList }[kind]; }
 // Persist promoOverrides to the sentinel row (insert it on first write; delete it when the map is empty).
