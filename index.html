@@ -1089,8 +1089,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.68";
+const VERSION = "2.69";
 const CHANGELOG = [
+  "v2.69 — Design Status is now a multi-select (a card can be e.g. “Paper Doll Ready” AND “HOLD - Backlog” at once). Seed uses the right type for new workspaces; existing Innovation workspaces get a one-time in-place upgrade of the field config on next load. Existing data values already stored as “A, B” comma-pairs parse directly into multi-select selections — no data migration needed.",
   "v2.68 — Two fixes. (1) Line Review importer is now upsert-by-title (case-insensitive) — re-running the import on the same workbook updates existing products in place instead of duplicating them. Workbook field values overwrite the matching keys; other field keys the user may have added (notes, subtasks, emails, etc.) are preserved via shallow merge. Toast shows: inserted N, updated M, skipped X empty. (2) Removed the “Innovation workspace seeded” toast — it fired every time a missing field got filled in and was noise. The seed still runs silently (adding what's missing on each refresh is intentional, so new fields like Design Status land without a manual action).",
   "v2.67 — Added a “Design Status” custom field to the Innovation seed (dropdown: Idea / Paper Doll Needed / Paper Doll Ready / HOLD - Backlog / Finalized Pricing / Approved / Production), so the Line Review column lands verbatim as a field alongside its mapped status lane. Seed is now additive by field name — missing fields are inserted on next refresh without duplicating anything you already have. Import also captures Design Status in the new field.",
   "v2.66 — Spreadsheet importer for Innovation. In the ⋯ Settings dialog (only when on the Innovation workspace), a new “⬆ Import SP Line Review (.xlsx) → Products” button reads your Line Review workbook, maps each column onto the right core field or custom field (Species, Class, UPC, Style #, Pricing Status, Vendor, MSRP/MAP/MOQ, GM %, Date Available, Dropship / Canada Eligible, Next Design Due Date, sample dates and links, Latest Sample Image URL), picks a status lane from Design Status (Hold / Production / Approved / Pricing Review / Sample Received / Sample Needed / Idea), joins Notes + Sourcing Notes, and inserts one product per row with a Description. Dates parsed from Excel serials or ISO strings. Chunked 100-at-a-time; toasts a final count with any first error.",
@@ -2057,6 +2058,16 @@ async function loadLists() {
 // configs ride on the `color` column (same convention Planner uses) as JSON {type, options?}.
 async function seedWorkspaceDefaults() {
   if (currentWorkspace !== "innovation") return;
+  // One-time upgrade: Design Status was seeded as a single-select; it's actually a multi-select because a card
+  // can be e.g. "Paper Doll Ready" AND "HOLD - Backlog" at the same time. Rewrite the field config in place.
+  // Existing card values that read "Paper Doll Ready, HOLD - Backlog" are already stored in the multi-select
+  // "comma-separated string" format (splitMulti parses them correctly), so no data migration needed.
+  const ds = fieldsList.find(f => f.name === "Design Status");
+  if (ds && ds.type === "select") {
+    const cfg = JSON.stringify({ type: "multi", options: ["Idea", "Paper Doll Needed", "Paper Doll Ready", "HOLD - Backlog", "Finalized Pricing", "Approved", "Production"] });
+    await db.from("lists").update({ color: cfg }).eq("id", ds.id);
+    await loadLists();
+  }
   // Only emit rows for kinds that are currently empty. A user who already got the lane-only seed from v2.62
   // will get the brands / people / channels / fields filled in on their next visit without duplicating lanes.
   const fcfg = (type, options) => JSON.stringify(options ? { type, options } : { type });
@@ -2093,7 +2104,7 @@ async function seedWorkspaceDefaults() {
       { kind: "channel", name: "DTC", position: 8 },
     ] : [],
     field: [
-      { kind: "field", name: "Design Status", color: fcfg("select", ["Idea", "Paper Doll Needed", "Paper Doll Ready", "HOLD - Backlog", "Finalized Pricing", "Approved", "Production"]), position: 0 },
+      { kind: "field", name: "Design Status", color: fcfg("multi", ["Idea", "Paper Doll Needed", "Paper Doll Ready", "HOLD - Backlog", "Finalized Pricing", "Approved", "Production"]), position: 0 },
     ].concat(!fieldsList.length ? [
       { kind: "field", name: "Species", color: fcfg("select", ["CAT", "DOG"]), position: 1 },
     { kind: "field", name: "Class", color: fcfg("select", ["CATNIP", "CAT TEASER", "CAT TOY", "DOG TOY", "TREAT", "APPAREL", "OTHER"]), position: 2 },
