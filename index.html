@@ -531,6 +531,16 @@
   .ws-btn { color: var(--text); }
   .ws-btn b { color: var(--accent); font-weight: 700; margin: 0 2px; }
   /* Custom text-field row with an optional "🔗 Open" button for URL values (shown only when input looks like a URL). */
+  /* Cover photo at the top of the modal — click, paste, or drag-and-drop. Scaled client-side on upload. */
+  .cover-field { position: relative; }
+  .cover-wrap { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; background: var(--panel-2); border: 1.5px dashed var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; }
+  .cover-wrap.drop-over { border-color: var(--accent); background: rgba(109,93,252,.08); }
+  .cover-wrap img { width: 100%; height: 100%; object-fit: cover; display: none; }
+  .cover-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .2px; }
+  .cover-clear { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 13px; background: rgba(0,0,0,.55); color: #fff; border: none; border-radius: 999px; cursor: pointer; display: none; }
+  .cover-clear:hover { background: rgba(0,0,0,.8); }
+  /* Thumbnail at the top of Board cards and Grid rows for anything with a cover photo. */
+  .card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px 8px 0 0; margin: -11px -11px 8px; }
   .field-link-row { display: flex; gap: 6px; align-items: stretch; }
   .field-link-row input { flex: 1; min-width: 0; }
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
@@ -858,6 +868,17 @@
     <button class="modal-x" id="modalX" title="Close">✕</button>
     <h2 id="modalTitle">New deliverable</h2>
     <input type="hidden" id="f_id" />
+    <!-- Cover photo. Click to upload (resized client-side), paste a URL, or drag-and-drop an image file. -->
+    <div class="field cover-field">
+      <label>Cover photo <span class="opt">— click to upload, paste a URL, or drag-and-drop</span></label>
+      <div id="f_cover" class="cover-wrap">
+        <img id="f_coverImg" alt="" />
+        <div class="cover-placeholder" id="f_coverPlaceholder">＋ Add cover photo</div>
+        <button type="button" id="f_coverClear" class="cover-clear" title="Remove cover">✕</button>
+      </div>
+      <input type="file" id="f_coverFile" accept="image/*" style="display:none" />
+      <input type="hidden" id="f_coverUrl" />
+    </div>
     <div class="field"><label>Title</label>
       <div class="title-wrap">
         <textarea id="f_title" rows="1" placeholder="e.g. July sale carousel"></textarea>
@@ -1115,8 +1136,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.72";
+const VERSION = "2.73";
 const CHANGELOG = [
+  "v2.73 — Cover photo for every deliverable. New section at the top of the modal: click to upload (resized client-side to 1200px wide, stored as a data URL in the card's fields), paste an image or URL, or drag-and-drop a file. Clear with the ✕ in the top-right. Board cards show a 16:9 thumbnail at the top when a cover is set. On Innovation, cards without an explicit cover fall back to “Latest Sample Image URL” automatically so Line Review imports show their samples right away.",
   "v2.72 — Notes view gets a “📋 Copy updates” button next to Expand/Collapse. Opens a dialog with a last-N-days input (default 7) and a plain-text preview of every note / email / subtask entry in that window from the current Notes filter set. Clipboard button copies the whole thing in email-friendly plain text (## headings per deliverable, 📧 email summaries, 📝 note bodies, ✅ subtask checklists). Change the day count and the preview re-renders live.",
   "v2.71 — Calendar's date anchor is now configurable per workspace. New dropdown next to the month label lists “📅 Due date” and every date-type custom field on the current workspace — pick one and the calendar re-anchors to that field (events, bars, pack order, tray's “undated” filter all follow). Planner stays on Due date; Innovation can anchor on Next Design Due Date / Date Available / Sample Received / etc. Choice persists per workspace in localStorage. Picker hides itself when there are no date-type custom fields.",
   "v2.70 — Two link fixes. (1) Line Review importer now reads Excel hyperlinks correctly — cells like “Egg Zoomers” that linked to a Google Doc now land as the actual URL in Design Assets Link / Spec Sheet Link / Sample Request Link, not just the display text. (2) Custom text fields show a “🔗 Open” button when the value looks like a URL (shows on any http/https) so you can jump to it without copy-pasting. Re-import to pick up the real URLs for products you've already imported — the upsert won't duplicate them.",
@@ -1321,7 +1343,7 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl";
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
   if (!ymdStr) return "";
@@ -3659,7 +3681,10 @@ function cardEl(c) {
   const done = completeLane && c.status === completeLane ? '<span class="done-check">✓</span> ' : '';
   const prog = subProgress(c);
   const progHtml = prog.total ? `<div class="card-prog"><div class="progress${prog.pct === 100 ? " full" : ""}"><i style="width:${prog.pct}%"></i></div><span>${prog.done}/${prog.total}</span></div>` : "";
-  el.innerHTML = `<h3>${done}${schedBadge(c) + reviewBadge(c)}${esc(c.title)}</h3>` +
+  const coverSrc = (c.fields && (c.fields[COVER_KEY] || c.fields["Latest Sample Image URL"])) || "";
+  const coverHtml = coverSrc && /^(https?:|data:)/i.test(coverSrc) ? `<img class="card-cover" src="${esc(coverSrc)}" alt="" loading="lazy" />` : "";
+  el.innerHTML = coverHtml +
+    `<h3>${done}${schedBadge(c) + reviewBadge(c)}${esc(c.title)}</h3>` +
     (badges ? `<div class="dimrow${curDisp().badge ? "" : " text"}">${badges}</div>` : "") +
     progHtml +
     (c.notes ? `<div class="notes">${renderNotes(c.notes)}</div>` : "");
@@ -4894,6 +4919,44 @@ function renderFieldInputs(values) {
 }
 
 /* ---------- modal ---------- */
+// Shared helpers for the cover-photo field in the modal. The displayed value is kept in both the <img> src and
+// a hidden input so saveModal() can read it uniformly whether it came from an upload or a pasted URL.
+function setModalCover(url) {
+  const img = document.getElementById("f_coverImg");
+  const ph = document.getElementById("f_coverPlaceholder");
+  const clr = document.getElementById("f_coverClear");
+  const hid = document.getElementById("f_coverUrl");
+  const u = (url || "").trim();
+  hid.value = u;
+  if (u) { img.src = u; img.style.display = ""; ph.style.display = "none"; clr.style.display = ""; }
+  else { img.removeAttribute("src"); img.style.display = "none"; ph.style.display = ""; clr.style.display = "none"; }
+}
+async function handleCoverFile(file) {
+  if (!/^image\//.test(file.type)) { toast("Pick an image file."); return; }
+  try { const dataUrl = await resizeImageToDataUrl(file, 1200, 0.82); setModalCover(dataUrl); }
+  catch (e) { toast("Couldn't read that image: " + (e && e.message || e)); }
+}
+// Downscale an image file to a reasonable size and return a JPEG data URL. Keeps aspect ratio; skips resize
+// when the source is already under the target width. Falls back to the original file's own data URL for
+// animated GIFs (the canvas path strips animation).
+function resizeImageToDataUrl(file, maxWidth, quality) {
+  return new Promise((resolve, reject) => {
+    if (file.type === "image/gif") { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); return; }
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d"); ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL(file.type === "image/png" ? "image/png" : "image/jpeg", quality));
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("decode failed")); };
+    img.src = url;
+  });
+}
 function openModal(card, prefill) {
   modalOpen = true;
   document.getElementById("modalTitle").textContent = (card ? "Edit " : "New ") + wsDef().nounLower;
@@ -4934,6 +4997,10 @@ function openModal(card, prefill) {
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : ((prefill && prefill.status && statusList.some(s => s.name === prefill.status)) ? prefill.status : (statusList[0] ? statusList[0].name : "Backlog"));
   document.getElementById("f_notes").innerHTML = card ? notesToEditor(card.notes) : "";
+  // Cover photo — load from the card's __coverUrl field; fall back to Latest Sample Image URL on Innovation
+  // (since the Line Review import drops that one in). Blank for new cards.
+  const coverFromCard = card ? ((card.fields && card.fields[COVER_KEY]) || (card.fields && card.fields["Latest Sample Image URL"]) || "") : "";
+  setModalCover(coverFromCard);
   // "Last updated" hint next to the Notes label — only shows when we have a stamp (set on save going forward).
   const nu = document.getElementById("f_notesUpdated");
   const nuStamp = card && card.fields && card.fields[NOTES_UPDATED_KEY];
@@ -4990,6 +5057,8 @@ function saveModal() {
   const prevStamp = existingCard && existingCard.fields && existingCard.fields[NOTES_UPDATED_KEY];
   const notesStamp = notes ? (notes !== prevNotes ? nowIso() : (prevStamp || nowIso())) : "";
   if (notesStamp) fields[NOTES_UPDATED_KEY] = notesStamp; else delete fields[NOTES_UPDATED_KEY];
+  const coverVal = (document.getElementById("f_coverUrl").value || "").trim();
+  if (coverVal) fields[COVER_KEY] = coverVal; else delete fields[COVER_KEY];
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: notes, fields };
@@ -5677,6 +5746,25 @@ async function init() {
   // Title textarea: auto-resize on input, and treat Enter as save (not newline) so it behaves like the old <input>.
   const titleEl = document.getElementById("f_title");
   titleEl.addEventListener("input", autoResizeTitle);
+  // Cover photo wiring. Supports: click-to-upload, paste image/URL into the drop zone, drag-and-drop. Images
+  // are downscaled client-side so the data URI stays reasonable (~<80KB) before being stored in the fields jsonb.
+  const coverWrap = document.getElementById("f_cover");
+  const coverFile = document.getElementById("f_coverFile");
+  coverWrap.onclick = e => { if (e.target.id === "f_coverClear") return; coverFile.click(); };
+  document.getElementById("f_coverClear").onclick = e => { e.stopPropagation(); setModalCover(""); };
+  coverFile.onchange = e => { const f = e.target.files[0]; if (f) handleCoverFile(f); e.target.value = ""; };
+  coverWrap.addEventListener("dragover", e => { e.preventDefault(); coverWrap.classList.add("drop-over"); });
+  coverWrap.addEventListener("dragleave", () => coverWrap.classList.remove("drop-over"));
+  coverWrap.addEventListener("drop", e => {
+    e.preventDefault(); coverWrap.classList.remove("drop-over");
+    const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f && /^image\//.test(f.type)) handleCoverFile(f);
+    else { const u = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain"); if (u && /^https?:\/\//i.test(u)) setModalCover(u.trim()); }
+  });
+  coverWrap.addEventListener("paste", e => {
+    const cd = e.clipboardData; if (!cd) return;
+    for (const item of cd.items || []) { if (/^image\//.test(item.type)) { const blob = item.getAsFile(); if (blob) { e.preventDefault(); handleCoverFile(blob); return; } } }
+    const text = cd.getData("text/plain"); if (text && /^https?:\/\//i.test(text)) { e.preventDefault(); setModalCover(text.trim()); }
+  });
   titleEl.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveModal(); } });
   // Full emoji picker — search bar, category chips, grid. Inline dataset covers the common set from every
   // Unicode category (~500 entries). Each entry is a [char, keywords] tuple; search matches on keywords.
