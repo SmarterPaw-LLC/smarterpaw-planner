@@ -1156,8 +1156,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.81";
+const VERSION = "2.82";
 const CHANGELOG = [
+  "v2.82 — Hotfix for v2.81: blank page on load because applyTheme called render() at init before the DOM / data were ready. Moved the re-render out of applyTheme into the theme-toggle click handler.",
   "v2.81 — Brand rows in Manage now have two color pickers (light-mode + dark-mode) and a rename / remove button like channels. Dark override stores on a sentinel row; falls back to the light color when unset; ↺ clears the override. Theme toggle now re-renders so brand colors swap live. Innovation seed no longer includes KKZ (dup of Kitty); existing KKZ rows can be removed from Manage. Meowi default color updated to the brand orange #f07830. Also fixed: cover photo not rendering in the modal (inline display='' fell back to the stylesheet's display:none).",
   "v2.76 — Role icons are editable too. The role-labels editor now has an emoji input next to each label — change ✓ to ✅, 🕒 to 📅, 📥 to ⏸️, etc. Icons flow through to card badges (done check, scheduled clock, review eye, backlog) and the role dropdown. Innovation defaults to ✅ Approved / 📅 Scheduled / 👀 In Review / ⏸️ Hold. Reset button restores workspace defaults.",
   "v2.75 — Role labels are now per-workspace and editable. In Manage → Board lanes, a new “✎ Edit role labels” link opens a small panel where you can rename each of the four lane roles for the current workspace (or leave a label empty to hide that role entirely from the dropdown). Behavior stays tied to the internal roles (Complete still marks shipped, Backlog still wipes sprint data), only the names change. Innovation defaults to Approved / Scheduled / In Review / Hold; Planner stays on Complete / Scheduled / In Review / Backlog. Choice persists per workspace.",
@@ -1791,9 +1792,6 @@ function applyTheme(t) {
   else document.documentElement.setAttribute("data-theme", "light");
   localStorage.setItem("planner-theme", theme);
   document.querySelectorAll("#themeToggle button").forEach(b => b.classList.toggle("active", b.dataset.theme === theme));
-  // Brand colors can differ per theme (brandDarkColors). Inline border/background colors are baked in at
-  // render time, so a theme flip needs a re-render to pick up the right swatch.
-  if (typeof render === "function") render();
 }
 applyTheme(localStorage.getItem("planner-theme") || "dark");   // apply immediately so first paint matches
 applyWorkspace();   // paint workspace accent + button label on first render; before any DB query runs
@@ -6153,7 +6151,7 @@ async function init() {
   document.getElementById("menuClose").onclick = () => menu.classList.remove("show");
   menu.onclick = e => { if (e.target.id === "menuOverlay") menu.classList.remove("show"); };
   document.getElementById("csvBtn").onclick = exportCSV;
-  document.querySelectorAll("#themeToggle button").forEach(b => b.onclick = () => applyTheme(b.dataset.theme));
+  document.querySelectorAll("#themeToggle button").forEach(b => b.onclick = () => { applyTheme(b.dataset.theme); render(); });
   document.getElementById("exportJsonBtn").onclick = exportJSON;
   document.getElementById("importJsonBtn").onclick = () => document.getElementById("importFile").click();
   document.getElementById("importXlsxBtn").onclick = () => document.getElementById("importXlsxFile").click();
