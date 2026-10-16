@@ -409,6 +409,11 @@
   .lt-top { display: flex; align-items: flex-start; gap: 8px; }
   .lt-chev { flex: none; padding: 0; width: 20px; height: 22px; color: var(--muted); border: none; background: transparent; font-size: 12px; cursor: pointer; }
   .lt-thumb { flex: none; width: 48px; height: 48px; object-fit: contain; background: var(--panel-2); border-radius: 6px; cursor: pointer; }
+  /* Color picker — native swatch + a hex text input next to it, kept in sync. */
+  .cp-wrap { display: inline-flex; align-items: center; gap: 5px; }
+  .cp-hex { width: 76px; padding: 4px 6px; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); text-transform: lowercase; }
+  .cp-hex:focus { outline: none; border-color: var(--accent); }
+  .menu-sec-hint { font-size: 10.5px; color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: 6px; }
   .lt-chev.ghost-chev { opacity: .35; }
   .lt-chev:hover { color: var(--text); }
   .lt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -973,10 +978,6 @@
   <div class="modal">
     <h2>Manage board</h2>
     <div class="manage-sec">
-      <span class="seclabel">Brand colors</span>
-      <div class="manage-list" id="manageBrands"></div>
-    </div>
-    <div class="manage-sec">
       <span class="seclabel">Board lanes (drag order with ↑ ↓) <button type="button" id="mEditRolesBtn" class="role-edit-link">✎ Edit role labels</button></span>
       <div class="manage-list" id="manageStatuses"></div>
       <div class="add-row"><input id="mAddStatus" placeholder="New lane…" /><button class="primary" id="mAddStatusBtn">Add</button></div>
@@ -1054,10 +1055,14 @@
 
 <!-- Data & backup -->
 <div class="overlay" id="menuOverlay">
-  <div class="modal" style="width:360px">
+  <div class="modal" style="width:460px">
     <h2>Settings</h2>
     <div class="field"><label>Theme</label>
       <div class="seg" id="themeToggle" role="tablist"><button type="button" data-theme="dark" class="active">🌙 Dark</button><button type="button" data-theme="light">☀ Light</button></div>
+    </div>
+    <div class="manage-sec">
+      <span class="seclabel">Brand toolkit <span class="menu-sec-hint">shared across workspaces</span></span>
+      <div class="manage-list" id="settingsBrandList"></div>
     </div>
     <h3 style="margin:16px 0 6px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px">Data &amp; backup</h3>
     <div class="field"><button id="exportJsonBtn" style="width:100%">⬇ Export backup (.json)</button></div>
@@ -1157,8 +1162,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.84";
+const VERSION = "2.85";
 const CHANGELOG = [
+  "v2.85 — Brand colors moved out of Manage board (per-workspace) into ⋯ Settings → Brand toolkit (global). Every color picker now has a hex field next to the swatch, kept in sync both ways. Enter or blur to commit a typed hex.",
   "v2.84 — Removed the ⤵ Merge brand button (one-time dedupe, no longer needed).",
   "v2.83 — Brand colors are now a global toolkit, shared across Planner + Innovation (stored in localStorage, not per-workspace). Legacy per-workspace dark colors migrate forward on first load. Innovation no longer defaults the sprint filter to the current week on open (sprint is a Planner-only rhythm). Modal cover photo now fits whole image (object-fit: contain) instead of cropping to fill. List view now shows a 48px cover-photo thumbnail on the left of each row when a card has a cover (or an Innovation “Latest Sample Image URL”).",
   "v2.82 — Hotfix for v2.81: blank page on load because applyTheme called render() at init before the DOM / data were ready. Moved the re-render out of applyTheme into the theme-toggle click handler.",
@@ -2330,9 +2336,34 @@ async function setPromoColor(name, color) { promoOverrides[name] = color; await 
 async function resetPromoColor(name) { if (!(name in promoOverrides)) return; delete promoOverrides[name]; await savePromoOverrides(); }
 // Global brand-color writes — localStorage-only, workspace-agnostic. Both Planner and Innovation reflect
 // the change on next render.
-function setBrandLightColor(name, hex) { setBrandColorGlobal(name, "light", hex); afterListsChanged(); }
-function setBrandDarkColor(name, hex) { setBrandColorGlobal(name, "dark", hex); afterListsChanged(); }
-function resetBrandDarkColor(name) { clearBrandColorGlobal(name, "dark"); afterListsChanged(); }
+function setBrandLightColor(name, hex) { setBrandColorGlobal(name, "light", hex); afterListsChanged(); renderSettingsBrands(); }
+function setBrandDarkColor(name, hex) { setBrandColorGlobal(name, "dark", hex); afterListsChanged(); renderSettingsBrands(); }
+function resetBrandDarkColor(name) { clearBrandColorGlobal(name, "dark"); afterListsChanged(); renderSettingsBrands(); }
+// Brand toolkit section in the ⋯ Settings dialog. Pulls brand names from the current workspace's list
+// (Jason keeps the same brand set across workspaces so this works as the shared toolkit).
+function renderSettingsBrands() {
+  const root = document.getElementById("settingsBrandList"); if (!root) return;
+  root.innerHTML = "";
+  if (!brandsList.length) { const e = document.createElement("div"); e.className = "none"; e.textContent = "No brands yet."; root.appendChild(e); return; }
+  brandsList.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(b => {
+    const row = document.createElement("div"); row.className = "manage-row";
+    const left = document.createElement("span"); left.className = "row-left";
+    const lightVal = brandColorLight(b.name) || "#999999";
+    left.appendChild(makeColorPicker(lightVal, "Light-mode color", (hex) => setBrandLightColor(b.name, hex)));
+    const darkVal = brandColorDark(b.name) || lightVal;
+    left.appendChild(makeColorPicker(darkVal, "Dark-mode color", (hex) => setBrandDarkColor(b.name, hex)));
+    const g = getBrandColorsGlobal();
+    if (g[b.name] && g[b.name].dark) {
+      const rst = document.createElement("button"); rst.type = "button"; rst.className = "mv"; rst.textContent = "↺"; rst.title = "Clear dark override (fall back to light)";
+      rst.onclick = () => resetBrandDarkColor(b.name);
+      left.appendChild(rst);
+    }
+    const nm = document.createElement("span"); nm.style.marginLeft = "6px"; nm.textContent = b.name;
+    left.appendChild(nm);
+    row.appendChild(left);
+    root.appendChild(row);
+  });
+}
 async function setColor(item, color) {
   item.color = color;
   if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
@@ -5243,7 +5274,6 @@ function fillManage(id, list, kind) {
   list.forEach((it, i) => el.appendChild(manageRow(kind, it, i)));
 }
 function renderManage() {
-  fillManage("manageBrands", brandsList, "brand");
   fillManage("manageStatuses", statusList, "status");
   fillManage("manageChannels", channelsList, "channel");
   fillManage("managePeople", peopleList, "person");
@@ -5358,9 +5388,8 @@ function fillManagePromos() {
   promos.forEach(name => {
     const row = document.createElement("div"); row.className = "manage-row";
     const left = document.createElement("span"); left.className = "row-left";
-    const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = promoColor(name); sw.title = "Color";
-    sw.onchange = () => setPromoColor(name, sw.value);
-    left.appendChild(sw); left.appendChild(document.createTextNode(name));
+    left.appendChild(makeColorPicker(promoColor(name), "Color", (hex) => setPromoColor(name, hex)));
+    left.appendChild(document.createTextNode(name));
     const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
     const ed = document.createElement("button"); ed.textContent = "✎"; ed.className = "mv"; ed.title = "Rename";
     ed.onclick = () => { const nn = prompt("Rename promotion “" + name + "” to:", name); if (nn) renamePromo(name, nn); };
@@ -5396,28 +5425,30 @@ async function removePromo(name) {
   if (name in promoOverrides) { delete promoOverrides[name]; await savePromoOverrides(); }   // drop the override entry too
   await refetch(); if (manageOpen) renderManage();
 }
+// Native color swatch + an editable hex field, kept in sync. onChange fires on swatch commit, hex Enter / blur.
+function makeColorPicker(current, title, onChange) {
+  const wrap = document.createElement("span"); wrap.className = "cp-wrap";
+  const safe = /^#[0-9a-fA-F]{6}$/.test(current || "") ? current : "#999999";
+  const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = safe; sw.title = title || "";
+  const hx = document.createElement("input"); hx.type = "text"; hx.className = "cp-hex"; hx.value = safe.toLowerCase(); hx.spellcheck = false; hx.maxLength = 7; hx.title = (title || "") + " · hex, e.g. #f07830";
+  sw.addEventListener("input", () => { hx.value = sw.value.toLowerCase(); });
+  sw.addEventListener("change", () => { hx.value = sw.value.toLowerCase(); onChange(sw.value); });
+  const applyHex = () => {
+    let v = (hx.value || "").trim(); if (v && v[0] !== "#") v = "#" + v;
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) { sw.value = v; hx.value = v.toLowerCase(); onChange(v); }
+    else hx.value = sw.value.toLowerCase();   // revert invalid
+  };
+  hx.addEventListener("blur", applyHex);
+  hx.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); hx.blur(); } });
+  wrap.appendChild(sw); wrap.appendChild(hx);
+  return wrap;
+}
 function manageRow(kind, item, idx) {
   const row = document.createElement("div"); row.className = "manage-row";
   const left = document.createElement("span"); left.className = "row-left";
-  if (kind === "brand") {
-    // Brand colors are a GLOBAL toolkit (shared across workspaces). Two pickers — light + dark — write to
-    // localStorage. Dark falls back to light when no override is set; ↺ clears the dark override.
-    const lightVal = brandColorLight(item.name) || "#999999";
-    const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = lightVal; sw.title = "Light-mode color (global, shared across workspaces)";
-    sw.onchange = () => setBrandLightColor(item.name, sw.value);
-    const darkVal = brandColorDark(item.name) || lightVal;
-    const swD = document.createElement("input"); swD.type = "color"; swD.className = "swatch"; swD.value = darkVal; swD.title = "Dark-mode color (global, shared across workspaces)";
-    swD.onchange = () => setBrandDarkColor(item.name, swD.value);
-    left.appendChild(sw); left.appendChild(swD);
-    const g = getBrandColorsGlobal();
-    if (g[item.name] && g[item.name].dark) {
-      const rst = document.createElement("button"); rst.type = "button"; rst.className = "mv"; rst.textContent = "↺"; rst.title = "Clear dark override (fall back to light)";
-      rst.onclick = () => resetBrandDarkColor(item.name); left.appendChild(rst);
-    }
-  } else if (kind === "channel" || kind === "status") {
+  if (kind === "channel" || kind === "status") {
     const eff = kind === "channel" ? channelColorOf(item.name) : statusColor(item.name);
-    const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = eff; sw.title = "Color";
-    sw.onchange = () => setColor(item, sw.value); left.appendChild(sw);
+    left.appendChild(makeColorPicker(eff, "Color", (hex) => setColor(item, hex)));
   }
   left.appendChild(document.createTextNode(item.name));
   const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
@@ -6185,7 +6216,7 @@ async function init() {
   document.getElementById("fAddField").addEventListener("keydown", e => { if (e.key === "Enter") addFl(); });
 
   const menu = document.getElementById("menuOverlay");
-  document.getElementById("menuBtn").onclick = () => menu.classList.add("show");
+  document.getElementById("menuBtn").onclick = () => { renderSettingsBrands(); menu.classList.add("show"); };
   document.getElementById("menuClose").onclick = () => menu.classList.remove("show");
   menu.onclick = e => { if (e.target.id === "menuOverlay") menu.classList.remove("show"); };
   document.getElementById("csvBtn").onclick = exportCSV;
