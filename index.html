@@ -559,6 +559,9 @@
   .image-viewer .iv-close { position: absolute; top: 16px; right: 20px; width: 36px; height: 36px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; border: none; font-size: 18px; cursor: pointer; }
   .image-viewer .iv-close:hover { background: rgba(0,0,0,.85); }
   .gallery-item img { cursor: zoom-in; }
+  .gallery-item { cursor: grab; }
+  .gallery-item.gi-dragging { opacity: .4; cursor: grabbing; }
+  .gallery-item.gi-drop-target { outline: 2px solid var(--accent); outline-offset: -1px; }
   /* Thumbnail at the top of Board cards and Grid rows for anything with a cover photo. */
   .card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px 8px 0 0; margin: -11px -11px 8px; }
   .field-link-row { display: flex; gap: 6px; align-items: stretch; }
@@ -1185,8 +1188,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.92";
+const VERSION = "2.93";
 const CHANGELOG = [
+  "v2.93 — Gallery drag-to-reorder works properly. Drag a gallery image onto another to swap positions (new order persists on save, first item is still the auto cover). Fixed the duplication bug — dragging an existing image used to be caught by the outer drop zone and re-added it as a new entry.",
   "v2.92 — Innovation workspace swaps the sprint rhythm for an Innovation Year. The sprint caption becomes “Innovation year”, the three quick-buttons become ← prev year / current year / next year → (defaults centered on 2027), and 📋 Sprint planning → 📋 Innovation planning. Sprint-planning view's week sections become year sections. Filter chips show “Year” instead of “Sprint”. One-time migration auto-stamps every existing Innovation card without a sprint value as 2027 (chunked 20 at a time, silent on success). Planner workspace unchanged.",
   "v2.91 — Tighter image compression on upload (covers → 900 px wide / q=0.72, gallery → 700 px / q=0.68) so a stray phone photo can't bloat the DB row. Click any gallery image to open it in a full-size lightbox (click outside or press ESC to close).",
   "v2.90 — Gallery fallback actually works now. A non-renderable explicit cover (Drive / SharePoint / non-image URL) no longer shadows the gallery — cover resolution skips it and shows the first renderable gallery image instead. Modal cover slot gets the same treatment. Also: clicking anywhere inside the empty gallery zone opens the file picker (not just the + Add images button).",
@@ -5297,11 +5301,36 @@ function renderGalleryEdit() {
   host.innerHTML = "";
   const noExplicitCover = !(document.getElementById("f_coverUrl").value || "").trim();
   modalGallery.forEach((url, idx) => {
-    const item = document.createElement("div"); item.className = "gallery-item";
-    const img = document.createElement("img"); img.src = url; img.alt = ""; img.loading = "lazy"; img.onerror = () => { item.style.opacity = ".3"; img.alt = "Image failed to load"; };
+    const item = document.createElement("div"); item.className = "gallery-item"; item.draggable = true; item.dataset.idx = String(idx);
+    const img = document.createElement("img"); img.src = url; img.alt = ""; img.loading = "lazy"; img.draggable = false;
+    img.onerror = () => { item.style.opacity = ".3"; img.alt = "Image failed to load"; };
     img.onclick = (e) => { e.stopPropagation(); openImageViewer(url); };
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "gi-rm"; rm.textContent = "✕"; rm.title = "Remove from gallery";
     rm.onclick = (e) => { e.stopPropagation(); modalGallery.splice(idx, 1); renderGalleryEdit(); if (noExplicitCover) setModalCover("", modalGallery[0] || ""); };
+    // Drag-to-reorder: dragstart tags with the source index + a sentinel so the outer gallery drop handler
+    // can ignore this move (otherwise it would re-add the dragged image as a new item).
+    item.addEventListener("dragstart", e => {
+      e.dataTransfer.setData("application/x-gallery-reorder", String(idx));
+      e.dataTransfer.effectAllowed = "move";
+      item.classList.add("gi-dragging");
+    });
+    item.addEventListener("dragend", () => item.classList.remove("gi-dragging"));
+    item.addEventListener("dragover", e => {
+      if (!e.dataTransfer.types.includes("application/x-gallery-reorder")) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = "move"; item.classList.add("gi-drop-target");
+    });
+    item.addEventListener("dragleave", () => item.classList.remove("gi-drop-target"));
+    item.addEventListener("drop", e => {
+      if (!e.dataTransfer.types.includes("application/x-gallery-reorder")) return;
+      e.preventDefault(); e.stopPropagation(); item.classList.remove("gi-drop-target");
+      const from = parseInt(e.dataTransfer.getData("application/x-gallery-reorder"), 10);
+      const to = idx;
+      if (isNaN(from) || from === to) return;
+      const [moved] = modalGallery.splice(from, 1);
+      modalGallery.splice(to, 0, moved);
+      renderGalleryEdit();
+      if (noExplicitCover) setModalCover("", modalGallery[0] || "");
+    });
     item.appendChild(img); item.appendChild(rm);
     if (noExplicitCover && idx === 0) { const cb = document.createElement("span"); cb.className = "gi-cover"; cb.textContent = "COVER"; item.appendChild(cb); }
     host.appendChild(item);
@@ -6185,6 +6214,9 @@ async function init() {
   galleryWrap.addEventListener("dragleave", () => galleryWrap.classList.remove("drop-over"));
   galleryWrap.addEventListener("drop", e => {
     e.preventDefault(); galleryWrap.classList.remove("drop-over");
+    // Ignore in-gallery reorder drops that bubbled up — the per-item handler already repositioned them. Without
+    // this guard, Chrome passes the dragged image's src through text/plain and we'd re-add it as a duplicate.
+    if (e.dataTransfer.types.includes("application/x-gallery-reorder")) return;
     const fs = e.dataTransfer.files; if (fs && fs.length) { handleGalleryFiles(fs); return; }
     const u = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
     if (u && /^https?:\/\//i.test(u)) {
