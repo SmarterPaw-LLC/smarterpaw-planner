@@ -1157,9 +1157,10 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.83";
+const VERSION = "2.84";
 const CHANGELOG = [
-  "v2.83 — Brand colors are now a global toolkit, shared across Planner + Innovation (stored in localStorage, not per-workspace). Legacy per-workspace dark colors migrate forward on first load. New ⤵ Merge button on brand rows moves every deliverable with that brand into another brand across all workspaces, then deletes the source. Innovation no longer defaults the sprint filter to the current week on open (sprint is a Planner-only rhythm). Modal cover photo now fits whole image (object-fit: contain) instead of cropping to fill. List view now shows a 48px cover-photo thumbnail on the left of each row when a card has a cover (or an Innovation “Latest Sample Image URL”).",
+  "v2.84 — Removed the ⤵ Merge brand button (one-time dedupe, no longer needed).",
+  "v2.83 — Brand colors are now a global toolkit, shared across Planner + Innovation (stored in localStorage, not per-workspace). Legacy per-workspace dark colors migrate forward on first load. Innovation no longer defaults the sprint filter to the current week on open (sprint is a Planner-only rhythm). Modal cover photo now fits whole image (object-fit: contain) instead of cropping to fill. List view now shows a 48px cover-photo thumbnail on the left of each row when a card has a cover (or an Innovation “Latest Sample Image URL”).",
   "v2.82 — Hotfix for v2.81: blank page on load because applyTheme called render() at init before the DOM / data were ready. Moved the re-render out of applyTheme into the theme-toggle click handler.",
   "v2.81 — Brand rows in Manage now have two color pickers (light-mode + dark-mode) and a rename / remove button like channels. Dark override stores on a sentinel row; falls back to the light color when unset; ↺ clears the override. Theme toggle now re-renders so brand colors swap live. Innovation seed no longer includes KKZ (dup of Kitty); existing KKZ rows can be removed from Manage. Meowi default color updated to the brand orange #f07830. Also fixed: cover photo not rendering in the modal (inline display='' fell back to the stylesheet's display:none).",
   "v2.76 — Role icons are editable too. The role-labels editor now has an emoji input next to each label — change ✓ to ✅, 🕒 to 📅, 📥 to ⏸️, etc. Icons flow through to card badges (done check, scheduled clock, review eye, backlog) and the role dropdown. Innovation defaults to ✅ Approved / 📅 Scheduled / 👀 In Review / ⏸️ Hold. Reset button restores workspace defaults.",
@@ -5453,44 +5454,8 @@ function manageRow(kind, item, idx) {
   const ed = document.createElement("button"); ed.textContent = "✎"; ed.className = "mv"; ed.title = "Rename";
   ed.onclick = () => { const nn = prompt("Rename “" + item.name + "” to:", item.name); if (nn) renameList(kind, item, nn); };
   ctrls.appendChild(ed);
-  if (kind === "brand") {
-    const mg = document.createElement("button"); mg.textContent = "⤵ Merge"; mg.className = "mv"; mg.title = "Move all deliverables with this brand into another brand, then delete this one";
-    mg.onclick = () => {
-      const others = brandsList.filter(b => b.name !== item.name).map(b => b.name);
-      if (!others.length) { toast("No other brand to merge into."); return; }
-      const target = prompt('Merge "' + item.name + '" into which brand?\n\nAvailable: ' + others.join(", "), others[0]);
-      if (!target) return;
-      const t = others.find(n => n.toLowerCase() === target.trim().toLowerCase());
-      if (!t) { toast('"' + target + '" is not an existing brand.'); return; }
-      mergeBrand(item, t);
-    };
-    ctrls.appendChild(mg);
-  }
   const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item); ctrls.appendChild(btn);
   row.appendChild(left); row.appendChild(ctrls); return row;
-}
-// Merge one brand into another: reassign every deliverable (across BOTH workspaces, since brand is global now),
-// then delete the source brand's lists rows in every workspace too. Global color overrides on the source are
-// dropped (the target brand keeps its own).
-async function mergeBrand(fromItem, toName) {
-  const fromName = fromItem.name;
-  const affected = cards.filter(c => c.brand === fromName).length;
-  if (!confirm('Merge "' + fromName + '" into "' + toName + '"?\n\n' + affected + ' deliverable' + (affected === 1 ? "" : "s") + ' in this workspace will be reassigned. The same reassignment runs across every workspace, and "' + fromName + '" is then deleted everywhere.')) return;
-  if (!ONLINE) {
-    cards.forEach(c => { if (c.brand === fromName) c.brand = toName; });
-    brandsList = brandsList.filter(b => b.name !== fromName);
-    clearBrandColorGlobal(fromName, null);
-    saveLocal(); saveListsLocal(); afterListsChanged();
-    toast('Merged "' + fromName + '" → "' + toName + '" (' + affected + ' card' + (affected === 1 ? "" : "s") + ').');
-    return;
-  }
-  const u1 = await db.from("deliverables").update({ brand: toName }).eq("brand", fromName);
-  if (u1.error) { toast("Merge failed: " + u1.error.message); return; }
-  const d1 = await db.from("lists").delete().eq("kind", "brand").eq("name", fromName);
-  if (d1.error) { toast("Merge: delete step failed: " + d1.error.message); }
-  clearBrandColorGlobal(fromName, null);
-  await refetch(); reloadListsAndUI();
-  toast('Merged "' + fromName + '" → "' + toName + '".');
 }
 function openManage() {
   manageOpen = true;
