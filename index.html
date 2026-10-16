@@ -1158,8 +1158,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.87";
+const VERSION = "2.88";
 const CHANGELOG = [
+  "v2.88 — Fix: built-in roles can no longer vanish from a bad save. Empty label on a built-in now gets restored to its workspace default on both save and load, instead of hiding the role. (Custom roles still remove via the Remove button.) Also recovers already-wiped role state on next refresh.",
   "v2.87 — Dropped the inline hex field from every color picker row. The browser's native color-picker dialog (opens on swatch click) already has a hex input, so the row stays clean.",
   "v2.86 — Role editor can add custom roles (any workspace). + Add role creates a new label + icon row; built-ins keep their sprint / complete / backlog behaviors, custom roles are pure labels. Each lane can be designated as any role (built-in or custom) in Manage; one role per lane. Reset to defaults clears customs too. Innovation workspace also no longer auto-filters by current user (Owner is cross-functional there).",
   "v2.85 — Brand colors moved out of Manage board (per-workspace) into ⋯ Settings → Brand toolkit (global). Every color picker now has a hex field next to the swatch, kept in sync both ways. Enter or blur to commit a typed hex.",
@@ -1703,9 +1704,13 @@ let ROLE_ICONS = loadRolePart("icons");
 function loadRolePart(kind) {
   const key = kind === "icons" ? "planner-role-icons" : "planner-role-labels";
   const defaults = (kind === "icons" ? DEFAULT_ROLE_ICONS : DEFAULT_ROLE_LABELS)[currentWorkspace] || (kind === "icons" ? DEFAULT_ROLE_ICONS.planner : DEFAULT_ROLE_LABELS.planner);
-  try { const raw = JSON.parse(localStorage.getItem(wsKey(key)) || "null"); if (raw && typeof raw === "object") return Object.assign({}, defaults, raw); }
-  catch (e) {}
-  return Object.assign({}, defaults);
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(wsKey(key)) || "null"); } catch (e) {}
+  const merged = Object.assign({}, defaults, (raw && typeof raw === "object") ? raw : {});
+  // Built-in roles must always have a label + icon. Empty values from a previous bad save get restored to
+  // defaults so the role doesn't silently disappear from the dropdown.
+  ["complete", "scheduled", "review", "backlog"].forEach(k => { if (!merged[k]) merged[k] = defaults[k]; });
+  return merged;
 }
 function loadRoleLabels() { return loadRolePart("labels"); }
 function loadRoleIcons() { return loadRolePart("icons"); }
@@ -6209,12 +6214,11 @@ async function init() {
   // workspace; the role dropdown re-renders via afterListsChanged (which calls renderManage + afterLists).
   const roleEditor = document.getElementById("mRoleEditor");
   const roleRowsHost = document.getElementById("mRoleRows");
-  const BUILTIN_PLACEHOLDERS = { complete: "Complete", scheduled: "Scheduled", review: "In Review", backlog: "Backlog" };
   const buildRoleRow = (key, label, icon, builtin) => {
     const row = document.createElement("div"); row.className = "role-row" + (builtin ? " role-builtin" : "");
     row.dataset.key = key;
     const ic = document.createElement("input"); ic.className = "role-icon-inp"; ic.maxLength = 4; ic.value = icon || ""; ic.dataset.roleIcon = key;
-    const lb = document.createElement("input"); lb.value = label || ""; lb.dataset.role = key; lb.placeholder = builtin ? BUILTIN_PLACEHOLDERS[key] + " (leave empty to hide)" : "Role name";
+    const lb = document.createElement("input"); lb.value = label || ""; lb.dataset.role = key; lb.placeholder = "Role name";
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "role-rm"; rm.textContent = "Remove"; rm.title = "Remove this custom role";
     rm.onclick = () => { row.remove(); };
     row.appendChild(ic); row.appendChild(lb); row.appendChild(rm);
@@ -6234,12 +6238,15 @@ async function init() {
     const inp = roleRowsHost.lastChild.querySelector("input[data-role]"); if (inp) inp.focus();
   };
   document.getElementById("mRolesSave").onclick = () => {
+    const defLabels = DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner;
+    const defIcons = DEFAULT_ROLE_ICONS[currentWorkspace] || DEFAULT_ROLE_ICONS.planner;
     const nextLabels = {}, nextIcons = {};
     Array.from(roleRowsHost.querySelectorAll(".role-row")).forEach(r => {
       const key = r.dataset.key;
       const lb = r.querySelector("input[data-role]"); const ic = r.querySelector("input[data-role-icon]");
-      const label = (lb && lb.value || "").trim(); const icon = (ic && ic.value || "").trim();
+      let label = (lb && lb.value || "").trim(); let icon = (ic && ic.value || "").trim();
       if (!isBuiltinRole(key) && !label) return;   // drop custom rows left blank
+      if (isBuiltinRole(key)) { if (!label) label = defLabels[key]; if (!icon) icon = defIcons[key]; }   // built-ins never empty
       nextLabels[key] = label; nextIcons[key] = icon;
     });
     // Drop any custom-role → lane mapping whose role was removed from the editor.
