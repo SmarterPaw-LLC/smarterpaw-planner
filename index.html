@@ -1189,8 +1189,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.94";
+const VERSION = "2.95";
 const CHANGELOG = [
+  "v2.95 — Innovation workspace fixes: (1) Moving a product to the Hold lane no longer wipes its Innovation year (year is strategic, not a sprint commitment). (2) Removed the ⇒ Push N → next sprint bulk button from Innovation (products don't belong on a weekly push rhythm).",
   "v2.94 — Innovation modal has a per-card year input. The modal's “Sprint week” field becomes “Innovation year” on Innovation and shows a 4-digit year input (defaults to the current Innovation Year, 2027). Sprints-tracked / Historical sprints sections are hidden on Innovation (not meaningful for year-scoped products). Planner workspace unchanged.",
   "v2.93 — Gallery drag-to-reorder works properly. Drag a gallery image onto another to swap positions (new order persists on save, first item is still the auto cover). Fixed the duplication bug — dragging an existing image used to be caught by the outer drop zone and re-added it as a new entry.",
   "v2.92 — Innovation workspace swaps the sprint rhythm for an Innovation Year. The sprint caption becomes “Innovation year”, the three quick-buttons become ← prev year / current year / next year → (defaults centered on 2027), and 📋 Sprint planning → 📋 Innovation planning. Sprint-planning view's week sections become year sections. Filter chips show “Year” instead of “Sprint”. One-time migration auto-stamps every existing Innovation card without a sprint value as 2027 (chunked 20 at a time, silent on success). Planner workspace unchanged.",
@@ -2187,8 +2188,10 @@ async function updateCard(id, d) {
   ]);
   // If the new status is the Backlog lane, strip current sprint data: due/end/planning-sprint/sprints-tracked
   // all get cleared. Historical sprints (rebuilt below from preHist) are preserved as the permanent record.
+  // Innovation workspace is excluded — year is a strategic bucket, not a sprint commitment, so moving a product
+  // to Hold shouldn't un-assign its planning year.
   const bl = effBacklogLane();
-  const enteringBacklog = bl && d.status === bl && existing && existing.status !== bl;
+  const enteringBacklog = !isInnovation() && bl && d.status === bl && existing && existing.status !== bl;
   if (enteringBacklog) {
     d.due = ""; d.end = "";
     d.fields = Object.assign({}, d.fields || {});
@@ -3022,11 +3025,11 @@ function renderActiveFilters() {
   };
   bar.appendChild(clear);
   // Push-all action: bulk-shift every visible card's sprint forward by one week (due, end, and manual SPRINT_KEY
-  // each get +7 days). Only shown when at least one filter is active — otherwise it's a foot-gun.
-  // Excludes Backlog-lane cards from the count since Push skips them entirely (not in a sprint).
+  // each get +7 days). Only shown when at least one filter is active — otherwise it's a foot-gun. Hidden on
+  // Innovation since products aren't on a weekly rhythm (year-scoped, strategic).
   const bl = effBacklogLane();
   const nCards = visibleCards().filter(c => !bl || c.status !== bl).length;
-  if (nCards) {
+  if (nCards && !isInnovation()) {
     const push = document.createElement("button"); push.className = "af-push"; push.textContent = "⇒ Push " + nCards + " → next sprint";
     push.title = "Move every visible card forward by 1 week (due, end, and planning sprint each +7 days). Skips Backlog-lane cards, asks separately about Complete-lane cards.";
     push.onclick = pushVisibleToNextSprint;
