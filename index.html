@@ -1207,8 +1207,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.00";
+const VERSION = "3.01";
 const CHANGELOG = [
+  "v3.01 — Silenced the “Stamped N Innovation products as 2027” toast. It was firing on every browser that didn't yet have the migration flag (a new browser, cleared cache, etc.). Migration still runs silently; only failures surface now.",
   "v3.00 — Note rows auto-grow to fit their content, no in-row scrolling. Date column tightened to 88 px.",
   "v2.99 — Grid view renders Notes as plain text (dated lines, newest first) instead of showing raw <p> / &amp; markup. CSV export does the same, with “ | ” between entries so the whole thing stays on one row.",
   "v2.98 — Deliverable modal widened to 640 px so note rows have room to breathe. Note textarea gets slightly bigger font + a taller default row, date column tightened to 108 px to give the text more width.",
@@ -2599,8 +2600,9 @@ async function maybeMigrateInnovationYear2027() {
     }));
     failed += results.filter(r => r.error).length;
   }
-  if (failed) toast("Stamped " + (toStamp.length - failed) + " of " + toStamp.length + " Innovation products as 2027 (" + failed + " failed).");
-  else toast("Stamped " + toStamp.length + " Innovation product" + (toStamp.length === 1 ? "" : "s") + " as 2027.");
+  // Silent on success — the migration is background bookkeeping, not something the user needs reminded of
+  // every page load (any browser without the flag re-runs it, which spams the toast). Only surface failures.
+  if (failed) toast("Innovation Year migration: " + failed + " of " + toStamp.length + " updates failed.");
   await refetch();
 }
 async function maybeMigrateBacklogTodo() {
