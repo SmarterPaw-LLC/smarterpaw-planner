@@ -1151,14 +1151,14 @@
 <script>
 "use strict";
 const BRANDS = [{ name: "Meowi" }, { name: "Doggi" }, { name: "Kitty" }];
-const DEFAULT_BRAND_HEX = { Meowi: "#6d5dfc", Doggi: "#f5a524", Kitty: "#ec4899" };
+const DEFAULT_BRAND_HEX = { Meowi: "#f07830", Doggi: "#f5a524", Kitty: "#ec4899" };
 const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / Landing"];
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.80";
+const VERSION = "2.81";
 const CHANGELOG = [
-  "v2.80 — Fully reverted the dated-notes work (v2.77 – v2.79). Notes view is back to one entry per card with the inline editor, as it was before. The notes blob is a plain editable field — nothing parses it or re-renders dated chunks.",
+  "v2.81 — Brand rows in Manage now have two color pickers (light-mode + dark-mode) and a rename / remove button like channels. Dark override stores on a sentinel row; falls back to the light color when unset; ↺ clears the override. Theme toggle now re-renders so brand colors swap live. Innovation seed no longer includes KKZ (dup of Kitty); existing KKZ rows can be removed from Manage. Meowi default color updated to the brand orange #f07830. Also fixed: cover photo not rendering in the modal (inline display='' fell back to the stylesheet's display:none).",
   "v2.76 — Role icons are editable too. The role-labels editor now has an emoji input next to each label — change ✓ to ✅, 🕒 to 📅, 📥 to ⏸️, etc. Icons flow through to card badges (done check, scheduled clock, review eye, backlog) and the role dropdown. Innovation defaults to ✅ Approved / 📅 Scheduled / 👀 In Review / ⏸️ Hold. Reset button restores workspace defaults.",
   "v2.75 — Role labels are now per-workspace and editable. In Manage → Board lanes, a new “✎ Edit role labels” link opens a small panel where you can rename each of the four lane roles for the current workspace (or leave a label empty to hide that role entirely from the dropdown). Behavior stays tied to the internal roles (Complete still marks shipped, Backlog still wipes sprint data), only the names change. Innovation defaults to Approved / Scheduled / In Review / Hold; Planner stays on Complete / Scheduled / In Review / Backlog. Choice persists per workspace.",
   "v2.74 — Fixed broken-image placeholders on Innovation Board cards. Line Review “Latest Sample Image URL” cells often point at Google Drive / SharePoint hyperlinks or dead URLs that aren't actually images — those were rendering as broken img icons. Now those hosts are filtered out upfront, and any image that still fails to load removes itself via onerror.",
@@ -1352,6 +1352,12 @@ const PROMO_PALETTE = ["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55
 const PROMO_COLORS_KEY = "__promo_colors__";
 let promoOverrides = {};   // { promoName: hexColor }
 let _promoOverrideRowId = null;   // id of the sentinel row (null until first save)
+// Brand dark-mode color overrides — same sentinel-row trick as PROMO_COLORS_KEY. Light-mode color stays
+// on the brand's own row (lists.color); dark overrides live here keyed by brand name.
+const BRAND_DARK_COLORS_KEY = "__brand_dark_colors__";
+let brandDarkColors = {};   // { brandName: hexColor }
+let _brandDarkOverrideRowId = null;
+function isDarkTheme() { return document.documentElement.getAttribute("data-theme") !== "light"; }
 function promoHash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
 function promoColor(name) { if (!name) return ""; return promoOverrides[name] || PROMO_PALETTE[promoHash(name) % PROMO_PALETTE.length]; }
 function cardPromo(c) { return (c.fields && c.fields[PROMO_KEY]) || ""; }
@@ -1540,7 +1546,10 @@ function colorOf(list, name, fallbackMap) {
   const idx = list.findIndex(x => x.name === name);
   return PALETTE[(idx < 0 ? 0 : idx) % PALETTE.length];
 }
-function brandColor(n) { return colorOf(brandsList, n, DEFAULT_BRAND_HEX); }
+function brandColor(n) {
+  if (isDarkTheme() && brandDarkColors[n]) return brandDarkColors[n];
+  return colorOf(brandsList, n, DEFAULT_BRAND_HEX);
+}
 function channelColorOf(n) { return colorOf(channelsList, n, null); }
 function statusColor(name) { return colorOf(statusList, name, STATUS_COLORS); }
 function colorFor(c) { return colorBy === "channel" ? channelColorOf(c.channel) : colorBy === "status" ? statusColor(c.status) : colorBy === "priority" ? priorityColor(cardPriority(c)) : brandColor(c.brand); }
@@ -1782,6 +1791,9 @@ function applyTheme(t) {
   else document.documentElement.setAttribute("data-theme", "light");
   localStorage.setItem("planner-theme", theme);
   document.querySelectorAll("#themeToggle button").forEach(b => b.classList.toggle("active", b.dataset.theme === theme));
+  // Brand colors can differ per theme (brandDarkColors). Inline border/background colors are baked in at
+  // render time, so a theme flip needs a re-render to pick up the right swatch.
+  if (typeof render === "function") render();
 }
 applyTheme(localStorage.getItem("planner-theme") || "dark");   // apply immediately so first paint matches
 applyWorkspace();   // paint workspace accent + button label on first render; before any DB query runs
@@ -2151,10 +2163,13 @@ async function loadLists() {
   data.filter(r => r.kind === "promotion").forEach(r => { if (r.color) promoOverrides[r.name] = { id: r.id, color: r.color }; });
   // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
   // The sentinel name PROMO_COLORS_KEY holds a JSON {promoName: hexColor} map — pulled into promoOverrides, not fieldsList.
-  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
   const pcRow = data.find(r => r.kind === "field" && r.name === PROMO_COLORS_KEY);
   promoOverrides = {}; _promoOverrideRowId = pcRow ? pcRow.id : null;
   if (pcRow && pcRow.color) { try { const m = JSON.parse(pcRow.color); if (m && typeof m === "object") promoOverrides = m; } catch (e) {} }
+  const bdRow = data.find(r => r.kind === "field" && r.name === BRAND_DARK_COLORS_KEY);
+  brandDarkColors = {}; _brandDarkOverrideRowId = bdRow ? bdRow.id : null;
+  if (bdRow && bdRow.color) { try { const m = JSON.parse(bdRow.color); if (m && typeof m === "object") brandDarkColors = m; } catch (e) {} }
   completeLane = (data.find(r => r.kind === "status" && r.is_complete) || {}).name || "";
   // Bare-object defaults (no DB id) are a last resort for the Planner workspace where migrations may be partial.
   // Non-default workspaces (Innovation) start empty and are seeded with real DB rows on first visit by
@@ -2196,10 +2211,9 @@ async function seedWorkspaceDefaults() {
       { kind: "status", name: "Hold", position: 7 },
     ] : [],
     brand: !brandsList.length ? [
-      { kind: "brand", name: "Meowi", position: 1, color: "#6d5dfc" },
+      { kind: "brand", name: "Meowi", position: 1, color: "#f07830" },
       { kind: "brand", name: "Doggi", position: 2, color: "#f5a524" },
       { kind: "brand", name: "Kitty", position: 3, color: "#ec4899" },
-      { kind: "brand", name: "KKZ", position: 4, color: "#22c55e" },
     ] : [],
     person: !peopleList.length ? [
       { kind: "person", name: "Jason", position: 1 },
@@ -2279,6 +2293,22 @@ async function savePromoOverrides() {
 }
 async function setPromoColor(name, color) { promoOverrides[name] = color; await savePromoOverrides(); }
 async function resetPromoColor(name) { if (!(name in promoOverrides)) return; delete promoOverrides[name]; await savePromoOverrides(); }
+// Persist brandDarkColors to its sentinel row (same shape as savePromoOverrides).
+async function saveBrandDarkColors() {
+  if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
+  const empty = !Object.keys(brandDarkColors).length;
+  if (_brandDarkOverrideRowId) {
+    if (empty) { const { error } = await db.from("lists").delete().eq("id", _brandDarkOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } _brandDarkOverrideRowId = null; }
+    else { const { error } = await db.from("lists").update({ color: JSON.stringify(brandDarkColors) }).eq("id", _brandDarkOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } }
+  } else if (!empty) {
+    const { data, error } = await db.from("lists").insert(wsStamp({ kind: "field", name: BRAND_DARK_COLORS_KEY, color: JSON.stringify(brandDarkColors), position: 99999 })).select("id").single();
+    if (error) { toast("Save failed: " + error.message); return; }
+    _brandDarkOverrideRowId = data.id;
+  }
+  afterListsChanged();
+}
+async function setBrandDarkColor(name, color) { brandDarkColors[name] = color; await saveBrandDarkColors(); }
+async function resetBrandDarkColor(name) { if (!(name in brandDarkColors)) return; delete brandDarkColors[name]; await saveBrandDarkColors(); }
 async function setColor(item, color) {
   item.color = color;
   if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
@@ -2344,6 +2374,7 @@ async function removeList(kind, item) {
   }
   const { error } = await db.from("lists").delete().eq("id", item.id);
   if (error) { toast("Remove failed: " + error.message); return; }
+  if (kind === "brand" && brandDarkColors[item.name]) { delete brandDarkColors[item.name]; await saveBrandDarkColors(); }
   if (kind === "field") await refetch();
   reloadListsAndUI();
 }
@@ -2368,13 +2399,20 @@ function cascadeRenameLocal(kind, old, neu) {
   cards.forEach(c => {
     if (kind === "status" && c.status === old) c.status = neu;
     else if (kind === "channel" && c.channel === old) c.channel = neu;
+    else if (kind === "brand" && c.brand === old) c.brand = neu;
     else if (kind === "person") { const o = splitOwners(c.owner); if (o.includes(old)) c.owner = o.map(x => x === old ? neu : x).join(", "); }
     else if (kind === "field" && c.fields && (old in c.fields)) { c.fields[neu] = c.fields[old]; delete c.fields[old]; }
   });
+  if (kind === "brand" && brandDarkColors[old]) { brandDarkColors[neu] = brandDarkColors[old]; delete brandDarkColors[old]; }
 }
 async function cascadeRenameDB(kind, old, neu) {
   if (kind === "status") { await wsEq(db.from("deliverables").update({ status: neu }).eq("status", old)); return; }
   if (kind === "channel") { await wsEq(db.from("deliverables").update({ channel: neu }).eq("channel", old)); return; }
+  if (kind === "brand") {
+    await wsEq(db.from("deliverables").update({ brand: neu }).eq("brand", old));
+    if (brandDarkColors[old]) { brandDarkColors[neu] = brandDarkColors[old]; delete brandDarkColors[old]; await saveBrandDarkColors(); }
+    return;
+  }
   if (kind === "person") {
     const affected = cards.filter(c => splitOwners(c.owner).includes(old));
     await Promise.all(affected.map(c => db.from("deliverables").update({ owner: splitOwners(c.owner).map(x => x === old ? neu : x).join(", ") }).eq("id", c.id)));
@@ -4984,8 +5022,10 @@ function setModalCover(url) {
   const hid = document.getElementById("f_coverUrl");
   const u = (url || "").trim();
   hid.value = u;
-  if (u) { img.src = u; img.style.display = ""; ph.style.display = "none"; clr.style.display = ""; }
-  else { img.removeAttribute("src"); img.style.display = "none"; ph.style.display = ""; clr.style.display = "none"; }
+  // Use explicit display values — the stylesheet defaults .cover-wrap img and .cover-clear to display:none,
+  // so setting inline style to "" removes the inline rule and falls back to the hidden default.
+  if (u) { img.src = u; img.style.display = "block"; ph.style.display = "none"; clr.style.display = "block"; }
+  else { img.removeAttribute("src"); img.style.display = "none"; ph.style.display = "flex"; clr.style.display = "none"; }
 }
 async function handleCoverFile(file) {
   if (!/^image\//.test(file.type)) { toast("Pick an image file."); return; }
@@ -5322,8 +5362,22 @@ async function removePromo(name) {
 function manageRow(kind, item, idx) {
   const row = document.createElement("div"); row.className = "manage-row";
   const left = document.createElement("span"); left.className = "row-left";
-  if (kind === "brand" || kind === "channel" || kind === "status") {
-    const eff = kind === "brand" ? brandColor(item.name) : kind === "channel" ? channelColorOf(item.name) : statusColor(item.name);
+  if (kind === "brand") {
+    // Two pickers: light-mode color (stored on the brand row's own color column) and dark-mode override
+    // (brandDarkColors sentinel row). Dark falls back to light when no override is set.
+    const lightVal = (item && item.color) || (DEFAULT_BRAND_HEX[item.name]) || colorOf(brandsList, item.name, DEFAULT_BRAND_HEX);
+    const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = lightVal; sw.title = "Light-mode color";
+    sw.onchange = () => setColor(item, sw.value);
+    const darkVal = brandDarkColors[item.name] || lightVal;
+    const swD = document.createElement("input"); swD.type = "color"; swD.className = "swatch"; swD.value = darkVal; swD.title = "Dark-mode color";
+    swD.onchange = () => setBrandDarkColor(item.name, swD.value);
+    left.appendChild(sw); left.appendChild(swD);
+    if (brandDarkColors[item.name]) {
+      const rst = document.createElement("button"); rst.type = "button"; rst.className = "mv"; rst.textContent = "↺"; rst.title = "Clear dark override (fall back to light)";
+      rst.onclick = () => resetBrandDarkColor(item.name); left.appendChild(rst);
+    }
+  } else if (kind === "channel" || kind === "status") {
+    const eff = kind === "channel" ? channelColorOf(item.name) : statusColor(item.name);
     const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = eff; sw.title = "Color";
     sw.onchange = () => setColor(item, sw.value); left.appendChild(sw);
   }
@@ -5359,12 +5413,10 @@ function manageRow(kind, item, idx) {
     const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
     ctrls.appendChild(up); ctrls.appendChild(dn);
   }
-  if (kind !== "brand") {
-    const ed = document.createElement("button"); ed.textContent = "✎"; ed.className = "mv"; ed.title = "Rename";
-    ed.onclick = () => { const nn = prompt("Rename “" + item.name + "” to:", item.name); if (nn) renameList(kind, item, nn); };
-    ctrls.appendChild(ed);
-    const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item); ctrls.appendChild(btn);
-  }
+  const ed = document.createElement("button"); ed.textContent = "✎"; ed.className = "mv"; ed.title = "Rename";
+  ed.onclick = () => { const nn = prompt("Rename “" + item.name + "” to:", item.name); if (nn) renameList(kind, item, nn); };
+  ctrls.appendChild(ed);
+  const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item); ctrls.appendChild(btn);
   row.appendChild(left); row.appendChild(ctrls); return row;
 }
 function openManage() {
