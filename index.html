@@ -1185,8 +1185,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.91";
+const VERSION = "2.92";
 const CHANGELOG = [
+  "v2.92 — Innovation workspace swaps the sprint rhythm for an Innovation Year. The sprint caption becomes “Innovation year”, the three quick-buttons become ← prev year / current year / next year → (defaults centered on 2027), and 📋 Sprint planning → 📋 Innovation planning. Sprint-planning view's week sections become year sections. Filter chips show “Year” instead of “Sprint”. One-time migration auto-stamps every existing Innovation card without a sprint value as 2027 (chunked 20 at a time, silent on success). Planner workspace unchanged.",
   "v2.91 — Tighter image compression on upload (covers → 900 px wide / q=0.72, gallery → 700 px / q=0.68) so a stray phone photo can't bloat the DB row. Click any gallery image to open it in a full-size lightbox (click outside or press ESC to close).",
   "v2.90 — Gallery fallback actually works now. A non-renderable explicit cover (Drive / SharePoint / non-image URL) no longer shadows the gallery — cover resolution skips it and shows the first renderable gallery image instead. Modal cover slot gets the same treatment. Also: clicking anywhere inside the empty gallery zone opens the file picker (not just the + Add images button).",
   "v2.89 — Image gallery per deliverable. New Image gallery section in the modal — click + Add images, drop multiple at once, or paste. First image serves as the auto cover whenever no explicit cover photo is set. Cover resolution across Board / List / modal is unified: explicit cover → gallery[0] → Innovation’s Latest Sample Image URL as a legacy fallback. ✕ on a gallery item removes just that image.",
@@ -1495,8 +1496,11 @@ function sprintChipStyle(weekStr) {
 }
 // Sprint is auto-derived from the deliverable's date (the first week a date range falls into).
 // Undated items fall back to a manually-set sprint (fields.__sprint).
-function derivedSprintFor(due, end) { const a = due || end, b = end || due; return a ? isoWeek(a < b ? a : b) : ""; }
-function cardSprint(c) { return derivedSprintFor(c.due, c.end) || ((c.fields && c.fields[SPRINT_KEY]) || ""); }
+// On the Innovation workspace, sprint buckets are YEARS (e.g. "2027"), not ISO weeks — products don't have
+// weekly rhythm. There's no auto-derivation from due; sprint is always the manual value.
+function isInnovation() { return currentWorkspace === "innovation"; }
+function derivedSprintFor(due, end) { if (isInnovation()) return ""; const a = due || end, b = end || due; return a ? isoWeek(a < b ? a : b) : ""; }
+function cardSprint(c) { if (isInnovation()) return (c.fields && c.fields[SPRINT_KEY]) || ""; return derivedSprintFor(c.due, c.end) || ((c.fields && c.fields[SPRINT_KEY]) || ""); }
 // Record of distinct sprints a task has been assigned to over time (carryover tracking).
 function cardSprintHistory(c) { return (c.fields && Array.isArray(c.fields[SPRINTHIST_KEY])) ? c.fields[SPRINTHIST_KEY] : []; }
 // Historical sprints — the permanent, append-only record of every sprint this card has ever been in. Unlike the
@@ -1528,6 +1532,8 @@ function mergeSprintHistory(c, due, end) {
 // All sprints a card touches: recorded history ∪ every week its date range spans ∪ its manual planning sprint (if set).
 // Dated + manual can now coexist ("planning sprint": e.g., due July 31 but start working in Wk 27).
 function cardSprints(c) {
+  // Innovation: sprint is a year string, not derived from dates. Just return the manual value if set.
+  if (isInnovation()) { const m = c.fields && c.fields[SPRINT_KEY]; return m ? [m] : []; }
   const set = new Set(cardSprintHistory(c));
   sprintsInRange(c.due, c.end).forEach(w => set.add(w));
   const m = c.fields && c.fields[SPRINT_KEY]; if (m) set.add(m);
@@ -1537,6 +1543,7 @@ function cardSprints(c) {
 // Sprints-tracked history. Used by the Sprint-planning view so a card only shows in the week(s) it's currently
 // planned for, not every week it has ever been in.
 function cardCurrentSprints(c) {
+  if (isInnovation()) { const m = c.fields && c.fields[SPRINT_KEY]; return m ? [m] : []; }
   const set = new Set(sprintsInRange(c.due, c.end));
   const m = c.fields && c.fields[SPRINT_KEY]; if (m) set.add(m);
   return [...set].sort();
@@ -1728,6 +1735,34 @@ function applyWorkspace() {
   const add = document.getElementById("addBtn"); if (add) add.textContent = "+ " + wsDef().noun;
   // XLSX importer visible on Innovation only; it's targeted at the SP Line Review workbook.
   const xField = document.getElementById("importXlsxField"); if (xField) xField.style.display = currentWorkspace === "innovation" ? "" : "none";
+  syncSprintNavLabels();
+}
+// Innovation workspace uses YEAR buckets instead of ISO weeks. innovationYear is the center year for the
+// three nav buttons; left shifts it -1, right shifts +1, middle resets to current calendar year.
+const DEFAULT_INNOVATION_YEAR = 2027;
+let innovationYear = parseInt(localStorage.getItem("planner-innovation-year") || String(DEFAULT_INNOVATION_YEAR), 10) || DEFAULT_INNOVATION_YEAR;
+function saveInnovationYear() { localStorage.setItem("planner-innovation-year", String(innovationYear)); }
+function syncSprintNavLabels() {
+  const cap = document.querySelector(".qf-sprint-label"); if (!cap) return;
+  const btns = document.querySelectorAll("#sprintQuick button");
+  const planBtn = document.getElementById("sprintPlanBtn");
+  if (isInnovation()) {
+    cap.textContent = "Innovation year";
+    if (btns.length === 3) {
+      btns[0].textContent = "← " + (innovationYear - 1);
+      btns[1].textContent = String(innovationYear);
+      btns[2].textContent = (innovationYear + 1) + " →";
+      btns[0].title = "Previous year"; btns[1].title = "Current center year"; btns[2].title = "Next year";
+    }
+    if (planBtn) { planBtn.innerHTML = "📋 Innovation planning"; planBtn.title = "Open the innovation planning dashboard"; }
+  } else {
+    cap.textContent = "Sprint";
+    if (btns.length === 3) {
+      btns[0].textContent = "← Last week"; btns[1].textContent = "This week"; btns[2].textContent = "Next week →";
+      btns[0].title = btns[1].title = btns[2].title = "";
+    }
+    if (planBtn) { planBtn.innerHTML = "📋 Sprint planning"; planBtn.title = "Open the sprint planning dashboard"; }
+  }
 }
 function wsKey(k) { return currentWorkspace === "planner" ? k : k + "-" + currentWorkspace; }
 // Per-workspace labels + icons for the four lane roles. Behavior stays tied to the internal keys (complete /
@@ -2451,6 +2486,34 @@ async function reloadListsAndUI() { await loadLists(); afterListsChanged(); }
 // One-time migration: rename an existing "Backlog" lane to "To Do" (cards on that lane follow), add a fresh
 // "Backlog" lane, and designate it as the backlog lane. Guarded by a localStorage flag AND idempotent (skips if
 // "To Do" already exists). Only runs online — offline installs shouldn't reshape a shared DB.
+// One-time: stamp every existing Innovation card without a sprint value as sprint="2027" so the year-based nav
+// has something to show on first open. Runs after cards are loaded, chunked 20 at a time so a large batch
+// doesn't trip Supabase's statement timeout. Guarded by a localStorage flag so it only runs once per browser.
+async function maybeMigrateInnovationYear2027() {
+  if (!isInnovation()) return;
+  if (localStorage.getItem("planner-innov-year-2027-seeded")) return;
+  const toStamp = cards.filter(c => !c.fields || !c.fields[SPRINT_KEY]);
+  localStorage.setItem("planner-innov-year-2027-seeded", "1");   // flag before writes so a mid-run reload doesn't duplicate
+  if (!toStamp.length) return;
+  if (!ONLINE) {
+    toStamp.forEach(c => { c.fields = c.fields || {}; c.fields[SPRINT_KEY] = "2027"; });
+    saveLocal();
+    return;
+  }
+  const CHUNK = 20;
+  let failed = 0;
+  for (let i = 0; i < toStamp.length; i += CHUNK) {
+    const batch = toStamp.slice(i, i + CHUNK);
+    const results = await Promise.all(batch.map(c => {
+      const f = Object.assign({}, c.fields || {}); f[SPRINT_KEY] = "2027";
+      return db.from("deliverables").update({ fields: f }).eq("id", c.id);
+    }));
+    failed += results.filter(r => r.error).length;
+  }
+  if (failed) toast("Stamped " + (toStamp.length - failed) + " of " + toStamp.length + " Innovation products as 2027 (" + failed + " failed).");
+  else toast("Stamped " + toStamp.length + " Innovation product" + (toStamp.length === 1 ? "" : "s") + " as 2027.");
+  await refetch();
+}
 async function maybeMigrateBacklogTodo() {
   if (!ONLINE) return;
   if (localStorage.getItem(wsKey("planner-backlog-todo-migrated-v1"))) return;
@@ -2915,15 +2978,21 @@ function renderActiveFilters() {
   const bar = document.getElementById("activeFilters"); if (!bar) return;
   const overdueBtn = document.getElementById("overdueBtn"); if (overdueBtn) overdueBtn.classList.toggle("on", filterOverdue);
   // Sprint quick-toggle active-state — mark whichever button matches the sole sprint filter (if any).
+  // On Innovation this maps to years instead of ISO weeks (centered on innovationYear).
   const now = new Date();
-  const wks = { last: isoWeek(ymd(addDays(now, -7))), this: isoWeek(ymd(now)), next: isoWeek(ymd(addDays(now, 7))) };
+  const wks = isInnovation()
+    ? { last: String(innovationYear - 1), this: String(innovationYear), next: String(innovationYear + 1) }
+    : { last: isoWeek(ymd(addDays(now, -7))), this: isoWeek(ymd(now)), next: isoWeek(ymd(addDays(now, 7))) };
   const soleWk = (filters.sprint && filters.sprint.size === 1) ? [...filters.sprint][0] : "";
   document.querySelectorAll("#sprintQuick button").forEach(b => b.classList.toggle("active", wks[b.dataset.w] === soleWk));
   bar.innerHTML = "";
   const pills = [];
   if (searchText.trim()) pills.push({ k: "Search", v: '“' + searchText.trim() + '”', remove: () => { searchText = ""; const s = document.getElementById("search"); if (s) s.value = ""; } });
   if (filterOverdue) pills.push({ k: "⚠", v: "Overdue · past sprints, not complete", remove: () => { filterOverdue = false; } });
-  if (filters.sprint) filters.sprint.forEach(v => { const disp = v ? fmtSprint(v) + " · " + sprintRange(v) : "No sprint"; pills.push({ k: "Sprint", v: disp, remove: () => { filters.sprint.delete(v); if (!filters.sprint.size) delete filters.sprint; } }); });
+  if (filters.sprint) filters.sprint.forEach(v => {
+    const disp = v ? (isInnovation() ? v : (fmtSprint(v) + " · " + sprintRange(v))) : (isInnovation() ? "No year" : "No sprint");
+    pills.push({ k: isInnovation() ? "Year" : "Sprint", v: disp, remove: () => { filters.sprint.delete(v); if (!filters.sprint.size) delete filters.sprint; } });
+  });
   qfDims().forEach(d => { if (filters[d.key]) filters[d.key].forEach(v => pills.push({ k: d.label, v, remove: () => { filters[d.key].delete(v); if (!filters[d.key].size) delete filters[d.key]; } })); });
   if (sortKey) pills.push({ k: "Sort", v: sortLabel(sortKey) + (sortDir > 0 ? " ↑" : " ↓"), remove: () => { sortKey = ""; } });
   const opLbl = { is: "is", isnot: "is not", empty: "is empty", notempty: "is not empty" };
@@ -2974,9 +3043,10 @@ function savePlanningLanes() { if (planningLanes) localStorage.setItem(wsKey("pl
 // sprint filter and the overdue toggle — this view has its own week semantics (backlog / last / next).
 function renderSprintPlanning() {
   const now = new Date();
-  const lastWk = isoWeek(ymd(addDays(now, -7)));
-  const thisWk = isoWeek(ymd(now));
-  const nextWk = isoWeek(ymd(addDays(now, 7)));
+  const innov = isInnovation();
+  const lastWk = innov ? String(innovationYear - 1) : isoWeek(ymd(addDays(now, -7)));
+  const thisWk = innov ? String(innovationYear)     : isoWeek(ymd(now));
+  const nextWk = innov ? String(innovationYear + 1) : isoWeek(ymd(addDays(now, 7)));
   const bl = effBacklogLane();
   const lanes = activePlanningLanes();
   // Lane toggles — persist which lanes get counted in the per-lane summary.
@@ -3081,9 +3151,9 @@ function renderSprintPlanning() {
       // Per-card push forward — one week at a time. Only on Last week and This week (Next week has no visible
       // "further" section to land in). Deliberate button, no bulk sweep, so mistakes are one card at a time.
       if (dropKind === "week" && dropWk && dropWk !== nextWk) {
-        const targetWk = isoWeek(ymdUTC(new Date(isoWeekStart(dropWk).getTime() + 7 * 86400000)));
+        const targetWk = innov ? String(parseInt(dropWk, 10) + 1) : isoWeek(ymdUTC(new Date(isoWeekStart(dropWk).getTime() + 7 * 86400000)));
         const pb = document.createElement("button"); pb.type = "button"; pb.className = "planning-card-push";
-        pb.textContent = "→"; pb.title = "Push to " + fmtSprintFull(targetWk);
+        pb.textContent = "→"; pb.title = "Push to " + (innov ? targetWk : fmtSprintFull(targetWk));
         pb.onclick = e => { e.stopPropagation(); moveCardToSprint(c.id, targetWk); };
         item.appendChild(pb);
       }
@@ -3092,10 +3162,16 @@ function renderSprintPlanning() {
     s.appendChild(cardsBox);
     return s;
   };
-  grid.appendChild(sec("📥 Backlog", bl ? "Cards on the “" + bl + "” lane" : "Set a Backlog lane in Manage → status to populate this section.", backlog, false, "backlog"));
-  grid.appendChild(sec("← Last week", "Wk " + lastWk.split("-W")[1] + " · " + sprintRange(lastWk), last, true, "week", lastWk));
-  grid.appendChild(sec("This week", "Wk " + thisWk.split("-W")[1] + " · " + sprintRange(thisWk), thisW, true, "week", thisWk));
-  grid.appendChild(sec("Next week →", "Wk " + nextWk.split("-W")[1] + " · " + sprintRange(nextWk), next, true, "week", nextWk));
+  grid.appendChild(sec(innov ? "⏸️ Hold / Unassigned" : "📥 Backlog", bl ? "Cards on the “" + bl + "” lane" : "Set a Backlog lane in Manage → status to populate this section.", backlog, false, "backlog"));
+  if (innov) {
+    grid.appendChild(sec("← " + lastWk, "Previous year", last, true, "week", lastWk));
+    grid.appendChild(sec(thisWk, "Current year", thisW, true, "week", thisWk));
+    grid.appendChild(sec(nextWk + " →", "Next year", next, true, "week", nextWk));
+  } else {
+    grid.appendChild(sec("← Last week", "Wk " + lastWk.split("-W")[1] + " · " + sprintRange(lastWk), last, true, "week", lastWk));
+    grid.appendChild(sec("This week", "Wk " + thisWk.split("-W")[1] + " · " + sprintRange(thisWk), thisW, true, "week", thisWk));
+    grid.appendChild(sec("Next week →", "Wk " + nextWk.split("-W")[1] + " · " + sprintRange(nextWk), next, true, "week", nextWk));
+  }
 }
 // Move a card to a specific ISO week. If the card has a due date, we shift due (and end, if present) by the
 // same day-delta that would land the earliest current sprint on the target week — so a card that spans multiple
@@ -3108,6 +3184,22 @@ async function moveCardToSprint(cardId, targetWk) {
   const bl = effBacklogLane();
   const cameFromBacklog = bl && c.status === bl;
   const patch = {};
+  // Innovation: sprint is a year string, no date math. Just stamp SPRINT_KEY = targetWk (which is a year).
+  if (isInnovation()) {
+    if (cameFromBacklog) {
+      const cl = completeLane;
+      const target = (statusList.find(s => s.name !== bl && s.name !== cl) || statusList.find(s => s.name !== bl) || {}).name || c.status;
+      c.status = target; patch.status = target;
+    }
+    const fields = Object.assign({}, c.fields || {}); fields[SPRINT_KEY] = String(targetWk); c.fields = fields; patch.fields = fields;
+    if (!ONLINE) { saveLocal(); render(); return; }
+    const dbPatch = { fields };
+    if ("status" in patch) dbPatch.status = patch.status;
+    const { error } = await db.from("deliverables").update(dbPatch).eq("id", cardId);
+    if (error) { toast("Move failed: " + error.message); return; }
+    render();
+    return;
+  }
   if (cameFromBacklog) {
     const cl = completeLane;
     const target = (statusList.find(s => s.name !== bl && s.name !== cl) || statusList.find(s => s.name !== bl) || {}).name || c.status;
@@ -5290,9 +5382,10 @@ function openModal(card, prefill) {
   document.getElementById("f_notes").innerHTML = card ? notesToEditor(card.notes) : "";
   // Cover photo — explicit cover first; the gallery's first image + Latest Sample Image URL serve as fallbacks,
   // but the modal's hidden input is left blank when no explicit cover is set (so saving doesn't promote a
-  // fallback into an explicit cover). The displayed thumbnail uses coverSrcOf for the fallback preview.
+  // fallback into an explicit cover). coverSrcOf skips non-renderable URLs so a broken explicit cover doesn't
+  // hide a working gallery image.
   const rawExplicit = card ? ((card.fields && card.fields[COVER_KEY]) || "") : "";
-  const explicitCover = isRenderableImageUrl(rawExplicit) ? rawExplicit : "";   // skip Drive/non-image so gallery can take over
+  const explicitCover = isRenderableImageUrl(rawExplicit) ? rawExplicit : "";
   setModalCover(explicitCover, card ? coverSrcOf(card) : "");
   // Image gallery — multiple photos per card. First image serves as the auto cover when no explicit cover is set.
   modalGallery = card ? cardGallery(card).slice() : [];
@@ -6021,6 +6114,7 @@ async function init() {
   document.getElementById("verBtn").textContent = "v" + VERSION;
   renderChangelog();
   await refetch();
+  await maybeMigrateInnovationYear2027();
   setView(view);   // apply restored view (container visibility + active toggle)
   // If no current user is persisted, open the picker on first session load (people list is loaded by now).
   if (!currentUser && !sessionStorage.getItem("planner-user-asked")) {
@@ -6083,7 +6177,8 @@ async function init() {
   const galleryFile = document.getElementById("f_galleryFile");
   document.getElementById("f_galleryAdd").onclick = () => galleryFile.click();
   galleryFile.onchange = e => { handleGalleryFiles(e.target.files); e.target.value = ""; };
-  // Click the empty gallery zone to add images too (same as + Add images). Clicks on existing items (or ✕) pass through.
+  // Click the empty gallery zone to add images too (same as the + Add images button). Clicks on existing
+  // items (or their ✕) pass through; ✕'s own handler stopsPropagation.
   galleryWrap.style.cursor = "pointer";
   galleryWrap.addEventListener("click", e => { if (e.target.closest(".gallery-item")) return; galleryFile.click(); });
   galleryWrap.addEventListener("dragover", e => { e.preventDefault(); galleryWrap.classList.add("drop-over"); });
@@ -6316,6 +6411,20 @@ async function init() {
   // Sprint quick-toggle — flips filters.sprint to last/this/next ISO week. Clicking the currently-active button
   // clears the sprint filter (toggle-off behavior).
   document.querySelectorAll("#sprintQuick button").forEach(b => b.onclick = () => {
+    if (isInnovation()) {
+      // Year navigation: left shifts innovationYear -1, right +1, middle resets to today's year.
+      const w = b.dataset.w;
+      if (w === "last") innovationYear -= 1;
+      else if (w === "next") innovationYear += 1;
+      else innovationYear = (new Date()).getFullYear();
+      saveInnovationYear();
+      const y = String(innovationYear);
+      const already = filters.sprint && filters.sprint.size === 1 && filters.sprint.has(y);
+      if (already) delete filters.sprint;
+      else filters.sprint = new Set([y]);
+      syncSprintNavLabels(); updateFilterBtn(); render();
+      return;
+    }
     const now = new Date();
     const shift = b.dataset.w === "last" ? -7 : b.dataset.w === "next" ? 7 : 0;
     const wk = isoWeek(ymd(addDays(now, shift)));
