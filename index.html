@@ -139,6 +139,22 @@
   .emoji-btn { padding: 4px 0; font-size: 18px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
   .emoji-btn:hover { background: var(--panel); border-color: var(--accent); }
   .rte-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  /* Structured per-note editor in the modal — one row per {date, text} entry, newest at top. */
+  .notes-list-tools { display: flex; gap: 6px; margin-bottom: 8px; }
+  .notes-list { display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto; padding: 4px; }
+  .notes-list:empty::before { content: "No notes yet"; color: var(--muted); font-size: 12px; padding: 10px; text-align: center; display: block; }
+  .note-row { display: grid; grid-template-columns: 120px 1fr 28px; gap: 8px; align-items: start; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  .note-row input[type="date"] { padding: 4px 6px; font-size: 12px; }
+  .note-row textarea { min-height: 48px; resize: vertical; padding: 6px 8px; font-size: 13px; font-family: inherit; line-height: 1.5; }
+  .note-row .note-rm { width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 13px; color: var(--danger); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .note-row .note-rm:hover { border-color: var(--danger); }
+  /* Dated notes feed list — one row per entry, read-only, scrollable. */
+  .notes-dated-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 6px; background: rgba(255,255,255,.02); border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
+  html[data-theme="light"] .notes-dated-list { background: rgba(0,0,0,.02); }
+  .notes-dated-row { display: grid; grid-template-columns: 92px 1fr; gap: 10px; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,.02); }
+  html[data-theme="light"] .notes-dated-row { background: rgba(0,0,0,.03); }
+  .notes-dated-row .notes-dated-when { font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .02em; padding-top: 2px; white-space: nowrap; }
+  .notes-dated-row .notes-dated-text { white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; color: var(--text); }
   .rte-btn { padding: 4px 10px; font-size: 13px; }
   .rte { min-height: 150px; max-height: 320px; overflow-y: auto; padding: 9px 11px; background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 8px; line-height: 1.5; }
@@ -990,15 +1006,11 @@
     </div>
     <div id="f_fields"></div>
     <div class="field"><label>Notes <span id="f_notesUpdated" class="opt"></span></label>
-      <div class="rte-toolbar">
-        <button type="button" class="rte-btn" data-cmd="bold" title="Bold"><b>B</b></button>
-        <button type="button" class="rte-btn" data-cmd="italic" title="Italic"><i>I</i></button>
-        <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Bullet list">• List</button>
-        <button type="button" class="rte-btn" id="f_notesLink" title="Add / edit link">🔗 Link</button>
-        <button type="button" class="rte-btn" id="f_notesUnlink" title="Remove link">⌫ Link</button>
+      <div class="notes-list-tools">
+        <button type="button" class="rte-btn" id="f_notesAdd" title="Add a new note stamped with today's date">＋ Add note</button>
         <button type="button" class="rte-btn" id="f_notesEmail" title="Paste an email — added to this deliverable's Emails list above">📧 Email</button>
       </div>
-      <div id="f_notes" class="rte" contenteditable="true" data-ph="Brief, links, copy direction…"></div>
+      <div id="f_notesList" class="notes-list"></div>
     </div>
     <div class="modal-actions">
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
@@ -1195,8 +1207,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.96";
+const VERSION = "2.97";
 const CHANGELOG = [
+  "v2.97 — Notes refactored into structured per-entry rows. Each note is {date, text} stored in __notes_entries. In the modal, Notes is a scrollable list with ＋ Add note (new entry stamped today), per-row date pickers, textareas, and ✕ to delete. Notes feed shows one card per row with its dated entries as a scrollable sub-list (newest first); the red date pill is the most-recent note's date, not the card's updated-at. 📋 Copy updates with “last N days” now filters per-entry, not per-card. Legacy c.notes blobs migrate on first open: dated prefixes (4.30.26 - …, 5/13/26 - …, 06.09.26 - …) become entries, any undated remnant gets stamped with the card's last-updated date. c.notes stays as a derived HTML snapshot for card previews.",
   "v2.96 — Lightbox gets prev / next navigation. Open any gallery image and arrow left / right (or use the ‹ › buttons) to flip through the rest. 1 / N counter at the bottom. Single-image galleries skip the nav.",
   "v2.95 — Innovation workspace fixes: (1) Moving a product to the Hold lane no longer wipes its Innovation year (year is strategic, not a sprint commitment). (2) Removed the ⇒ Push N → next sprint bulk button from Innovation (products don't belong on a weekly push rhythm).",
   "v2.94 — Innovation modal has a per-card year input. The modal's “Sprint week” field becomes “Innovation year” on Innovation and shows a 4-digit year input (defaults to the current Innovation Year, 2027). Sprints-tracked / Historical sprints sections are hidden on Innovation (not meaningful for year-scoped products). Planner workspace unchanged.",
@@ -1451,7 +1464,64 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries";
+// Notes are stored as a structured array of {id, date, text} entries. c.notes stays on-row as a derived HTML
+// snapshot (so card previews and legacy cards without entries still render), but entries are the source of truth.
+let _noteIdc = 0;
+function noteId() { return "n" + Date.now().toString(36) + (_noteIdc++).toString(36); }
+// Parse a legacy c.notes blob into structured entries. Looks for inline date prefixes like "4.30.26 -",
+// "06.09.26 - ", "5/13/26 - ", etc. Any trailing (or leading) undated content gets stamped with the fallback
+// date (preferred: NOTES_UPDATED_KEY, else today) so no text is lost.
+function parseLegacyNotesIntoEntries(rawHtml, fallbackYmd) {
+  if (!rawHtml) return [];
+  const plain = String(rawHtml).replace(/<br\s*\/?>/gi, "\n").replace(/<\/?p[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+  const lines = plain.split(/\r?\n/);
+  const dateRe = /^\s*(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})\s*[-–:]?\s*/;
+  const out = []; let pre = ""; let cur = null;
+  for (const line of lines) {
+    const m = dateRe.exec(line);
+    if (m) {
+      if (cur) out.push(cur);
+      let yr = parseInt(m[3], 10); if (yr < 100) yr += 2000;
+      const mo = String(parseInt(m[1], 10)).padStart(2, "0");
+      const dy = String(parseInt(m[2], 10)).padStart(2, "0");
+      cur = { id: noteId(), date: `${yr}-${mo}-${dy}`, text: line.slice(m[0].length) };
+    } else if (cur) { cur.text += (cur.text ? "\n" : "") + line; }
+    else { pre += (pre ? "\n" : "") + line; }
+  }
+  if (cur) out.push(cur);
+  // Undated leading content → one entry stamped with the fallback.
+  const preTrim = pre.replace(/\s+$/g, "").replace(/^\s+/, "");
+  if (preTrim) out.unshift({ id: noteId(), date: fallbackYmd || ymd(new Date()), text: preTrim });
+  // Trim each entry; drop empties.
+  return out.map(e => ({ id: e.id, date: e.date, text: (e.text || "").replace(/\s+$/g, "").replace(/^\s+/, "") })).filter(e => e.text);
+}
+function cardNoteEntries(c) {
+  if (!c) return [];
+  const stored = c.fields && c.fields[NOTES_ENTRIES_KEY];
+  if (Array.isArray(stored)) return stored.filter(e => e && e.text && e.date).map(e => ({ id: e.id || noteId(), date: e.date, text: String(e.text || "") }));
+  // No structured entries yet — parse the legacy blob. Fallback date = last-updated stamp, else createdAt, else today.
+  const fallback = (c.fields && c.fields[NOTES_UPDATED_KEY] ? String(c.fields[NOTES_UPDATED_KEY]).slice(0, 10) : "") || (c.createdAt ? c.createdAt.slice(0, 10) : "") || ymd(new Date());
+  return parseLegacyNotesIntoEntries(c.notes, fallback);
+}
+function latestNoteDate(c) {
+  const entries = cardNoteEntries(c);
+  if (!entries.length) return "";
+  return entries.map(e => e.date).filter(Boolean).sort().slice(-1)[0] || "";
+}
+// Render structured entries back into a c.notes HTML snapshot for card previews and legacy renderers.
+function entriesToNotesHtml(entries) {
+  if (!entries || !entries.length) return "";
+  return entries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(e => {
+    const dateStr = e.date ? fmtMMDDYY(e.date) : "";
+    const prefix = dateStr ? dateStr + " - " : "";
+    return "<p>" + esc(prefix + (e.text || "")).replace(/\n/g, "<br>") + "</p>";
+  }).join("");
+}
+function fmtMMDDYY(ymdStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymdStr || ""); if (!m) return ymdStr || "";
+  return (+m[2]) + "." + (+m[3]) + "." + m[1].slice(2);
+}
 // Cover-source resolver: explicit cover first, then first gallery image, then the Innovation Line Review's
 // Latest Sample Image URL as a legacy fallback. Non-renderable URLs (Drive, SharePoint, non-http/data) are
 // skipped at this layer so a broken explicit cover doesn't shadow a real gallery image.
@@ -3405,8 +3475,10 @@ function orderedSplitValues(key, groups) {
 // Each entry can be collapsed to its title. A toolbar has Expand all / Collapse all for skimming while searching.
 let notesCollapsed = new Set();   // card ids whose body is collapsed; toggled per card or via Collapse all
 let notesAllCollapsed = false;    // remembers whether the user last hit "Collapse all" so newly-loaded cards inherit that state
-// The date shown next to each Notes entry — due date takes precedence, then the sprint week's Monday, then created_at as a last resort.
+// The date shown next to each Notes feed entry — most recent note's date takes precedence (so the red pill
+// reflects "when did someone last update this"), then due date, then the sprint week's Monday, then created_at.
 function noteEntryDate(c) {
+  const latest = latestNoteDate(c); if (latest) return latest;
   if (c.due) return c.due;
   const sp = cardSprint(c); if (sp) { const d = isoWeekStart(sp); if (d) return ymdUTC(d); }
   if (c.createdAt) return c.createdAt.slice(0, 10);   // YYYY-MM-DD from ISO timestamp
@@ -3540,12 +3612,19 @@ function buildNotesExportText() {
   const byCard = new Map();
   const stripTags = s => (s || "").replace(/<br\s*\/?\s*>/gi, "\n").replace(/<\/?p[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/\n{3,}/g, "\n\n").trim();
   _notesExportFeed.forEach(item => {
-    const dYmd = item.date || "";
-    const dAdded = item.kind === "email" ? ((item.email && item.email.addedAt) || "") : "";
-    const inWindow = (dYmd && dYmd >= cutoffYmd) || (dAdded && new Date(dAdded).getTime() >= cutoffMs);
-    if (!inWindow) return;
+    if (item.kind === "email") {
+      const dAdded = (item.email && item.email.addedAt) || "";
+      const inWindow = (item.date && item.date >= cutoffYmd) || (dAdded && new Date(dAdded).getTime() >= cutoffMs);
+      if (!inWindow) return;
+      if (!byCard.has(item.card.id)) byCard.set(item.card.id, { card: item.card, entries: [] });
+      byCard.get(item.card.id).entries.push(item);
+      return;
+    }
+    // Note item — expand to per-entry rows, keep only entries added in-window.
+    const noteEntries = cardNoteEntries(item.card).filter(e => e.date && e.date >= cutoffYmd);
+    if (!noteEntries.length) return;
     if (!byCard.has(item.card.id)) byCard.set(item.card.id, { card: item.card, entries: [] });
-    byCard.get(item.card.id).entries.push(item);
+    noteEntries.forEach(e => byCard.get(item.card.id).entries.push({ kind: "note", card: item.card, date: e.date, text: e.text }));
   });
   const lines = [];
   const header = "Updates from the last " + days + " day" + (days === 1 ? "" : "s") + (currentUser ? " — " + currentUser : "");
@@ -3567,15 +3646,17 @@ function buildNotesExportText() {
           const body = stripTags(em.content || "").split("\n").filter(x => x.trim()).slice(0, 20).join("\n   ");
           if (body) lines.push("   " + body);
         } else {
-          const noteBody = stripTags(card.notes || "");
-          if (noteBody) { lines.push("- 📝 " + when); lines.push("   " + noteBody.split("\n").join("\n   ")); }
-          const subs = cardSubtasks(card).filter(s => s.type !== "header");
-          if (subs.length) {
-            lines.push("- ✅ Subtasks:");
-            subs.forEach(s => { const mark = s.done ? "[x]" : "[ ]"; const o = s.owner ? " (" + s.owner + ")" : ""; lines.push("   " + mark + " " + (s.text || "(untitled)") + o); });
-          }
+          // Per-entry note row — one line per structured entry (already filtered to in-window above).
+          const body = (e.text || "").trim();
+          if (body) { lines.push("- 📝 " + (when || "note")); lines.push("   " + body.split("\n").join("\n   ")); }
         }
       });
+      // Subtasks render once per card (not per entry) so they aren't duplicated across multiple dated rows.
+      const subs = cardSubtasks(card).filter(s => s.type !== "header");
+      if (subs.length) {
+        lines.push("- ✅ Subtasks:");
+        subs.forEach(s => { const mark = s.done ? "[x]" : "[ ]"; const o = s.owner ? " (" + s.owner + ")" : ""; lines.push("   " + mark + " " + (s.text || "(untitled)") + o); });
+      }
       lines.push("");
     });
   }
@@ -3672,23 +3753,29 @@ function renderNotesView() {
       const wrap = document.createElement("div"); wrap.innerHTML = sanitizeNotes(item.email.content || "");
       body.appendChild(wrap);
     } else {
-      // 📧 Email button — adds a new email entry to this card.
+      // 📧 Email + ✎ Open to edit — adds a new email, or opens the card modal (which is now the single place
+      // notes get edited — row-based editor there handles per-entry dates + text).
       const tools = document.createElement("div"); tools.className = "notes-tools";
       const emailBtn = document.createElement("button"); emailBtn.type = "button"; emailBtn.className = "notes-tool-btn"; emailBtn.textContent = "📧 Add email";
       emailBtn.title = "Paste an email — added to this deliverable's email list";
       emailBtn.addEventListener("mousedown", e => e.preventDefault());
       emailBtn.onclick = () => { if (typeof window.openEmailPasteDialog === "function") window.openEmailPasteDialog({ kind: "card", cardId: c.id }); };
-      tools.appendChild(emailBtn); body.appendChild(tools);
-      // Inline-editable notes
-      const editor = document.createElement("div"); editor.className = "notes-editable"; editor.setAttribute("contenteditable", "true"); editor.setAttribute("data-ph", "Click to write a note…");
-      let _initialHtml = c.notes ? sanitizeNotes(c.notes) : "";
-      if (/^\s*<div class="email"/.test(_initialHtml)) _initialHtml = "<br>" + _initialHtml;
-      editor.innerHTML = _initialHtml;
-      editor.addEventListener("blur", () => saveInlineNote(c.id, editor));
-      _installNotesCaretRescue(editor);
-      editor.addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
-      editor.addEventListener("paste", e => { const cd = e.clipboardData || window.clipboardData; if (!cd) return; e.preventDefault(); document.execCommand("insertHTML", false, notesPasteToHtml(cd)); });
-      body.appendChild(editor);
+      const editBtn = document.createElement("button"); editBtn.type = "button"; editBtn.className = "notes-tool-btn"; editBtn.textContent = "✎ Open to edit";
+      editBtn.title = "Open the modal to add / edit dated notes";
+      editBtn.onclick = () => openModal(c);
+      tools.appendChild(emailBtn); tools.appendChild(editBtn); body.appendChild(tools);
+      // Scrollable list of this card's dated note entries, newest first. Read-only here — editing is in the modal.
+      const entries = cardNoteEntries(c);
+      if (entries.length) {
+        const list = document.createElement("div"); list.className = "notes-dated-list";
+        entries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).forEach(e => {
+          const row = document.createElement("div"); row.className = "notes-dated-row";
+          const when = document.createElement("div"); when.className = "notes-dated-when"; when.textContent = e.date ? fmtDue(e.date) : "—";
+          const txt = document.createElement("div"); txt.className = "notes-dated-text"; txt.textContent = e.text || "";
+          row.appendChild(when); row.appendChild(txt); list.appendChild(row);
+        });
+        body.appendChild(list);
+      }
     }
     if (item.kind !== "email") {
       const subs = cardSubtasks(c);
@@ -5319,6 +5406,33 @@ async function handleCoverFile(file) {
   try { const dataUrl = await resizeImageToDataUrl(file, 900, 0.72); setModalCover(dataUrl); }
   catch (e) { toast("Couldn't read that image: " + (e && e.message || e)); }
 }
+// Structured notes editor — modalNoteEntries holds the working array of {id, date, text} rows. Rendered as
+// a scrollable list, newest first. Save persists to fields[NOTES_ENTRIES_KEY].
+let modalNoteEntries = [];
+function renderModalNotes() {
+  const host = document.getElementById("f_notesList"); if (!host) return;
+  host.innerHTML = "";
+  // Keep newest-first ordering in render, but preserve original order of equal-date entries.
+  const sorted = modalNoteEntries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  sorted.forEach(entry => {
+    const row = document.createElement("div"); row.className = "note-row"; row.dataset.id = entry.id;
+    const d = document.createElement("input"); d.type = "date"; d.value = entry.date || "";
+    d.addEventListener("change", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) live.date = d.value; });
+    const t = document.createElement("textarea"); t.value = entry.text || ""; t.rows = Math.min(10, Math.max(2, (entry.text || "").split("\n").length));
+    t.addEventListener("input", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) live.text = t.value; });
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "note-rm"; rm.textContent = "✕"; rm.title = "Delete note";
+    rm.onclick = () => { modalNoteEntries = modalNoteEntries.filter(e => e.id !== entry.id); renderModalNotes(); };
+    row.appendChild(d); row.appendChild(t); row.appendChild(rm);
+    host.appendChild(row);
+  });
+}
+function addModalNote() {
+  const today = ymd(new Date());
+  modalNoteEntries.unshift({ id: noteId(), date: today, text: "" });
+  renderModalNotes();
+  const first = document.querySelector("#f_notesList .note-row textarea");
+  if (first) first.focus();
+}
 // Image gallery — modalGallery is the working array of image URLs (data URLs for uploads, http(s) URLs for
 // pasted/dropped links). Rendered as a thumbnail grid; first item marked as the cover when no explicit cover set.
 let modalGallery = [];
@@ -5448,7 +5562,9 @@ function openModal(card, prefill) {
   const stSel = document.getElementById("f_status");
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : ((prefill && prefill.status && statusList.some(s => s.name === prefill.status)) ? prefill.status : (statusList[0] ? statusList[0].name : "Backlog"));
-  document.getElementById("f_notes").innerHTML = card ? notesToEditor(card.notes) : "";
+  // Structured notes: load from card's entries (parses legacy c.notes blob on first open if no entries exist yet).
+  modalNoteEntries = card ? cardNoteEntries(card).map(e => ({ id: e.id || noteId(), date: e.date, text: e.text })) : [];
+  renderModalNotes();
   // Cover photo — explicit cover first; the gallery's first image + Latest Sample Image URL serve as fallbacks,
   // but the modal's hidden input is left blank when no explicit cover is set (so saving doesn't promote a
   // fallback into an explicit cover). coverSrcOf skips non-renderable URLs so a broken explicit cover doesn't
@@ -5512,15 +5628,16 @@ function saveModal() {
   if (linksClean.length) fields[LINKS_KEY] = linksClean; else delete fields[LINKS_KEY];
   fields[SPRINTHIST_KEY] = modalSprintHist.slice();   // user's edited history (may be empty); updateCard will add this save's recorded sprints on top
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
-  const notesEl = document.getElementById("f_notes");
-  const notes = notesEl.textContent.trim() ? sanitizeNotes(notesEl.innerHTML) : "";   // empty editor → no notes
-  // Stamp a notes-updated timestamp when the notes text actually changed since load. Also seed it on first save
-  // (so a card that gets notes today shows "updated Aug 27" going forward). Old cards without any change keep
-  // their previously-saved timestamp; no note text at all → clear the stamp.
+  // Structured notes — persist entries + derive c.notes HTML snapshot for card previews. Drop empty-body rows.
+  const cleanEntries = modalNoteEntries.map(e => ({ id: e.id || noteId(), date: e.date || ymd(new Date()), text: String(e.text || "").trim() })).filter(e => e.text);
+  const notes = entriesToNotesHtml(cleanEntries);
+  if (cleanEntries.length) fields[NOTES_ENTRIES_KEY] = cleanEntries; else delete fields[NOTES_ENTRIES_KEY];
+  // Stamp notes-updated when the entries changed since load.
   const existingCard = id ? cards.find(c => c.id === id) : null;
-  const prevNotes = existingCard ? (existingCard.notes || "") : "";
+  const prevEntries = existingCard ? JSON.stringify(cardNoteEntries(existingCard).map(e => ({ date: e.date, text: e.text }))) : "[]";
+  const nowEntries = JSON.stringify(cleanEntries.map(e => ({ date: e.date, text: e.text })));
   const prevStamp = existingCard && existingCard.fields && existingCard.fields[NOTES_UPDATED_KEY];
-  const notesStamp = notes ? (notes !== prevNotes ? nowIso() : (prevStamp || nowIso())) : "";
+  const notesStamp = cleanEntries.length ? (nowEntries !== prevEntries ? nowIso() : (prevStamp || nowIso())) : "";
   if (notesStamp) fields[NOTES_UPDATED_KEY] = notesStamp; else delete fields[NOTES_UPDATED_KEY];
   const coverVal = (document.getElementById("f_coverUrl").value || "").trim();
   if (coverVal) fields[COVER_KEY] = coverVal; else delete fields[COVER_KEY];
@@ -6382,31 +6499,9 @@ async function init() {
   });
   document.getElementById("f_promoAdd").onclick = () => addPromoPrompt();
   document.getElementById("f_promo").addEventListener("change", e => { if (e.target.value === "__add_promo__") addPromoPrompt(); });
-  document.querySelectorAll(".rte-toolbar [data-cmd]").forEach(b => {
-    b.addEventListener("mousedown", e => e.preventDefault());   // keep the editor's text selection
-    b.onclick = () => { document.getElementById("f_notes").focus(); document.execCommand(b.dataset.cmd, false, null); };
-  });
-  const notesEd = () => document.getElementById("f_notes");
-  document.getElementById("f_notesLink").addEventListener("mousedown", e => e.preventDefault());
-  document.getElementById("f_notesLink").onclick = () => {
-    notesEd().focus(); const url = (prompt("Link URL:", "https://") || "").trim();
-    if (!url || url === "https://") return;
-    document.execCommand("createLink", false, url);
-    notesEd().querySelectorAll("a[href]").forEach(a => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
-  };
-  document.getElementById("f_notesUnlink").addEventListener("mousedown", e => e.preventDefault());
-  document.getElementById("f_notesUnlink").onclick = () => { notesEd().focus(); document.execCommand("unlink", false, null); };
-  notesEd().addEventListener("blur", () => linkifyInto(notesEd()));   // turn typed/pasted URLs into links when you click away
-  // Clicking a link inside contenteditable normally just places the cursor — intercept and open it in a new tab.
-  notesEd().addEventListener("click", e => { const a = e.target.closest("a"); if (a && a.href) { e.preventDefault(); window.open(a.href, "_blank", "noopener,noreferrer"); } });
-  _installNotesCaretRescue(notesEd());   // clicking in the editor's padding above / below an email block places the caret correctly
-  // On paste: prefer text/html when the source has structure (Google Docs, Word, web pages) so paragraphs stay
-  // separated instead of collapsing into a wall of text. Falls back to plain text + URL linkification.
-  notesEd().addEventListener("paste", e => {
-    const cd = e.clipboardData || window.clipboardData; if (!cd) return;
-    e.preventDefault();
-    document.execCommand("insertHTML", false, notesPasteToHtml(cd));
-  });
+  // Structured notes editor — + Add note prepends a new row stamped with today's date.
+  document.getElementById("f_notesAdd").addEventListener("mousedown", e => e.preventDefault());
+  document.getElementById("f_notesAdd").onclick = () => addModalNote();
   // "📧 Email" flow: emails are a separate list on the card (fields.__emails), not part of the notes rich-text.
   // The paste dialog captures the email and stores it as a structured entry (headers + body). Two contexts:
   //   • Modal editor  → adds to modalEmails (persisted on Save).
