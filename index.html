@@ -952,9 +952,10 @@
         <div class="ch-wrap"><input id="f_end" type="date" /><button type="button" id="f_clearEnd" title="Remove end date">✕</button></div>
       </div>
     </div>
-    <div class="field"><label>Sprint week <span class="opt">— auto from due date; add a planning week here if you’ll start earlier</span></label>
+    <div class="field" id="f_sprintField"><label id="f_sprintLabel">Sprint week <span class="opt">— auto from due date; add a planning week here if you’ll start earlier</span></label>
       <span id="f_sprintText" class="sprint-readonly" style="display:none;margin-bottom:6px"></span>
       <input id="f_sprint" type="date" onchange="renderSprintTrack()" />
+      <input id="f_sprintYear" type="number" min="2000" max="2099" step="1" style="display:none" />
     </div>
     <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
     <div class="field" id="f_sprintHistWrap" style="display:none">
@@ -1188,8 +1189,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.93";
+const VERSION = "2.94";
 const CHANGELOG = [
+  "v2.94 — Innovation modal has a per-card year input. The modal's “Sprint week” field becomes “Innovation year” on Innovation and shows a 4-digit year input (defaults to the current Innovation Year, 2027). Sprints-tracked / Historical sprints sections are hidden on Innovation (not meaningful for year-scoped products). Planner workspace unchanged.",
   "v2.93 — Gallery drag-to-reorder works properly. Drag a gallery image onto another to swap positions (new order persists on save, first item is still the auto cover). Fixed the duplication bug — dragging an existing image used to be caught by the outer drop zone and re-added it as a new entry.",
   "v2.92 — Innovation workspace swaps the sprint rhythm for an Innovation Year. The sprint caption becomes “Innovation year”, the three quick-buttons become ← prev year / current year / next year → (defaults centered on 2027), and 📋 Sprint planning → 📋 Innovation planning. Sprint-planning view's week sections become year sections. Filter chips show “Year” instead of “Sprint”. One-time migration auto-stamps every existing Innovation card without a sprint value as 2027 (chunked 20 at a time, silent on success). Planner workspace unchanged.",
   "v2.91 — Tighter image compression on upload (covers → 900 px wide / q=0.72, gallery → 700 px / q=0.68) so a stray phone photo can't bloat the DB row. Click any gallery image to open it in a full-size lightbox (click outside or press ESC to close).",
@@ -5393,8 +5395,22 @@ function openModal(card, prefill) {
   buildPromoSelect(card ? cardPromo(card) : (prefill && prefill.promotion ? prefill.promotion : ""));
   buildPrioritySelect(card ? cardPriority(card) : (prefill && prefill.priority ? prefill.priority : "No Priority"));
   const manualSprint = (card && card.fields && card.fields[SPRINT_KEY]) || (prefill && prefill.sprint ? prefill.sprint : "");
-  document.getElementById("f_sprint").value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";   // date input holds the week's Monday
-  updateSprintField();   // also renders the Sprints-tracked preview
+  const dateInp = document.getElementById("f_sprint");
+  const yrInp = document.getElementById("f_sprintYear");
+  const sprintLabel = document.getElementById("f_sprintLabel");
+  if (isInnovation()) {
+    // Innovation: year input instead of ISO-week date picker. Default to current innovationYear for new cards.
+    dateInp.style.display = "none"; yrInp.style.display = "";
+    sprintLabel.innerHTML = 'Innovation year';
+    yrInp.value = manualSprint && /^\d{4}$/.test(manualSprint) ? manualSprint : String(innovationYear);
+    document.getElementById("f_sprintTrackWrap").style.display = "none";
+    document.getElementById("f_sprintHistWrap").style.display = "none";
+  } else {
+    dateInp.style.display = ""; yrInp.style.display = "none";
+    sprintLabel.innerHTML = 'Sprint week <span class="opt">— auto from due date; add a planning week here if you’ll start earlier</span>';
+    dateInp.value = manualSprint ? ymdUTC(isoWeekStart(manualSprint)) : "";
+    updateSprintField();   // also renders the Sprints-tracked preview
+  }
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "", addedAt: s.addedAt || "", type: s.type || "" })) : [];
   modalEmails = card ? cardEmails(card).map(e => Object.assign({}, e)) : [];
   renderEmailsEdit();
@@ -5450,12 +5466,19 @@ function saveModal() {
   if (promo && promo !== "__add_promo__") fields[PROMO_KEY] = promo;
   const priority = document.getElementById("f_priority").value;
   if (priority && priority !== "No Priority") fields[PRIORITY_KEY] = priority;   // default isn't stored
-  const sprintDate = document.getElementById("f_sprint").value;
-  const sprint = sprintDate ? isoWeek(sprintDate) : "";   // date input → ISO week
-  const dueVal = document.getElementById("f_due").value;
-  const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
-  const derived = derivedSprintFor(dueVal, endVal);
-  if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
+  if (isInnovation()) {
+    const yrRaw = (document.getElementById("f_sprintYear").value || "").trim();
+    const yrInt = parseInt(yrRaw, 10);
+    if (yrRaw && yrInt >= 2000 && yrInt <= 2099) fields[SPRINT_KEY] = String(yrInt);
+    else delete fields[SPRINT_KEY];
+  } else {
+    const sprintDate = document.getElementById("f_sprint").value;
+    const sprint = sprintDate ? isoWeek(sprintDate) : "";   // date input → ISO week
+    const dueVal = document.getElementById("f_due").value;
+    const endVal = document.getElementById("f_endWrap").style.display !== "none" ? document.getElementById("f_end").value : "";
+    const derived = derivedSprintFor(dueVal, endVal);
+    if (sprint && sprint !== derived) fields[SPRINT_KEY] = sprint;   // manual planning sprint — kept whenever it differs from the auto-derived one
+  }
   const subs = modalSubs.map(s => { const o = { id: s.id, text: s.text.trim(), done: !!s.done }; if (s.owner) o.owner = s.owner; if (s.due) o.due = s.due; if (s.linkedCardId) o.linkedCardId = s.linkedCardId; if (s.addedAt) o.addedAt = s.addedAt; if (s.type) o.type = s.type; return o; }).filter(s => s.text || s.linkedCardId);
   if (subs.length) fields[SUBTASKS_KEY] = subs;
   if (modalEmails.length) fields[EMAILS_KEY] = modalEmails.map(e => ({ id: e.id, addedAt: e.addedAt, from: e.from || "", to: e.to || "", sent: e.sent || "", subject: e.subject || "", content: e.content || "" }));
