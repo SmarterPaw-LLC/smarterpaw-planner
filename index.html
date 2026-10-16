@@ -408,6 +408,7 @@
   .sprint-hist { font-size: 11px; color: var(--scheduled); border: 1px solid var(--scheduled); border-radius: 999px; padding: 1px 8px; font-weight: 600; cursor: help; white-space: nowrap; }
   .lt-top { display: flex; align-items: flex-start; gap: 8px; }
   .lt-chev { flex: none; padding: 0; width: 20px; height: 22px; color: var(--muted); border: none; background: transparent; font-size: 12px; cursor: pointer; }
+  .lt-thumb { flex: none; width: 48px; height: 48px; object-fit: contain; background: var(--panel-2); border-radius: 6px; cursor: pointer; }
   .lt-chev.ghost-chev { opacity: .35; }
   .lt-chev:hover { color: var(--text); }
   .lt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -535,7 +536,7 @@
   .cover-field { position: relative; }
   .cover-wrap { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; background: var(--panel-2); border: 1.5px dashed var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; }
   .cover-wrap.drop-over { border-color: var(--accent); background: rgba(109,93,252,.08); }
-  .cover-wrap img { width: 100%; height: 100%; object-fit: cover; display: none; }
+  .cover-wrap img { width: 100%; height: 100%; object-fit: contain; display: none; background: var(--panel); }
   .cover-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .2px; }
   .cover-clear { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 13px; background: rgba(0,0,0,.55); color: #fff; border: none; border-radius: 999px; cursor: pointer; display: none; }
   .cover-clear:hover { background: rgba(0,0,0,.8); }
@@ -1156,8 +1157,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.82";
+const VERSION = "2.83";
 const CHANGELOG = [
+  "v2.83 — Brand colors are now a global toolkit, shared across Planner + Innovation (stored in localStorage, not per-workspace). Legacy per-workspace dark colors migrate forward on first load. New ⤵ Merge button on brand rows moves every deliverable with that brand into another brand across all workspaces, then deletes the source. Innovation no longer defaults the sprint filter to the current week on open (sprint is a Planner-only rhythm). Modal cover photo now fits whole image (object-fit: contain) instead of cropping to fill. List view now shows a 48px cover-photo thumbnail on the left of each row when a card has a cover (or an Innovation “Latest Sample Image URL”).",
   "v2.82 — Hotfix for v2.81: blank page on load because applyTheme called render() at init before the DOM / data were ready. Moved the re-render out of applyTheme into the theme-toggle click handler.",
   "v2.81 — Brand rows in Manage now have two color pickers (light-mode + dark-mode) and a rename / remove button like channels. Dark override stores on a sentinel row; falls back to the light color when unset; ↺ clears the override. Theme toggle now re-renders so brand colors swap live. Innovation seed no longer includes KKZ (dup of Kitty); existing KKZ rows can be removed from Manage. Meowi default color updated to the brand orange #f07830. Also fixed: cover photo not rendering in the modal (inline display='' fell back to the stylesheet's display:none).",
   "v2.76 — Role icons are editable too. The role-labels editor now has an emoji input next to each label — change ✓ to ✅, 🕒 to 📅, 📥 to ⏸️, etc. Icons flow through to card badges (done check, scheduled clock, review eye, backlog) and the role dropdown. Innovation defaults to ✅ Approved / 📅 Scheduled / 👀 In Review / ⏸️ Hold. Reset button restores workspace defaults.",
@@ -1353,11 +1355,35 @@ const PROMO_PALETTE = ["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55
 const PROMO_COLORS_KEY = "__promo_colors__";
 let promoOverrides = {};   // { promoName: hexColor }
 let _promoOverrideRowId = null;   // id of the sentinel row (null until first save)
-// Brand dark-mode color overrides — same sentinel-row trick as PROMO_COLORS_KEY. Light-mode color stays
-// on the brand's own row (lists.color); dark overrides live here keyed by brand name.
+// Brand colors are a GLOBAL toolkit — a brand's color is a brand property, not a workspace property, so it
+// applies the same in Planner and Innovation. Stored in localStorage keyed by brand name, with { light, dark }.
+// Falls back to the brand row's lists.color (legacy per-workspace) and then DEFAULT_BRAND_HEX.
+const BRAND_COLORS_LS_KEY = "planner-brand-colors-global";
+// Legacy sentinel key — still filtered out of fieldsList so existing rows don't pollute the fields editor.
 const BRAND_DARK_COLORS_KEY = "__brand_dark_colors__";
-let brandDarkColors = {};   // { brandName: hexColor }
-let _brandDarkOverrideRowId = null;
+function getBrandColorsGlobal() {
+  try { const raw = localStorage.getItem(BRAND_COLORS_LS_KEY); return raw ? (JSON.parse(raw) || {}) : {}; } catch (e) { return {}; }
+}
+function saveBrandColorsGlobal(map) { try { localStorage.setItem(BRAND_COLORS_LS_KEY, JSON.stringify(map || {})); } catch (e) {} }
+function brandColorLight(name) {
+  const g = getBrandColorsGlobal()[name]; if (g && g.light) return g.light;
+  const row = brandsList.find(x => x.name === name); if (row && row.color) return row.color;
+  return DEFAULT_BRAND_HEX[name] || "";
+}
+function brandColorDark(name) {
+  const g = getBrandColorsGlobal()[name]; if (g && g.dark) return g.dark;
+  return brandColorLight(name);   // dark falls back to light when no override is set
+}
+function setBrandColorGlobal(name, mode, hex) {
+  const map = getBrandColorsGlobal(); if (!map[name]) map[name] = {}; map[name][mode] = hex;
+  saveBrandColorsGlobal(map);
+}
+function clearBrandColorGlobal(name, mode) {
+  const map = getBrandColorsGlobal(); if (!map[name]) return;
+  if (mode) delete map[name][mode]; else delete map[name];
+  if (map[name] && !Object.keys(map[name]).length) delete map[name];
+  saveBrandColorsGlobal(map);
+}
 function isDarkTheme() { return document.documentElement.getAttribute("data-theme") !== "light"; }
 function promoHash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
 function promoColor(name) { if (!name) return ""; return promoOverrides[name] || PROMO_PALETTE[promoHash(name) % PROMO_PALETTE.length]; }
@@ -1548,8 +1574,8 @@ function colorOf(list, name, fallbackMap) {
   return PALETTE[(idx < 0 ? 0 : idx) % PALETTE.length];
 }
 function brandColor(n) {
-  if (isDarkTheme() && brandDarkColors[n]) return brandDarkColors[n];
-  return colorOf(brandsList, n, DEFAULT_BRAND_HEX);
+  if (!n) return "";
+  return isDarkTheme() ? brandColorDark(n) : brandColorLight(n);
 }
 function channelColorOf(n) { return colorOf(channelsList, n, null); }
 function statusColor(name) { return colorOf(statusList, name, STATUS_COLORS); }
@@ -2165,9 +2191,19 @@ async function loadLists() {
   const pcRow = data.find(r => r.kind === "field" && r.name === PROMO_COLORS_KEY);
   promoOverrides = {}; _promoOverrideRowId = pcRow ? pcRow.id : null;
   if (pcRow && pcRow.color) { try { const m = JSON.parse(pcRow.color); if (m && typeof m === "object") promoOverrides = m; } catch (e) {} }
+  // Legacy per-workspace dark-colors sentinel row (v2.81). Migrate its contents into the global toolkit on
+  // first load after upgrade, then leave the row in place; it's harmless and filtered from fieldsList above.
   const bdRow = data.find(r => r.kind === "field" && r.name === BRAND_DARK_COLORS_KEY);
-  brandDarkColors = {}; _brandDarkOverrideRowId = bdRow ? bdRow.id : null;
-  if (bdRow && bdRow.color) { try { const m = JSON.parse(bdRow.color); if (m && typeof m === "object") brandDarkColors = m; } catch (e) {} }
+  if (bdRow && bdRow.color) {
+    try {
+      const m = JSON.parse(bdRow.color);
+      if (m && typeof m === "object") {
+        const g = getBrandColorsGlobal();
+        Object.keys(m).forEach(k => { if (!g[k] || !g[k].dark) { g[k] = g[k] || {}; g[k].dark = m[k]; } });
+        saveBrandColorsGlobal(g);
+      }
+    } catch (e) {}
+  }
   completeLane = (data.find(r => r.kind === "status" && r.is_complete) || {}).name || "";
   // Bare-object defaults (no DB id) are a last resort for the Planner workspace where migrations may be partial.
   // Non-default workspaces (Innovation) start empty and are seeded with real DB rows on first visit by
@@ -2291,22 +2327,11 @@ async function savePromoOverrides() {
 }
 async function setPromoColor(name, color) { promoOverrides[name] = color; await savePromoOverrides(); }
 async function resetPromoColor(name) { if (!(name in promoOverrides)) return; delete promoOverrides[name]; await savePromoOverrides(); }
-// Persist brandDarkColors to its sentinel row (same shape as savePromoOverrides).
-async function saveBrandDarkColors() {
-  if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
-  const empty = !Object.keys(brandDarkColors).length;
-  if (_brandDarkOverrideRowId) {
-    if (empty) { const { error } = await db.from("lists").delete().eq("id", _brandDarkOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } _brandDarkOverrideRowId = null; }
-    else { const { error } = await db.from("lists").update({ color: JSON.stringify(brandDarkColors) }).eq("id", _brandDarkOverrideRowId); if (error) { toast("Save failed: " + error.message); return; } }
-  } else if (!empty) {
-    const { data, error } = await db.from("lists").insert(wsStamp({ kind: "field", name: BRAND_DARK_COLORS_KEY, color: JSON.stringify(brandDarkColors), position: 99999 })).select("id").single();
-    if (error) { toast("Save failed: " + error.message); return; }
-    _brandDarkOverrideRowId = data.id;
-  }
-  afterListsChanged();
-}
-async function setBrandDarkColor(name, color) { brandDarkColors[name] = color; await saveBrandDarkColors(); }
-async function resetBrandDarkColor(name) { if (!(name in brandDarkColors)) return; delete brandDarkColors[name]; await saveBrandDarkColors(); }
+// Global brand-color writes — localStorage-only, workspace-agnostic. Both Planner and Innovation reflect
+// the change on next render.
+function setBrandLightColor(name, hex) { setBrandColorGlobal(name, "light", hex); afterListsChanged(); }
+function setBrandDarkColor(name, hex) { setBrandColorGlobal(name, "dark", hex); afterListsChanged(); }
+function resetBrandDarkColor(name) { clearBrandColorGlobal(name, "dark"); afterListsChanged(); }
 async function setColor(item, color) {
   item.color = color;
   if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
@@ -2372,7 +2397,7 @@ async function removeList(kind, item) {
   }
   const { error } = await db.from("lists").delete().eq("id", item.id);
   if (error) { toast("Remove failed: " + error.message); return; }
-  if (kind === "brand" && brandDarkColors[item.name]) { delete brandDarkColors[item.name]; await saveBrandDarkColors(); }
+  if (kind === "brand") clearBrandColorGlobal(item.name, null);   // drop both light + dark overrides from the global toolkit
   if (kind === "field") await refetch();
   reloadListsAndUI();
 }
@@ -2401,14 +2426,19 @@ function cascadeRenameLocal(kind, old, neu) {
     else if (kind === "person") { const o = splitOwners(c.owner); if (o.includes(old)) c.owner = o.map(x => x === old ? neu : x).join(", "); }
     else if (kind === "field" && c.fields && (old in c.fields)) { c.fields[neu] = c.fields[old]; delete c.fields[old]; }
   });
-  if (kind === "brand" && brandDarkColors[old]) { brandDarkColors[neu] = brandDarkColors[old]; delete brandDarkColors[old]; }
+  if (kind === "brand") {
+    const g = getBrandColorsGlobal();
+    if (g[old]) { g[neu] = g[old]; delete g[old]; saveBrandColorsGlobal(g); }
+  }
 }
 async function cascadeRenameDB(kind, old, neu) {
   if (kind === "status") { await wsEq(db.from("deliverables").update({ status: neu }).eq("status", old)); return; }
   if (kind === "channel") { await wsEq(db.from("deliverables").update({ channel: neu }).eq("channel", old)); return; }
   if (kind === "brand") {
-    await wsEq(db.from("deliverables").update({ brand: neu }).eq("brand", old));
-    if (brandDarkColors[old]) { brandDarkColors[neu] = brandDarkColors[old]; delete brandDarkColors[old]; await saveBrandDarkColors(); }
+    // Reassign across BOTH workspaces since brand is a global concept now (brand toolkit).
+    await db.from("deliverables").update({ brand: neu }).eq("brand", old);
+    const g = getBrandColorsGlobal();
+    if (g[old]) { g[neu] = g[old]; delete g[old]; saveBrandColorsGlobal(g); }
     return;
   }
   if (kind === "person") {
@@ -3664,6 +3694,14 @@ function listTaskEl(c) {
   chev.title = exp ? "Hide subtasks" : "Show / add subtasks";
   chev.onclick = (e) => { e.stopPropagation(); if (exp) listExpanded.delete(c.id); else listExpanded.add(c.id); renderList(); };
   top.appendChild(chev);
+  // Cover thumbnail — same source + host filter as the Board card thumbnail. Clicking it opens the modal.
+  const thumbSrc = (c.fields && (c.fields[COVER_KEY] || c.fields["Latest Sample Image URL"])) || "";
+  if (thumbSrc && /^(https?:|data:)/i.test(thumbSrc) && !/drive\.google|docs\.google|sharepoint/i.test(thumbSrc)) {
+    const thumb = document.createElement("img"); thumb.className = "lt-thumb"; thumb.src = thumbSrc; thumb.alt = ""; thumb.loading = "lazy";
+    thumb.onerror = () => thumb.remove();
+    thumb.onclick = e => { e.stopPropagation(); openModal(c); };
+    top.appendChild(thumb);
+  }
   const main = document.createElement("div"); main.className = "lt-main";
   const title = document.createElement("div"); title.className = "lt-title";
   const done = doneBadge(c);
@@ -5361,16 +5399,17 @@ function manageRow(kind, item, idx) {
   const row = document.createElement("div"); row.className = "manage-row";
   const left = document.createElement("span"); left.className = "row-left";
   if (kind === "brand") {
-    // Two pickers: light-mode color (stored on the brand row's own color column) and dark-mode override
-    // (brandDarkColors sentinel row). Dark falls back to light when no override is set.
-    const lightVal = (item && item.color) || (DEFAULT_BRAND_HEX[item.name]) || colorOf(brandsList, item.name, DEFAULT_BRAND_HEX);
-    const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = lightVal; sw.title = "Light-mode color";
-    sw.onchange = () => setColor(item, sw.value);
-    const darkVal = brandDarkColors[item.name] || lightVal;
-    const swD = document.createElement("input"); swD.type = "color"; swD.className = "swatch"; swD.value = darkVal; swD.title = "Dark-mode color";
+    // Brand colors are a GLOBAL toolkit (shared across workspaces). Two pickers — light + dark — write to
+    // localStorage. Dark falls back to light when no override is set; ↺ clears the dark override.
+    const lightVal = brandColorLight(item.name) || "#999999";
+    const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = lightVal; sw.title = "Light-mode color (global, shared across workspaces)";
+    sw.onchange = () => setBrandLightColor(item.name, sw.value);
+    const darkVal = brandColorDark(item.name) || lightVal;
+    const swD = document.createElement("input"); swD.type = "color"; swD.className = "swatch"; swD.value = darkVal; swD.title = "Dark-mode color (global, shared across workspaces)";
     swD.onchange = () => setBrandDarkColor(item.name, swD.value);
     left.appendChild(sw); left.appendChild(swD);
-    if (brandDarkColors[item.name]) {
+    const g = getBrandColorsGlobal();
+    if (g[item.name] && g[item.name].dark) {
       const rst = document.createElement("button"); rst.type = "button"; rst.className = "mv"; rst.textContent = "↺"; rst.title = "Clear dark override (fall back to light)";
       rst.onclick = () => resetBrandDarkColor(item.name); left.appendChild(rst);
     }
@@ -5414,8 +5453,44 @@ function manageRow(kind, item, idx) {
   const ed = document.createElement("button"); ed.textContent = "✎"; ed.className = "mv"; ed.title = "Rename";
   ed.onclick = () => { const nn = prompt("Rename “" + item.name + "” to:", item.name); if (nn) renameList(kind, item, nn); };
   ctrls.appendChild(ed);
+  if (kind === "brand") {
+    const mg = document.createElement("button"); mg.textContent = "⤵ Merge"; mg.className = "mv"; mg.title = "Move all deliverables with this brand into another brand, then delete this one";
+    mg.onclick = () => {
+      const others = brandsList.filter(b => b.name !== item.name).map(b => b.name);
+      if (!others.length) { toast("No other brand to merge into."); return; }
+      const target = prompt('Merge "' + item.name + '" into which brand?\n\nAvailable: ' + others.join(", "), others[0]);
+      if (!target) return;
+      const t = others.find(n => n.toLowerCase() === target.trim().toLowerCase());
+      if (!t) { toast('"' + target + '" is not an existing brand.'); return; }
+      mergeBrand(item, t);
+    };
+    ctrls.appendChild(mg);
+  }
   const btn = document.createElement("button"); btn.textContent = "Remove"; btn.onclick = () => removeList(kind, item); ctrls.appendChild(btn);
   row.appendChild(left); row.appendChild(ctrls); return row;
+}
+// Merge one brand into another: reassign every deliverable (across BOTH workspaces, since brand is global now),
+// then delete the source brand's lists rows in every workspace too. Global color overrides on the source are
+// dropped (the target brand keeps its own).
+async function mergeBrand(fromItem, toName) {
+  const fromName = fromItem.name;
+  const affected = cards.filter(c => c.brand === fromName).length;
+  if (!confirm('Merge "' + fromName + '" into "' + toName + '"?\n\n' + affected + ' deliverable' + (affected === 1 ? "" : "s") + ' in this workspace will be reassigned. The same reassignment runs across every workspace, and "' + fromName + '" is then deleted everywhere.')) return;
+  if (!ONLINE) {
+    cards.forEach(c => { if (c.brand === fromName) c.brand = toName; });
+    brandsList = brandsList.filter(b => b.name !== fromName);
+    clearBrandColorGlobal(fromName, null);
+    saveLocal(); saveListsLocal(); afterListsChanged();
+    toast('Merged "' + fromName + '" → "' + toName + '" (' + affected + ' card' + (affected === 1 ? "" : "s") + ').');
+    return;
+  }
+  const u1 = await db.from("deliverables").update({ brand: toName }).eq("brand", fromName);
+  if (u1.error) { toast("Merge failed: " + u1.error.message); return; }
+  const d1 = await db.from("lists").delete().eq("kind", "brand").eq("name", fromName);
+  if (d1.error) { toast("Merge: delete step failed: " + d1.error.message); }
+  clearBrandColorGlobal(fromName, null);
+  await refetch(); reloadListsAndUI();
+  toast('Merged "' + fromName + '" → "' + toName + '".');
 }
 function openManage() {
   manageOpen = true;
@@ -5800,13 +5875,11 @@ async function init() {
   // "what's happening now." Skipped if the URL/bookmark already scoped a sprint (respects saved views + shared
   // links) and skipped on subsequent renders in the same tab (so clearing the filter stays cleared).
   try {
-    if (!sessionStorage.getItem("planner-session-init")) {
+    // Planner only — sprint auto-filter is a weekly-marketing rhythm, not meaningful on Innovation (long-lived product
+    // records). Innovation opens unscoped.
+    if (currentWorkspace === "planner" && !sessionStorage.getItem("planner-session-init")) {
       sessionStorage.setItem("planner-session-init", "1");
       const thisWk = isoWeek(ymd(new Date()));
-      // Set current-week sprint if none is set; ALSO override a URL/bookmark that only carries past weeks — otherwise
-      // a saved link from last week keeps re-applying an old sprint every time the app is reopened (particularly on
-      // mobile, where reopening a bookmarked URL is the common flow). A URL sprint that includes the current or a
-      // future week is respected as an intentional scope.
       if (!filters.sprint) filters.sprint = new Set([thisWk]);
       else if ([...filters.sprint].every(w => w && w < thisWk)) filters.sprint = new Set([thisWk]);
     }
@@ -5838,7 +5911,7 @@ async function init() {
 
   document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => {
     // Entering the List view with no sprint filter defaults to the current week's sprint.
-    if (b.dataset.v === "list" && view !== "list" && !filters.sprint) { filters.sprint = new Set([isoWeek(ymd(new Date()))]); updateFilterBtn(); }
+    if (currentWorkspace === "planner" && b.dataset.v === "list" && view !== "list" && !filters.sprint) { filters.sprint = new Set([isoWeek(ymd(new Date()))]); updateFilterBtn(); }
     setView(b.dataset.v);
   });
   document.querySelectorAll("#calModeSeg button").forEach(b => b.onclick = () => setCalMode(b.dataset.m));
