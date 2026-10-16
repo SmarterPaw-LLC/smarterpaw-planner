@@ -1179,8 +1179,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.89";
+const VERSION = "2.90";
 const CHANGELOG = [
+  "v2.90 — Gallery fallback actually works now. A non-renderable explicit cover (Drive / SharePoint / non-image URL) no longer shadows the gallery — cover resolution skips it and shows the first renderable gallery image instead. Modal cover slot gets the same treatment. Also: clicking anywhere inside the empty gallery zone opens the file picker (not just the + Add images button).",
   "v2.89 — Image gallery per deliverable. New Image gallery section in the modal — click + Add images, drop multiple at once, or paste. First image serves as the auto cover whenever no explicit cover photo is set. Cover resolution across Board / List / modal is unified: explicit cover → gallery[0] → Innovation’s Latest Sample Image URL as a legacy fallback. ✕ on a gallery item removes just that image.",
   "v2.88 — Fix: built-in roles can no longer vanish from a bad save. Empty label on a built-in now gets restored to its workspace default on both save and load, instead of hiding the role. (Custom roles still remove via the Remove button.) Also recovers already-wiped role state on next refresh.",
   "v2.87 — Dropped the inline hex field from every color picker row. The browser's native color-picker dialog (opens on swatch click) already has a hex input, so the row stays clean.",
@@ -1430,13 +1431,16 @@ function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); 
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
 const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery";
 // Cover-source resolver: explicit cover first, then first gallery image, then the Innovation Line Review's
-// Latest Sample Image URL as a legacy fallback. Hosts that return HTML not an image are filtered where rendered.
+// Latest Sample Image URL as a legacy fallback. Non-renderable URLs (Drive, SharePoint, non-http/data) are
+// skipped at this layer so a broken explicit cover doesn't shadow a real gallery image.
 function cardGallery(c) { const g = c && c.fields && c.fields[GALLERY_KEY]; return Array.isArray(g) ? g.filter(Boolean) : []; }
+function isRenderableImageUrl(u) { return !!u && /^(https?:|data:)/i.test(u) && !/drive\.google|docs\.google|sharepoint/i.test(u); }
 function coverSrcOf(c) {
   if (!c || !c.fields) return "";
-  if (c.fields[COVER_KEY]) return c.fields[COVER_KEY];
-  const g = cardGallery(c); if (g.length) return g[0];
-  return c.fields["Latest Sample Image URL"] || "";
+  const explicit = c.fields[COVER_KEY]; if (isRenderableImageUrl(explicit)) return explicit;
+  const g = cardGallery(c); const first = g.find(isRenderableImageUrl); if (first) return first;
+  const legacy = c.fields["Latest Sample Image URL"];
+  return isRenderableImageUrl(legacy) ? legacy : "";
 }
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
@@ -5263,7 +5267,8 @@ function openModal(card, prefill) {
   // Cover photo — explicit cover first; the gallery's first image + Latest Sample Image URL serve as fallbacks,
   // but the modal's hidden input is left blank when no explicit cover is set (so saving doesn't promote a
   // fallback into an explicit cover). The displayed thumbnail uses coverSrcOf for the fallback preview.
-  const explicitCover = card ? ((card.fields && card.fields[COVER_KEY]) || "") : "";
+  const rawExplicit = card ? ((card.fields && card.fields[COVER_KEY]) || "") : "";
+  const explicitCover = isRenderableImageUrl(rawExplicit) ? rawExplicit : "";   // skip Drive/non-image so gallery can take over
   setModalCover(explicitCover, card ? coverSrcOf(card) : "");
   // Image gallery — multiple photos per card. First image serves as the auto cover when no explicit cover is set.
   modalGallery = card ? cardGallery(card).slice() : [];
@@ -6054,6 +6059,9 @@ async function init() {
   const galleryFile = document.getElementById("f_galleryFile");
   document.getElementById("f_galleryAdd").onclick = () => galleryFile.click();
   galleryFile.onchange = e => { handleGalleryFiles(e.target.files); e.target.value = ""; };
+  // Click the empty gallery zone to add images too (same as + Add images). Clicks on existing items (or ✕) pass through.
+  galleryWrap.style.cursor = "pointer";
+  galleryWrap.addEventListener("click", e => { if (e.target.closest(".gallery-item")) return; galleryFile.click(); });
   galleryWrap.addEventListener("dragover", e => { e.preventDefault(); galleryWrap.classList.add("drop-over"); });
   galleryWrap.addEventListener("dragleave", () => galleryWrap.classList.remove("drop-over"));
   galleryWrap.addEventListener("drop", e => {
