@@ -1207,8 +1207,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.98";
+const VERSION = "2.99";
 const CHANGELOG = [
+  "v2.99 — Grid view renders Notes as plain text (dated lines, newest first) instead of showing raw <p> / &amp; markup. CSV export does the same, with “ | ” between entries so the whole thing stays on one row.",
   "v2.98 — Deliverable modal widened to 640 px so note rows have room to breathe. Note textarea gets slightly bigger font + a taller default row, date column tightened to 108 px to give the text more width.",
   "v2.97 — Notes refactored into structured per-entry rows. Each note is {date, text} stored in __notes_entries. In the modal, Notes is a scrollable list with ＋ Add note (new entry stamped today), per-row date pickers, textareas, and ✕ to delete. Notes feed shows one card per row with its dated entries as a scrollable sub-list (newest first); the red date pill is the most-recent note's date, not the card's updated-at. 📋 Copy updates with “last N days” now filters per-entry, not per-card. Legacy c.notes blobs migrate on first open: dated prefixes (4.30.26 - …, 5/13/26 - …, 06.09.26 - …) become entries, any undated remnant gets stamped with the card's last-updated date. c.notes stays as a derived HTML snapshot for card previews.",
   "v2.96 — Lightbox gets prev / next navigation. Open any gallery image and arrow left / right (or use the ‹ › buttons) to flip through the rest. 1 / N counter at the bottom. Single-image galleries skip the nav.",
@@ -4241,6 +4242,13 @@ function gridValue(c, key) {
   if (key === "priority") return cardPriority(c);
   if (key === "sprint") return cardSprint(c);
   if (key === "subtasks") { const p = subProgress(c); return p.total ? p.done + "/" + p.total : ""; }
+  if (key === "notes") {
+    // Render structured notes as plain-text lines (newest first) instead of the raw HTML snapshot so the
+    // grid cell doesn't show <p> / &amp; markup. Falls back to a stripped c.notes blob for cards with no entries.
+    const entries = cardNoteEntries(c);
+    if (entries.length) return entries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(e => (e.date ? fmtMMDDYY(e.date) + " - " : "") + (e.text || "")).join("\n");
+    return (c.notes || "").replace(/<br\s*\/?\s*>/gi, "\n").replace(/<\/?p[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').trim();
+  }
   if (key.indexOf("field:") === 0) return (c.fields && c.fields[key.slice(6)]) || "";
   return c[key] || "";
 }
@@ -5919,7 +5927,7 @@ function download(filename, blob) { const a = document.createElement("a"); a.hre
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
 function exportCols() { return ["Brand","Channel","Promotion","Sprint","Title","Owners","Status","Subtasks","Due","End"].concat(fieldsList.map(f => f.name)).concat(["Notes"]); }
 function exportRow(c) { const p = subProgress(c); return [c.brand, c.channel, cardPromo(c), cardSprint(c), c.title, c.owner||"", c.status, p.total ? p.done + "/" + p.total : "", c.due||"", c.end||""]
-  .concat(fieldsList.map(f => (c.fields && c.fields[f.name]) || "")).concat([(c.notes||"").replace(/\n/g," ")]); }
+  .concat(fieldsList.map(f => (c.fields && c.fields[f.name]) || "")).concat([gridValue(c, "notes").replace(/\n/g, " | ")]); }
 function exportCSV() {
   const rows = [exportCols()];
   cards.forEach(c => rows.push(exportRow(c)));
