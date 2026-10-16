@@ -571,7 +571,11 @@
   .role-icon { flex: none; width: 24px; text-align: center; font-size: 14px; }
   .role-icon-inp { flex: none; width: 44px; padding: 5px 6px; text-align: center; font-size: 14px; }
   .role-row input:not(.role-icon-inp) { flex: 1; padding: 5px 8px; font-size: 12px; }
-  .role-editor-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .role-editor-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .role-editor-actions .spacer { flex: 1; }
+  .role-row .role-rm { flex: none; padding: 4px 8px; font-size: 11px; color: var(--danger); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .role-row .role-rm:hover { border-color: var(--danger); }
+  .role-row.role-builtin .role-rm { visibility: hidden; }   /* built-ins stay (just hide label to blank to drop from dropdown) */
   .mv:hover { border-color: var(--accent); }
   .mv:disabled { opacity: .25; cursor: default; border-color: transparent; }
   .lane-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
@@ -983,12 +987,8 @@
       <div class="add-row"><input id="mAddStatus" placeholder="New lane…" /><button class="primary" id="mAddStatusBtn">Add</button></div>
       <div id="mRoleEditor" class="role-editor" style="display:none">
         <div class="role-editor-title">Role labels &amp; icons for this workspace</div>
-        <div class="role-editor-hint">Rename or re-icon each role. Leave the label empty to hide that role from the dropdown. Behavior stays tied to the internal role (Complete still marks shipped; Backlog still wipes sprint data).</div>
-        <div class="role-row"><input data-role-icon="complete" class="role-icon-inp" maxlength="4" /><input data-role="complete" placeholder="Hide this role" /></div>
-        <div class="role-row"><input data-role-icon="scheduled" class="role-icon-inp" maxlength="4" /><input data-role="scheduled" placeholder="Hide this role" /></div>
-        <div class="role-row"><input data-role-icon="review" class="role-icon-inp" maxlength="4" /><input data-role="review" placeholder="Hide this role" /></div>
-        <div class="role-row"><input data-role-icon="backlog" class="role-icon-inp" maxlength="4" /><input data-role="backlog" placeholder="Hide this role" /></div>
-        <div class="role-editor-actions"><button type="button" id="mRolesReset" class="ghost">Reset to defaults</button><button type="button" id="mRolesSave" class="primary">Save</button></div>
+        <div id="mRoleRows"></div>
+        <div class="role-editor-actions"><button type="button" id="mRolesAdd" class="ghost">+ Add role</button><div class="spacer"></div><button type="button" id="mRolesReset" class="ghost">Reset to defaults</button><button type="button" id="mRolesSave" class="primary">Save</button></div>
       </div>
     </div>
     <div class="manage-sec">
@@ -1162,8 +1162,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.85";
+const VERSION = "2.86";
 const CHANGELOG = [
+  "v2.86 — Role editor can add custom roles (any workspace). + Add role creates a new label + icon row; built-ins keep their sprint / complete / backlog behaviors, custom roles are pure labels. Each lane can be designated as any role (built-in or custom) in Manage; one role per lane. Reset to defaults clears customs too. Innovation workspace also no longer auto-filters by current user (Owner is cross-functional there).",
   "v2.85 — Brand colors moved out of Manage board (per-workspace) into ⋯ Settings → Brand toolkit (global). Every color picker now has a hex field next to the swatch, kept in sync both ways. Enter or blur to commit a typed hex.",
   "v2.84 — Removed the ⤵ Merge brand button (one-time dedupe, no longer needed).",
   "v2.83 — Brand colors are now a global toolkit, shared across Planner + Innovation (stored in localStorage, not per-workspace). Legacy per-workspace dark colors migrate forward on first load. Innovation no longer defaults the sprint filter to the current week on open (sprint is a Planner-only rhythm). Modal cover photo now fits whole image (object-fit: contain) instead of cropping to fill. List view now shows a 48px cover-photo thumbnail on the left of each row when a card has a cover (or an Innovation “Latest Sample Image URL”).",
@@ -1713,6 +1714,36 @@ function loadRoleLabels() { return loadRolePart("labels"); }
 function loadRoleIcons() { return loadRolePart("icons"); }
 function saveRoleLabels() { localStorage.setItem(wsKey("planner-role-labels"), JSON.stringify(ROLE_LABELS)); }
 function saveRoleIcons() { localStorage.setItem(wsKey("planner-role-icons"), JSON.stringify(ROLE_ICONS)); }
+// Custom roles (beyond the four built-ins) have no sprint/complete semantics — they're pure labels on a lane.
+// Each custom role gets its own id (role_<n>) and stored lane assignment: {roleId: laneName}.
+const BUILTIN_ROLE_KEYS = ["complete", "scheduled", "review", "backlog"];
+function isBuiltinRole(key) { return BUILTIN_ROLE_KEYS.indexOf(key) !== -1; }
+function customRoleKeys() { return Object.keys(ROLE_LABELS).filter(k => !isBuiltinRole(k)); }
+let customRoleLanes = loadCustomRoleLanes();
+function loadCustomRoleLanes() {
+  try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-custom-role-lanes")) || "null"); if (raw && typeof raw === "object") return raw; } catch (e) {}
+  return {};
+}
+function saveCustomRoleLanes() { localStorage.setItem(wsKey("planner-custom-role-lanes"), JSON.stringify(customRoleLanes)); }
+function effCustomRoleLane(id) { return customRoleLanes[id] || ""; }
+function laneCustomRoleId(laneName) {
+  for (const k in customRoleLanes) if (customRoleLanes[k] === laneName) return k;
+  return "";
+}
+function setCustomRoleLane(id, item) {
+  // Toggle: clicking a lane that already holds this role clears the mapping; otherwise clear built-ins
+  // on this lane first, then move the role to this lane (one lane per role, one role per lane).
+  if (customRoleLanes[id] === item.name) { delete customRoleLanes[id]; saveCustomRoleLanes(); afterListsChanged(); return; }
+  // Clear any other role already on this lane
+  for (const k in customRoleLanes) if (customRoleLanes[k] === item.name) delete customRoleLanes[k];
+  customRoleLanes[id] = item.name;
+  saveCustomRoleLanes(); afterListsChanged();
+}
+function clearAnyCustomRoleOnLane(laneName) {
+  let changed = false;
+  for (const k in customRoleLanes) if (customRoleLanes[k] === laneName) { delete customRoleLanes[k]; changed = true; }
+  if (changed) saveCustomRoleLanes();
+}
 let WS_COL_MISSING = false;
 function isColumnMissingError(err) {
   if (!err) return false;
@@ -1808,7 +1839,7 @@ async function switchWorkspace(id) {
   loadQuickFilterRows();
   colorBy = localStorage.getItem(wsKey("planner-colorby")) || "brand";
   calendarAnchor = localStorage.getItem(wsKey("planner-cal-anchor")) || "due";
-  ROLE_LABELS = loadRoleLabels(); ROLE_ICONS = loadRoleIcons();
+  ROLE_LABELS = loadRoleLabels(); ROLE_ICONS = loadRoleIcons(); customRoleLanes = loadCustomRoleLanes();
   try { const raw = JSON.parse(localStorage.getItem(wsKey("planner-planning-lanes")) || "null"); planningLanes = Array.isArray(raw) ? new Set(raw) : null; } catch (e) { planningLanes = null; }
   // Reset session-only filter state so a Planner-era sprint pick doesn't leak into Innovation (which has no sprints).
   filters = {}; filterRules = []; filterMatch = "all"; filterOverdue = false;
@@ -1844,6 +1875,8 @@ document.addEventListener("click", e => {
 let filterOverdue = false;
 function saveCurrentUser() { if (currentUser) localStorage.setItem("planner-current-user", currentUser); else localStorage.removeItem("planner-current-user"); }
 function applyCurrentUserFilter() {
+  // Innovation is a cross-functional product catalog — owner isn't a useful default scope there.
+  if (currentWorkspace === "innovation") return;
   if (currentUser) filters.owner = new Set([currentUser]);
   else if (filters.owner) delete filters.owner;
   updateFilterBtn && updateFilterBtn();
@@ -5453,29 +5486,38 @@ function manageRow(kind, item, idx) {
   left.appendChild(document.createTextNode(item.name));
   const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
   if (kind === "status") {
-    // Designation dropdown — collapses the four mutually-exclusive lane roles (Complete / Scheduled / Backlog /
-    // Review) into one compact selector so the row doesn't wrap. Picking one designation clears the others.
-    const cur = completeLane === item.name ? "complete" : effScheduledLane() === item.name ? "scheduled" : effBacklogLane() === item.name ? "backlog" : effReviewLane() === item.name ? "review" : "";
+    // Designation dropdown — one lane can hold one role at a time (built-in or custom). Picking one clears
+    // whichever role was previously on this lane.
+    const curBuiltin = completeLane === item.name ? "complete" : effScheduledLane() === item.name ? "scheduled" : effBacklogLane() === item.name ? "backlog" : effReviewLane() === item.name ? "review" : "";
+    const curCustom = laneCustomRoleId(item.name);
+    const cur = curBuiltin || curCustom || "";
     const dsg = document.createElement("select"); dsg.className = "mv lane-dsg"; dsg.title = "Designate this lane's role";
     const roleRows = [["", "— role —"]];
-    const roleOpt = k => roleRows.push([k, ((ROLE_ICONS[k] || "") + " " + ROLE_LABELS[k]).trim()]);
-    if (ROLE_LABELS.complete) roleOpt("complete");
-    if (ROLE_LABELS.scheduled) roleOpt("scheduled");
-    if (ROLE_LABELS.review) roleOpt("review");
-    if (ROLE_LABELS.backlog) roleOpt("backlog");
+    const roleOpt = k => { if (ROLE_LABELS[k]) roleRows.push([k, ((ROLE_ICONS[k] || "") + " " + ROLE_LABELS[k]).trim()]); };
+    BUILTIN_ROLE_KEYS.forEach(roleOpt);
+    customRoleKeys().forEach(roleOpt);
     roleRows.forEach(([v, l]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === cur) o.selected = true; dsg.appendChild(o);
     });
     dsg.onchange = () => {
       const v = dsg.value;
-      if (cur === "complete") setComplete(item);   // toggles off (since it was on)
-      if (cur === "scheduled") setScheduled(item);
-      if (cur === "backlog") setBacklog(item);
-      if (cur === "review") setReview(item);
-      if (v === "complete" && cur !== "complete") setComplete(item);
-      if (v === "scheduled" && cur !== "scheduled") setScheduled(item);
-      if (v === "backlog" && cur !== "backlog") setBacklog(item);
-      if (v === "review" && cur !== "review") setReview(item);
+      // Clear whichever role currently sits on this lane.
+      if (curBuiltin === "complete") setComplete(item);
+      else if (curBuiltin === "scheduled") setScheduled(item);
+      else if (curBuiltin === "backlog") setBacklog(item);
+      else if (curBuiltin === "review") setReview(item);
+      else if (curCustom) { delete customRoleLanes[curCustom]; saveCustomRoleLanes(); afterListsChanged(); }
+      if (!v || v === cur) return;
+      // Clear built-in on this lane too if we're moving to a different type.
+      if (isBuiltinRole(v)) {
+        clearAnyCustomRoleOnLane(item.name);
+        if (v === "complete") setComplete(item);
+        else if (v === "scheduled") setScheduled(item);
+        else if (v === "backlog") setBacklog(item);
+        else if (v === "review") setReview(item);
+      } else {
+        setCustomRoleLane(v, item);
+      }
     };
     ctrls.appendChild(dsg);
     const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
@@ -6180,20 +6222,51 @@ async function init() {
   // Role-label editor — collapsible panel in the Board lanes section. Save persists to localStorage per
   // workspace; the role dropdown re-renders via afterListsChanged (which calls renderManage + afterLists).
   const roleEditor = document.getElementById("mRoleEditor");
+  const roleRowsHost = document.getElementById("mRoleRows");
+  const BUILTIN_PLACEHOLDERS = { complete: "Complete", scheduled: "Scheduled", review: "In Review", backlog: "Backlog" };
+  const buildRoleRow = (key, label, icon, builtin) => {
+    const row = document.createElement("div"); row.className = "role-row" + (builtin ? " role-builtin" : "");
+    row.dataset.key = key;
+    const ic = document.createElement("input"); ic.className = "role-icon-inp"; ic.maxLength = 4; ic.value = icon || ""; ic.dataset.roleIcon = key;
+    const lb = document.createElement("input"); lb.value = label || ""; lb.dataset.role = key; lb.placeholder = builtin ? BUILTIN_PLACEHOLDERS[key] + " (leave empty to hide)" : "Role name";
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "role-rm"; rm.textContent = "Remove"; rm.title = "Remove this custom role";
+    rm.onclick = () => { row.remove(); };
+    row.appendChild(ic); row.appendChild(lb); row.appendChild(rm);
+    return row;
+  };
   const populateRoleEditor = () => {
-    roleEditor.querySelectorAll("input[data-role]").forEach(inp => { inp.value = ROLE_LABELS[inp.dataset.role] || ""; });
-    roleEditor.querySelectorAll("input[data-role-icon]").forEach(inp => { inp.value = ROLE_ICONS[inp.dataset.roleIcon] || ""; });
+    roleRowsHost.innerHTML = "";
+    BUILTIN_ROLE_KEYS.forEach(k => roleRowsHost.appendChild(buildRoleRow(k, ROLE_LABELS[k], ROLE_ICONS[k], true)));
+    customRoleKeys().forEach(k => roleRowsHost.appendChild(buildRoleRow(k, ROLE_LABELS[k], ROLE_ICONS[k], false)));
   };
   document.getElementById("mEditRolesBtn").onclick = () => { const show = roleEditor.style.display === "none"; roleEditor.style.display = show ? "" : "none"; if (show) populateRoleEditor(); };
+  document.getElementById("mRolesAdd").onclick = () => {
+    // Pick an id not already used; built-in keys and existing custom keys are off-limits.
+    const existing = new Set([...BUILTIN_ROLE_KEYS, ...customRoleKeys(), ...Array.from(roleRowsHost.querySelectorAll(".role-row")).map(r => r.dataset.key)]);
+    let n = 1; while (existing.has("role_" + n)) n++;
+    roleRowsHost.appendChild(buildRoleRow("role_" + n, "", "", false));
+    const inp = roleRowsHost.lastChild.querySelector("input[data-role]"); if (inp) inp.focus();
+  };
   document.getElementById("mRolesSave").onclick = () => {
-    roleEditor.querySelectorAll("input[data-role]").forEach(inp => { ROLE_LABELS[inp.dataset.role] = (inp.value || "").trim(); });
-    roleEditor.querySelectorAll("input[data-role-icon]").forEach(inp => { ROLE_ICONS[inp.dataset.roleIcon] = (inp.value || "").trim(); });
-    saveRoleLabels(); saveRoleIcons(); roleEditor.style.display = "none"; afterListsChanged(); render(); toast("Role labels saved for " + wsDef().label + ".");
+    const nextLabels = {}, nextIcons = {};
+    Array.from(roleRowsHost.querySelectorAll(".role-row")).forEach(r => {
+      const key = r.dataset.key;
+      const lb = r.querySelector("input[data-role]"); const ic = r.querySelector("input[data-role-icon]");
+      const label = (lb && lb.value || "").trim(); const icon = (ic && ic.value || "").trim();
+      if (!isBuiltinRole(key) && !label) return;   // drop custom rows left blank
+      nextLabels[key] = label; nextIcons[key] = icon;
+    });
+    // Drop any custom-role → lane mapping whose role was removed from the editor.
+    Object.keys(customRoleLanes).forEach(k => { if (!(k in nextLabels)) delete customRoleLanes[k]; });
+    saveCustomRoleLanes();
+    ROLE_LABELS = nextLabels; ROLE_ICONS = nextIcons;
+    saveRoleLabels(); saveRoleIcons(); roleEditor.style.display = "none"; afterListsChanged(); render(); toast("Roles saved for " + wsDef().label + ".");
   };
   document.getElementById("mRolesReset").onclick = () => {
     ROLE_LABELS = Object.assign({}, DEFAULT_ROLE_LABELS[currentWorkspace] || DEFAULT_ROLE_LABELS.planner);
     ROLE_ICONS = Object.assign({}, DEFAULT_ROLE_ICONS[currentWorkspace] || DEFAULT_ROLE_ICONS.planner);
-    saveRoleLabels(); saveRoleIcons(); populateRoleEditor(); afterListsChanged(); render(); toast("Role labels + icons reset to defaults.");
+    customRoleLanes = {}; saveCustomRoleLanes();
+    saveRoleLabels(); saveRoleIcons(); populateRoleEditor(); afterListsChanged(); render(); toast("Roles reset to defaults.");
   };
   document.getElementById("manageClose").onclick = closeManage;
   document.getElementById("manageOverlay").onclick = e => { if (e.target.id === "manageOverlay") closeManage(); };
