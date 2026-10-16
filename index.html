@@ -409,10 +409,6 @@
   .lt-top { display: flex; align-items: flex-start; gap: 8px; }
   .lt-chev { flex: none; padding: 0; width: 20px; height: 22px; color: var(--muted); border: none; background: transparent; font-size: 12px; cursor: pointer; }
   .lt-thumb { flex: none; width: 48px; height: 48px; object-fit: contain; background: var(--panel-2); border-radius: 6px; cursor: pointer; }
-  /* Color picker — native swatch + a hex text input next to it, kept in sync. */
-  .cp-wrap { display: inline-flex; align-items: center; gap: 5px; }
-  .cp-hex { width: 76px; padding: 4px 6px; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); text-transform: lowercase; }
-  .cp-hex:focus { outline: none; border-color: var(--accent); }
   .menu-sec-hint { font-size: 10.5px; color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: 6px; }
   .lt-chev.ghost-chev { opacity: .35; }
   .lt-chev:hover { color: var(--text); }
@@ -1162,8 +1158,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.86";
+const VERSION = "2.87";
 const CHANGELOG = [
+  "v2.87 — Dropped the inline hex field from every color picker row. The browser's native color-picker dialog (opens on swatch click) already has a hex input, so the row stays clean.",
   "v2.86 — Role editor can add custom roles (any workspace). + Add role creates a new label + icon row; built-ins keep their sprint / complete / backlog behaviors, custom roles are pure labels. Each lane can be designated as any role (built-in or custom) in Manage; one role per lane. Reset to defaults clears customs too. Innovation workspace also no longer auto-filters by current user (Owner is cross-functional there).",
   "v2.85 — Brand colors moved out of Manage board (per-workspace) into ⋯ Settings → Brand toolkit (global). Every color picker now has a hex field next to the swatch, kept in sync both ways. Enter or blur to commit a typed hex.",
   "v2.84 — Removed the ⤵ Merge brand button (one-time dedupe, no longer needed).",
@@ -5458,23 +5455,12 @@ async function removePromo(name) {
   if (name in promoOverrides) { delete promoOverrides[name]; await savePromoOverrides(); }   // drop the override entry too
   await refetch(); if (manageOpen) renderManage();
 }
-// Native color swatch + an editable hex field, kept in sync. onChange fires on swatch commit, hex Enter / blur.
+// Native color swatch. The browser's own picker dialog has a hex input, so the row stays clean.
 function makeColorPicker(current, title, onChange) {
-  const wrap = document.createElement("span"); wrap.className = "cp-wrap";
   const safe = /^#[0-9a-fA-F]{6}$/.test(current || "") ? current : "#999999";
   const sw = document.createElement("input"); sw.type = "color"; sw.className = "swatch"; sw.value = safe; sw.title = title || "";
-  const hx = document.createElement("input"); hx.type = "text"; hx.className = "cp-hex"; hx.value = safe.toLowerCase(); hx.spellcheck = false; hx.maxLength = 7; hx.title = (title || "") + " · hex, e.g. #f07830";
-  sw.addEventListener("input", () => { hx.value = sw.value.toLowerCase(); });
-  sw.addEventListener("change", () => { hx.value = sw.value.toLowerCase(); onChange(sw.value); });
-  const applyHex = () => {
-    let v = (hx.value || "").trim(); if (v && v[0] !== "#") v = "#" + v;
-    if (/^#[0-9a-fA-F]{6}$/.test(v)) { sw.value = v; hx.value = v.toLowerCase(); onChange(v); }
-    else hx.value = sw.value.toLowerCase();   // revert invalid
-  };
-  hx.addEventListener("blur", applyHex);
-  hx.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); hx.blur(); } });
-  wrap.appendChild(sw); wrap.appendChild(hx);
-  return wrap;
+  sw.addEventListener("change", () => onChange(sw.value));
+  return sw;
 }
 function manageRow(kind, item, idx) {
   const row = document.createElement("div"); row.className = "manage-row";
