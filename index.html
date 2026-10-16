@@ -541,6 +541,18 @@
   .cover-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .2px; }
   .cover-clear { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 13px; background: rgba(0,0,0,.55); color: #fff; border: none; border-radius: 999px; cursor: pointer; display: none; }
   .cover-clear:hover { background: rgba(0,0,0,.8); }
+  /* Image gallery — thumbnail grid in the modal, drag-and-drop zone, add button. */
+  .gallery-wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; min-height: 48px; padding: 8px; background: var(--panel-2); border: 1.5px dashed var(--line); border-radius: 10px; }
+  .gallery-wrap.drop-over { border-color: var(--accent); background: rgba(109,93,252,.08); }
+  .gallery-wrap:empty::before { content: "No images yet"; color: var(--muted); font-size: 12px; grid-column: 1 / -1; padding: 10px; text-align: center; }
+  .gallery-item { position: relative; aspect-ratio: 1 / 1; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .gallery-item img { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--panel); }
+  .gallery-item .gi-rm { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; line-height: 1; font-size: 12px; background: rgba(0,0,0,.6); color: #fff; border: none; border-radius: 999px; cursor: pointer; }
+  .gallery-item .gi-rm:hover { background: rgba(0,0,0,.85); }
+  .gallery-item .gi-cover { position: absolute; bottom: 4px; left: 4px; font-size: 10px; background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 600; letter-spacing: .3px; }
+  .gallery-tools { display: flex; gap: 8px; margin-top: 8px; }
+  .gallery-add { padding: 6px 12px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); cursor: pointer; font-weight: 600; }
+  .gallery-add:hover { border-color: var(--accent); }
   /* Thumbnail at the top of Board cards and Grid rows for anything with a cover photo. */
   .card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px 8px 0 0; margin: -11px -11px 8px; }
   .field-link-row { display: flex; gap: 6px; align-items: stretch; }
@@ -896,6 +908,15 @@
       <input type="file" id="f_coverFile" accept="image/*" style="display:none" />
       <input type="hidden" id="f_coverUrl" />
     </div>
+    <!-- Image gallery — multiple photos per card. First image is used as the auto cover when no explicit cover is set. -->
+    <div class="field gallery-field">
+      <label>Image gallery <span class="opt">— drop or paste multiple; first image serves as the auto cover</span></label>
+      <div id="f_gallery" class="gallery-wrap"></div>
+      <div class="gallery-tools">
+        <button type="button" id="f_galleryAdd" class="gallery-add">＋ Add images</button>
+      </div>
+      <input type="file" id="f_galleryFile" accept="image/*" multiple style="display:none" />
+    </div>
     <div class="field"><label>Title</label>
       <div class="title-wrap">
         <textarea id="f_title" rows="1" placeholder="e.g. July sale carousel"></textarea>
@@ -1158,8 +1179,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "2.88";
+const VERSION = "2.89";
 const CHANGELOG = [
+  "v2.89 — Image gallery per deliverable. New Image gallery section in the modal — click + Add images, drop multiple at once, or paste. First image serves as the auto cover whenever no explicit cover photo is set. Cover resolution across Board / List / modal is unified: explicit cover → gallery[0] → Innovation’s Latest Sample Image URL as a legacy fallback. ✕ on a gallery item removes just that image.",
   "v2.88 — Fix: built-in roles can no longer vanish from a bad save. Empty label on a built-in now gets restored to its workspace default on both save and load, instead of hiding the role. (Custom roles still remove via the Remove button.) Also recovers already-wiped role state on next refresh.",
   "v2.87 — Dropped the inline hex field from every color picker row. The browser's native color-picker dialog (opens on swatch click) already has a hex input, so the row stays clean.",
   "v2.86 — Role editor can add custom roles (any workspace). + Add role creates a new label + icon row; built-ins keep their sprint / complete / backlog behaviors, custom roles are pure labels. Each lane can be designated as any role (built-in or custom) in Manage; one role per lane. Reset to defaults clears customs too. Innovation workspace also no longer auto-filters by current user (Owner is cross-functional there).",
@@ -1406,7 +1428,16 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery";
+// Cover-source resolver: explicit cover first, then first gallery image, then the Innovation Line Review's
+// Latest Sample Image URL as a legacy fallback. Hosts that return HTML not an image are filtered where rendered.
+function cardGallery(c) { const g = c && c.fields && c.fields[GALLERY_KEY]; return Array.isArray(g) ? g.filter(Boolean) : []; }
+function coverSrcOf(c) {
+  if (!c || !c.fields) return "";
+  if (c.fields[COVER_KEY]) return c.fields[COVER_KEY];
+  const g = cardGallery(c); if (g.length) return g[0];
+  return c.fields["Latest Sample Image URL"] || "";
+}
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
   if (!ymdStr) return "";
@@ -3762,7 +3793,7 @@ function listTaskEl(c) {
   chev.onclick = (e) => { e.stopPropagation(); if (exp) listExpanded.delete(c.id); else listExpanded.add(c.id); renderList(); };
   top.appendChild(chev);
   // Cover thumbnail — same source + host filter as the Board card thumbnail. Clicking it opens the modal.
-  const thumbSrc = (c.fields && (c.fields[COVER_KEY] || c.fields["Latest Sample Image URL"])) || "";
+  const thumbSrc = coverSrcOf(c);
   if (thumbSrc && /^(https?:|data:)/i.test(thumbSrc) && !/drive\.google|docs\.google|sharepoint/i.test(thumbSrc)) {
     const thumb = document.createElement("img"); thumb.className = "lt-thumb"; thumb.src = thumbSrc; thumb.alt = ""; thumb.loading = "lazy";
     thumb.onerror = () => thumb.remove();
@@ -3874,7 +3905,7 @@ function cardEl(c) {
   const done = doneBadge(c);
   const prog = subProgress(c);
   const progHtml = prog.total ? `<div class="card-prog"><div class="progress${prog.pct === 100 ? " full" : ""}"><i style="width:${prog.pct}%"></i></div><span>${prog.done}/${prog.total}</span></div>` : "";
-  const coverSrc = (c.fields && (c.fields[COVER_KEY] || c.fields["Latest Sample Image URL"])) || "";
+  const coverSrc = coverSrcOf(c);
   // Only render an <img> for actual image URLs/data. Many Line Review “Latest Sample Image URL” cells point at
   // Google Drive / SharePoint links or dead URLs that return HTML, not an image — those render as broken img
   // icons. Hide any that fail to load via onerror so a 403/404 doesn't leave a broken placeholder in the card.
@@ -5118,22 +5149,55 @@ function renderFieldInputs(values) {
 /* ---------- modal ---------- */
 // Shared helpers for the cover-photo field in the modal. The displayed value is kept in both the <img> src and
 // a hidden input so saveModal() can read it uniformly whether it came from an upload or a pasted URL.
-function setModalCover(url) {
+function setModalCover(url, fallbackPreview) {
   const img = document.getElementById("f_coverImg");
   const ph = document.getElementById("f_coverPlaceholder");
   const clr = document.getElementById("f_coverClear");
   const hid = document.getElementById("f_coverUrl");
   const u = (url || "").trim();
-  hid.value = u;
-  // Use explicit display values — the stylesheet defaults .cover-wrap img and .cover-clear to display:none,
-  // so setting inline style to "" removes the inline rule and falls back to the hidden default.
-  if (u) { img.src = u; img.style.display = "block"; ph.style.display = "none"; clr.style.display = "block"; }
-  else { img.removeAttribute("src"); img.style.display = "none"; ph.style.display = "flex"; clr.style.display = "none"; }
+  const fb = (fallbackPreview || "").trim();
+  hid.value = u;   // explicit cover only — fallback is preview-only, saveModal doesn't persist it
+  const showing = u || fb;
+  if (showing) {
+    img.src = showing; img.style.display = "block"; ph.style.display = "none";
+    clr.style.display = u ? "block" : "none";   // ✕ only clears an explicit cover
+  } else {
+    img.removeAttribute("src"); img.style.display = "none"; ph.style.display = "flex"; clr.style.display = "none";
+  }
 }
 async function handleCoverFile(file) {
   if (!/^image\//.test(file.type)) { toast("Pick an image file."); return; }
   try { const dataUrl = await resizeImageToDataUrl(file, 1200, 0.82); setModalCover(dataUrl); }
   catch (e) { toast("Couldn't read that image: " + (e && e.message || e)); }
+}
+// Image gallery — modalGallery is the working array of image URLs (data URLs for uploads, http(s) URLs for
+// pasted/dropped links). Rendered as a thumbnail grid; first item marked as the cover when no explicit cover set.
+let modalGallery = [];
+function renderGalleryEdit() {
+  const host = document.getElementById("f_gallery"); if (!host) return;
+  host.innerHTML = "";
+  const noExplicitCover = !(document.getElementById("f_coverUrl").value || "").trim();
+  modalGallery.forEach((url, idx) => {
+    const item = document.createElement("div"); item.className = "gallery-item";
+    const img = document.createElement("img"); img.src = url; img.alt = ""; img.loading = "lazy"; img.onerror = () => { item.style.opacity = ".3"; img.alt = "Image failed to load"; };
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "gi-rm"; rm.textContent = "✕"; rm.title = "Remove from gallery";
+    rm.onclick = (e) => { e.stopPropagation(); modalGallery.splice(idx, 1); renderGalleryEdit(); if (noExplicitCover) setModalCover("", modalGallery[0] || ""); };
+    item.appendChild(img); item.appendChild(rm);
+    if (noExplicitCover && idx === 0) { const cb = document.createElement("span"); cb.className = "gi-cover"; cb.textContent = "COVER"; item.appendChild(cb); }
+    host.appendChild(item);
+  });
+}
+async function handleGalleryFiles(files) {
+  const list = Array.from(files || []).filter(f => /^image\//.test(f.type));
+  if (!list.length) return;
+  const noExplicitCoverBefore = !(document.getElementById("f_coverUrl").value || "").trim();
+  for (const f of list) {
+    try { const dataUrl = await resizeImageToDataUrl(f, 1200, 0.82); modalGallery.push(dataUrl); }
+    catch (e) { toast("Skipped “" + (f.name || "image") + "”: " + (e && e.message || e)); }
+  }
+  renderGalleryEdit();
+  // If no explicit cover is set, nudge the modal cover preview to the gallery's new first image.
+  if (noExplicitCoverBefore) setModalCover("", modalGallery[0] || "");
 }
 // Downscale an image file to a reasonable size and return a JPEG data URL. Keeps aspect ratio; skips resize
 // when the source is already under the target width. Falls back to the original file's own data URL for
@@ -5196,10 +5260,14 @@ function openModal(card, prefill) {
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : ((prefill && prefill.status && statusList.some(s => s.name === prefill.status)) ? prefill.status : (statusList[0] ? statusList[0].name : "Backlog"));
   document.getElementById("f_notes").innerHTML = card ? notesToEditor(card.notes) : "";
-  // Cover photo — load from the card's __coverUrl field; fall back to Latest Sample Image URL on Innovation
-  // (since the Line Review import drops that one in). Blank for new cards.
-  const coverFromCard = card ? ((card.fields && card.fields[COVER_KEY]) || (card.fields && card.fields["Latest Sample Image URL"]) || "") : "";
-  setModalCover(coverFromCard);
+  // Cover photo — explicit cover first; the gallery's first image + Latest Sample Image URL serve as fallbacks,
+  // but the modal's hidden input is left blank when no explicit cover is set (so saving doesn't promote a
+  // fallback into an explicit cover). The displayed thumbnail uses coverSrcOf for the fallback preview.
+  const explicitCover = card ? ((card.fields && card.fields[COVER_KEY]) || "") : "";
+  setModalCover(explicitCover, card ? coverSrcOf(card) : "");
+  // Image gallery — multiple photos per card. First image serves as the auto cover when no explicit cover is set.
+  modalGallery = card ? cardGallery(card).slice() : [];
+  renderGalleryEdit();
   // "Last updated" hint next to the Notes label — only shows when we have a stamp (set on save going forward).
   const nu = document.getElementById("f_notesUpdated");
   const nuStamp = card && card.fields && card.fields[NOTES_UPDATED_KEY];
@@ -5258,6 +5326,7 @@ function saveModal() {
   if (notesStamp) fields[NOTES_UPDATED_KEY] = notesStamp; else delete fields[NOTES_UPDATED_KEY];
   const coverVal = (document.getElementById("f_coverUrl").value || "").trim();
   if (coverVal) fields[COVER_KEY] = coverVal; else delete fields[COVER_KEY];
+  if (modalGallery && modalGallery.length) fields[GALLERY_KEY] = modalGallery.slice(); else delete fields[GALLERY_KEY];
   const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: notes, fields };
@@ -5978,6 +6047,36 @@ async function init() {
     const cd = e.clipboardData; if (!cd) return;
     for (const item of cd.items || []) { if (/^image\//.test(item.type)) { const blob = item.getAsFile(); if (blob) { e.preventDefault(); handleCoverFile(blob); return; } } }
     const text = cd.getData("text/plain"); if (text && /^https?:\/\//i.test(text)) { e.preventDefault(); setModalCover(text.trim()); }
+  });
+  // Gallery — add multiple images, drop-zone, paste, click-to-add. Each image is resized to 1200px just like
+  // the cover. Pasted URLs are stored as http(s) strings (no download) so they don't bloat the row.
+  const galleryWrap = document.getElementById("f_gallery");
+  const galleryFile = document.getElementById("f_galleryFile");
+  document.getElementById("f_galleryAdd").onclick = () => galleryFile.click();
+  galleryFile.onchange = e => { handleGalleryFiles(e.target.files); e.target.value = ""; };
+  galleryWrap.addEventListener("dragover", e => { e.preventDefault(); galleryWrap.classList.add("drop-over"); });
+  galleryWrap.addEventListener("dragleave", () => galleryWrap.classList.remove("drop-over"));
+  galleryWrap.addEventListener("drop", e => {
+    e.preventDefault(); galleryWrap.classList.remove("drop-over");
+    const fs = e.dataTransfer.files; if (fs && fs.length) { handleGalleryFiles(fs); return; }
+    const u = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
+    if (u && /^https?:\/\//i.test(u)) {
+      const noExplicit = !(document.getElementById("f_coverUrl").value || "").trim();
+      modalGallery.push(u.trim()); renderGalleryEdit();
+      if (noExplicit) setModalCover("", modalGallery[0] || "");
+    }
+  });
+  galleryWrap.addEventListener("paste", e => {
+    const cd = e.clipboardData; if (!cd) return;
+    const imgs = []; for (const item of cd.items || []) { if (/^image\//.test(item.type)) { const b = item.getAsFile(); if (b) imgs.push(b); } }
+    if (imgs.length) { e.preventDefault(); handleGalleryFiles(imgs); return; }
+    const text = cd.getData("text/plain");
+    if (text && /^https?:\/\//i.test(text)) {
+      e.preventDefault();
+      const noExplicit = !(document.getElementById("f_coverUrl").value || "").trim();
+      modalGallery.push(text.trim()); renderGalleryEdit();
+      if (noExplicit) setModalCover("", modalGallery[0] || "");
+    }
   });
   titleEl.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveModal(); } });
   // Full emoji picker — search bar, category chips, grid. Inline dataset covers the common set from every
