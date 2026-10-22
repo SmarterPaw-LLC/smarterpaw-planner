@@ -1225,8 +1225,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.10";
+const VERSION = "3.11";
 const CHANGELOG = [
+  "v3.11 — Group-by order on Copy updates follows the dimension's canonical order (lanes in Manage order, brands / channels / owners in list order, priority in High / Medium / Low / No Priority order) instead of alphabetical. Any value not in the canonical list falls back to alphabetical at the end.",
   "v3.10 — Breakdown moved into the Copy updates dialog. Removed the 📊 Stats button on the Notes toolbar. New “Include breakdown” checkbox on the Copy updates dialog prepends a per-bucket × per-lane card-count block (Products by Innovation Year × Lane for Innovation, Cards by Sprint × Lane for Planner) above the per-card entries, so you can paste the full update + the lane totals in one go. Choice persists per browser. “Current year / Next year / Previous year” labels follow the Innovation Year nav state, not the calendar year.",
   "v3.09 — Notes view toolbar gets a 📊 Stats button. Opens a modal with a per-bucket × per-lane breakdown: Innovation groups by year (Current year highlighted, Next year subtitled), Planner groups by ISO sprint week. Totals pill per bucket, lane cells with color accents, (off-lane) counts for cards whose status isn't in the current lane list. Respects the active Notes filters (brand, owner, channel, search, etc.).",
   "v3.08 — 📋 Copy updates gains a “Group by” dropdown. Pick a dimension (Lane, Brand, Channel, Owner, Priority, Promotion) and the output groups cards under # Group headings before each ## Card block. Multi-valued dims (Owner, Channel) land a card in each group it belongs to. Choice persists per browser.",
@@ -3792,7 +3793,20 @@ function buildNotesExportText() {
         byGroup.get(gv).push({ card, entries });
       });
     });
-    [...byGroup.keys()].sort().forEach(gv => {
+    // Preserve the canonical order for each dimension: lanes follow Manage order, brands/channels/people the same.
+    // Priority has fixed order (High / Medium / Low / No Priority). Anything else falls back to alphabetical.
+    const canonical =
+      groupBy === "status" ? statusList.map(s => s.name) :
+      groupBy === "brand" ? brandsList.map(b => b.name) :
+      groupBy === "channel" ? channelsList.map(ch => ch.name) :
+      groupBy === "owner" ? peopleList.map(p => p.name) :
+      groupBy === "priority" ? ["High", "Medium", "Low", "No Priority"] :
+      [];
+    const seen = new Set();
+    const orderedKeys = [];
+    canonical.forEach(k => { if (byGroup.has(k)) { orderedKeys.push(k); seen.add(k); } });
+    [...byGroup.keys()].filter(k => !seen.has(k)).sort().forEach(k => orderedKeys.push(k));
+    orderedKeys.forEach(gv => {
       lines.push("# " + gv);
       lines.push("-".repeat(("# " + gv).length));
       lines.push("");
