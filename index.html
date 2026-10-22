@@ -965,7 +965,7 @@
     <div class="row2">
       <div class="field"><label>Brand</label><select id="f_brand"></select></div>
       <div class="field"><label>Channel</label>
-        <div class="ch-wrap"><select id="f_channel"></select><button id="f_channelAdd" title="Add a channel">＋</button></div>
+        <div class="owner-chips" id="f_channels"></div>
       </div>
     </div>
     <div class="field"><label>Owners</label><div class="owner-chips" id="f_owners"></div></div>
@@ -1210,8 +1210,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.02";
+const VERSION = "3.03";
 const CHANGELOG = [
+  "v3.03 — Channel is now multi-select on cards (same chip pattern as Owners). A card can live in several channels at once; stored as a comma-joined string. Filters, grid grouping, list splits, rename cascade, color-by-channel, and CSV export all honor the multi value. The modal's channel dropdown is replaced with a chip row + ＋ Channel.",
   "v3.02 — Gallery images are now timestamped on add. Each new upload / paste / drop stamps an addedAt time; the Notes feed shows one 🖼️ Image row per image (with the date it was added), and 📋 Copy updates includes image additions that fall inside the last-N-days window. Legacy gallery items (saved as bare URLs before this release) stay silent in the feed — they have no timestamp.",
   "v3.01 — Silenced the “Stamped N Innovation products as 2027” toast. It was firing on every browser that didn't yet have the migration flag (a new browser, cleared cache, etc.). Migration still runs silently; only failures surface now.",
   "v3.00 — Note rows auto-grow to fit their content, no in-row scrolling. Date column tightened to 88 px.",
@@ -1733,12 +1734,12 @@ function brandColor(n) {
 }
 function channelColorOf(n) { return colorOf(channelsList, n, null); }
 function statusColor(name) { return colorOf(statusList, name, STATUS_COLORS); }
-function colorFor(c) { return colorBy === "channel" ? channelColorOf(c.channel) : colorBy === "status" ? statusColor(c.status) : colorBy === "priority" ? priorityColor(cardPriority(c)) : brandColor(c.brand); }
+function colorFor(c) { return colorBy === "channel" ? channelColorOf((splitChannels(c.channel)[0]) || c.channel) : colorBy === "status" ? statusColor(c.status) : colorBy === "priority" ? priorityColor(cardPriority(c)) : brandColor(c.brand); }
 // Quick-filter row dimensions — used by renderQuickFilters + passesFilters. Each row's filter state is `filters[key]`.
 function qfDims() {
   const base = [
     { key: "brand", label: "Brand", vals: () => brandsList.map(b => b.name), color: brandColor, valsOf: c => c.brand ? [c.brand] : [] },
-    { key: "channel", label: "Channel", vals: () => channelsList.map(c => c.name), color: channelColorOf, valsOf: c => c.channel ? [c.channel] : [] },
+    { key: "channel", label: "Channel", vals: () => channelsList.map(c => c.name), color: channelColorOf, valsOf: c => splitChannels(c.channel) },
     { key: "promotion", label: "Promotions", vals: () => [...legendPromoSet(), ...(filters.promotion || [])].filter((v, i, a) => a.indexOf(v) === i).sort((a,b)=>a.localeCompare(b)), color: promoColor, valsOf: c => { const p = cardPromo(c); return p ? [p] : []; } },
     { key: "priority", label: "Priority", vals: () => PRIORITIES.map(p => p.name), color: priorityColor, valsOf: c => [cardPriority(c)] },
     { key: "status", label: "Lane", vals: () => statusList.map(s => s.name), color: statusColor, valsOf: c => c.status ? [c.status] : [] },
@@ -1762,7 +1763,7 @@ function availableDims() {
 }
 function dimInfo(c, key) {
   if (key === "brand") return { text: c.brand, color: brandColor(c.brand) };
-  if (key === "channel") return { text: c.channel, color: channelColorOf(c.channel) };
+  if (key === "channel") { const chs = splitChannels(c.channel); return { text: chs.join(", "), color: channelColorOf(chs[0] || "") }; }
   if (key === "owners") return { text: c.owner, color: null };
   if (key === "status") return { text: c.status, color: statusColor(c.status) };
   if (key === "priority") { const p = cardPriority(c); return { text: p, color: priorityColor(p) }; }
@@ -1971,6 +1972,7 @@ function sortCards(arr, sort) {
 let searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
 let modalOwners = new Set();
+let modalChannels = new Set();
 let modalSubs = [];   // working copy of the open card's subtasks
 let modalEmails = [];   // working copy of the open card's emails (fields.__emails)
 let modalSprintHist = [];   // working copy of the open card's tracked-sprint history (editable via ✕ chips)
@@ -2183,7 +2185,7 @@ function dateSentinelMatches(k, due) {
 function ruleCardValues(c, field) {
   if (field === "owner") return splitOwners(c.owner);
   if (field === "brand") return c.brand ? [c.brand] : [];
-  if (field === "channel") return c.channel ? [c.channel] : [];
+  if (field === "channel") return splitChannels(c.channel);
   if (field === "status") return c.status ? [c.status] : [];
   if (field === "priority") return [cardPriority(c)];
   if (field === "promotion") { const p = cardPromo(c); return p ? [p] : []; }
@@ -2692,10 +2694,11 @@ async function setComplete(item) {
   await reloadListsAndUI();
 }
 function splitOwners(s) { return (s || "").split(",").map(x => x.trim()).filter(Boolean); }
+function splitChannels(s) { return (s || "").split(",").map(x => x.trim()).filter(Boolean); }   // same shape as owners — comma-joined string in c.channel
 function cascadeRenameLocal(kind, old, neu) {
   cards.forEach(c => {
     if (kind === "status" && c.status === old) c.status = neu;
-    else if (kind === "channel" && c.channel === old) c.channel = neu;
+    else if (kind === "channel") { const ch = splitChannels(c.channel); if (ch.includes(old)) c.channel = ch.map(x => x === old ? neu : x).join(", "); }
     else if (kind === "brand" && c.brand === old) c.brand = neu;
     else if (kind === "person") { const o = splitOwners(c.owner); if (o.includes(old)) c.owner = o.map(x => x === old ? neu : x).join(", "); }
     else if (kind === "field" && c.fields && (old in c.fields)) { c.fields[neu] = c.fields[old]; delete c.fields[old]; }
@@ -2707,7 +2710,12 @@ function cascadeRenameLocal(kind, old, neu) {
 }
 async function cascadeRenameDB(kind, old, neu) {
   if (kind === "status") { await wsEq(db.from("deliverables").update({ status: neu }).eq("status", old)); return; }
-  if (kind === "channel") { await wsEq(db.from("deliverables").update({ channel: neu }).eq("channel", old)); return; }
+  if (kind === "channel") {
+    // Mirror the owner cascade: a card may hold multiple channels, so per-card update is required.
+    const affected = cards.filter(c => splitChannels(c.channel).includes(old));
+    await Promise.all(affected.map(c => db.from("deliverables").update({ channel: splitChannels(c.channel).map(x => x === old ? neu : x).join(", ") }).eq("id", c.id)));
+    return;
+  }
   if (kind === "brand") {
     // Reassign across BOTH workspaces since brand is a global concept now (brand toolkit).
     await db.from("deliverables").update({ brand: neu }).eq("brand", old);
@@ -3441,7 +3449,7 @@ function splitVals(c, key) {
   if (key === "owner") { const o = splitOwners(c.owner); return o.length ? o : [""]; }
   if (key === "status") return [c.status || ""];
   if (key === "brand") return [c.brand || ""];
-  if (key === "channel") return [c.channel || ""];
+  if (key === "channel") { const chs = splitChannels(c.channel); return chs.length ? chs : [""]; }
   if (key === "priority") return [cardPriority(c)];
   if (key === "promotion") return [cardPromo(c)];
   if (key.indexOf("field:") === 0) return [(c.fields && c.fields[key.slice(6)]) || ""];
@@ -4927,12 +4935,10 @@ function renderCalendar() {
 }
 
 /* ---------- filters / selects ---------- */
+// Channel is a multi-select chip row now (renderChannelChips). This function is kept as a shim so afterListsChanged
+// and init still call it safely — it refreshes the chips if the modal is open.
 function buildChannelSelect() {
-  const s = document.getElementById("f_channel"); const cur = s.value; s.innerHTML = "";
-  const none = document.createElement("option"); none.value = ""; none.textContent = "— none —"; s.appendChild(none);
-  channelsList.forEach(c => { const o = document.createElement("option"); o.value = c.name; o.textContent = c.name; s.appendChild(o); });
-  const add = document.createElement("option"); add.value = "__add_channel__"; add.textContent = "＋ Add new channel…"; s.appendChild(add);
-  if (cur === "" || channelsList.some(c => c.name === cur)) s.value = cur;
+  if (document.getElementById("f_channels") && modalOpen) renderChannelChips();
 }
 // New deliverables default to the channel the view is filtered to (single channel quick-filter pick), else none.
 function defaultNewChannel() {
@@ -5078,6 +5084,23 @@ function renderOwnerChips() {
     const ok = await addList("person", name); if (ok) { modalOwners.add(name); renderOwnerChips(); } };
   box.appendChild(add);
 }
+// Channel chips — mirror of renderOwnerChips. Multi-select; chips sit in a flex row with a trailing ＋ Channel button.
+function renderChannelChips() {
+  const box = document.getElementById("f_channels"); if (!box) return;
+  box.innerHTML = "";
+  if (channelsList.length === 0) { const n = document.createElement("span"); n.className = "none"; n.textContent = "No channels yet — add one →"; box.appendChild(n); }
+  channelsList.forEach(ch => {
+    const chip = document.createElement("span");
+    chip.className = "owner-chip" + (modalChannels.has(ch.name) ? " sel" : "");
+    chip.textContent = ch.name;
+    chip.onclick = () => { if (modalChannels.has(ch.name)) modalChannels.delete(ch.name); else modalChannels.add(ch.name); renderChannelChips(); };
+    box.appendChild(chip);
+  });
+  const add = document.createElement("span"); add.className = "owner-chip add"; add.textContent = "＋ Channel";
+  add.onclick = async () => { const name = (prompt("New channel name:") || "").trim(); if (!name) return;
+    const ok = await addList("channel", name); if (ok) { modalChannels.add(name); renderChannelChips(); } };
+  box.appendChild(add);
+}
 // Walk a flat subtasks array and compute {headerId → {done, total}}. Headers group everything BELOW them up to
 // the next header (or end). Anything before the first header is ungrouped (not counted per-header).
 function subtaskGroupCounts(list) {
@@ -5206,7 +5229,7 @@ async function convertSubtaskToDeliverable(s) {
   if (!confirm(`Convert "${text}" to a new deliverable? The subtask will be replaced with a link to the new card.`)) return;
   // Inherit context from the currently-open card (parent).
   const parentBrand = document.getElementById("f_brand").value;
-  const parentChannel = document.getElementById("f_channel").value;
+  const parentChannel = [...modalChannels].join(", ");
   const parentPromo = document.getElementById("f_promo").value;
   const fields = {};
   if (parentPromo && parentPromo !== "__add_promo__") fields[PROMO_KEY] = parentPromo;
@@ -5567,10 +5590,12 @@ function openModal(card, prefill) {
   document.getElementById("f_title").value = card ? card.title : "";
   const _picker = document.getElementById("f_emojiPicker"); if (_picker) _picker.hidden = true;
   document.getElementById("f_brand").value = card ? card.brand : ((prefill && prefill.brand && BRANDS.some(b => b.name === prefill.brand)) ? prefill.brand : BRANDS[0].name);
-  buildChannelSelect(); buildStatusSelect();
-  const chSel = document.getElementById("f_channel");
-  if (card && card.channel && !channelsList.some(c => c.name === card.channel)) { const o = document.createElement("option"); o.value = card.channel; o.textContent = card.channel; chSel.insertBefore(o, chSel.firstChild); }
-  chSel.value = card ? (card.channel || "") : ((prefill && prefill.channel) || defaultNewChannel());
+  buildStatusSelect();
+  // Channel: multi-select chips. For a new card without a channel, seed from prefill or the current single-channel filter.
+  const prefChannels = (prefill && prefill.channel ? String(prefill.channel).split(",") : []).map(s => s.trim()).filter(Boolean);
+  const initChannels = card ? splitChannels(card.channel) : (prefChannels.length ? prefChannels : (defaultNewChannel() ? [defaultNewChannel()] : []));
+  modalChannels = new Set(initChannels);
+  renderChannelChips();
   const prefOwners = (prefill && prefill.owner ? String(prefill.owner).split(",") : []).map(s => s.trim()).filter(Boolean);
   modalOwners = new Set((card && card.owner ? card.owner.split(",") : prefOwners).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
@@ -5693,7 +5718,7 @@ function saveModal() {
   const coverVal = (document.getElementById("f_coverUrl").value || "").trim();
   if (coverVal) fields[COVER_KEY] = coverVal; else delete fields[COVER_KEY];
   if (modalGallery && modalGallery.length) fields[GALLERY_KEY] = modalGallery.map(g => ({ id: g.id || _galleryId(), url: g.url, addedAt: g.addedAt || "" })); else delete fields[GALLERY_KEY];
-  const d = { title, brand: document.getElementById("f_brand").value, channel: document.getElementById("f_channel").value,
+  const d = { title, brand: document.getElementById("f_brand").value, channel: [...modalChannels].join(", "),
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: notes, fields };
   // Compute reciprocal link changes BEFORE the save so we can push both sides. For a new card, we don't know the
@@ -6538,16 +6563,7 @@ async function init() {
     if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal();
   };
   document.getElementById("modalX").onclick = () => { if (document.getElementById("f_title").value.trim()) saveModal(); else closeModal(); };
-  document.getElementById("f_channelAdd").onclick = async () => {
-    const name = (prompt("New channel name:") || "").trim(); if (!name) return;
-    const ok = await addList("channel", name); if (ok) document.getElementById("f_channel").value = name;
-  };
-  document.getElementById("f_channel").addEventListener("change", async e => {
-    if (e.target.value !== "__add_channel__") return;
-    const name = (prompt("New channel name:") || "").trim();
-    if (name) { const ok = await addList("channel", name); e.target.value = ok ? name : (channelsList[0] || {}).name || ""; }
-    else e.target.value = (channelsList[0] || {}).name || "";
-  });
+  // Channel add is wired inside renderChannelChips (the ＋ chip at the end of the row).
   document.getElementById("f_promoAdd").onclick = () => addPromoPrompt();
   document.getElementById("f_promo").addEventListener("change", e => { if (e.target.value === "__add_promo__") addPromoPrompt(); });
   // Structured notes editor — + Add note prepends a new row stamped with today's date.
