@@ -382,6 +382,7 @@
   /* Dedicated custom-fields editor */
   .fields-editor { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
   .fe-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel-2); position: relative; }
+  .fields-sort-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
   .fe-grip { flex: none; cursor: grab; color: var(--muted); font-size: 14px; letter-spacing: -2px; user-select: none; padding: 0 4px; }
   .fe-grip:hover { color: var(--text); }
   .fe-card.dragging { opacity: .4; }
@@ -1073,6 +1074,7 @@
     <button class="modal-x" id="fieldsX" title="Close">✕</button>
     <h2>Custom fields</h2>
     <div class="hint">Fields show on every deliverable and as a column in Grid/List. <b>Dropdown</b> picks one option; <b>Multi-select</b> picks several.</div>
+    <div class="fields-sort-row"><button type="button" id="fSortAZ" class="ghost" title="Sort fields A-Z and persist">⇅ Sort A–Z</button></div>
     <div id="fieldsEditor" class="fields-editor"></div>
     <div class="add-row"><input id="fAddField" placeholder="New field name (e.g. Priority, Budget)…" autocomplete="off" /><button class="primary" id="fAddFieldBtn">Add field</button></div>
     <div class="modal-actions"><div class="spacer"></div><button id="fieldsDone">Done</button></div>
@@ -1212,8 +1214,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.04";
+const VERSION = "3.05";
 const CHANGELOG = [
+  "v3.05 — Two notes-related adds. (1) ＋ Add note on a card where no You: user is set opens the user picker first (now with an ＋ Add new user option) and resumes the note write once a user is picked. (2) Custom fields editor gets an ⇅ Sort A-Z button that resequences positions alphabetically and persists.",
   "v3.04 — Notes record their author. New notes stamp the current “You:” user; the author shows beneath the note in both the modal editor and the Notes-feed sub-rows. Editing an existing note's text doesn't change its author (first-write wins). Legacy notes with no author stay unlabeled.",
   "v3.03 — Channel is now multi-select on cards (same chip pattern as Owners). A card can live in several channels at once; stored as a comma-joined string. Filters, grid grouping, list splits, rename cascade, color-by-channel, and CSV export all honor the multi value. The modal's channel dropdown is replaced with a chip row + ＋ Channel.",
   "v3.02 — Gallery images are now timestamped on add. Each new upload / paste / drop stamps an addedAt time; the Notes feed shows one 🖼️ Image row per image (with the date it was added), and 📋 Copy updates includes image additions that fall inside the last-N-days window. Legacy gallery items (saved as bare URLs before this release) stay silent in the feed — they have no timestamp.",
@@ -2065,17 +2068,29 @@ function applyCurrentUserFilter() {
   updateFilterBtn && updateFilterBtn();
   const nameEl = document.getElementById("userBtnName"); if (nameEl) nameEl.textContent = currentUser || "All";
 }
-function openUserPicker() {
+// openUserPicker(onPicked) — the optional onPicked callback runs after the user picks (used by the Notes
+// "+ Add note" flow to resume writing a note once we know who the author is).
+function openUserPicker(onPicked) {
   const box = document.getElementById("userOverlayChoices"); if (!box) return;
+  const close = () => document.getElementById("userOverlay").classList.remove("show");
   box.innerHTML = "";
   const options = [...peopleList.map(p => p.name), "All"];
   options.forEach(name => {
     const b = document.createElement("button"); b.type = "button"; b.textContent = name;
     const val = name === "All" ? "" : name;
     if (currentUser === val) b.classList.add("on");
-    b.onclick = () => { currentUser = val; saveCurrentUser(); applyCurrentUserFilter(); document.getElementById("userOverlay").classList.remove("show"); render(); };
+    b.onclick = () => { currentUser = val; saveCurrentUser(); applyCurrentUserFilter(); close(); render(); if (typeof onPicked === "function") onPicked(val); };
     box.appendChild(b);
   });
+  // + Add new user — prompts, inserts into peopleList (DB-backed), then sets currentUser to the new name.
+  const add = document.createElement("button"); add.type = "button"; add.textContent = "＋ Add new user";
+  add.style.borderStyle = "dashed"; add.style.color = "var(--muted)";
+  add.onclick = async () => {
+    const name = (prompt("New user name:") || "").trim(); if (!name) return;
+    const ok = await addList("person", name); if (!ok) return;
+    currentUser = name; saveCurrentUser(); applyCurrentUserFilter(); close(); render(); if (typeof onPicked === "function") onPicked(name);
+  };
+  box.appendChild(add);
   document.getElementById("userOverlay").classList.add("show");
 }
 // The "Scheduled" lane gets a clock badge (parallel to the green ✓ complete lane). Stored locally (no SQL);
@@ -5508,6 +5523,12 @@ function renderModalNotes() {
   });
 }
 function addModalNote() {
+  // If no user is picked yet, open the picker first and resume adding the note on return. Keeps attribution
+  // intact so the newly-written note isn't orphaned.
+  if (!currentUser) { openUserPicker(() => _addModalNoteNow()); return; }
+  _addModalNoteNow();
+}
+function _addModalNoteNow() {
   const today = ymd(new Date());
   modalNoteEntries.unshift({ id: noteId(), date: today, text: "", author: currentUser || "" });
   renderModalNotes();
@@ -6756,6 +6777,17 @@ async function init() {
   const addCh = () => { const i = document.getElementById("mAddChannel"); addList("channel", i.value).then(ok => { if (ok) i.value = ""; }); };
   const addPe = () => { const i = document.getElementById("mAddPerson"); addList("person", i.value).then(ok => { if (ok) i.value = ""; }); };
   const addSt = () => { const i = document.getElementById("mAddStatus"); addList("status", i.value).then(ok => { if (ok) i.value = ""; }); };
+  // Alphabetical sort — rewrites positions on all custom-field list rows and re-renders.
+  const sortAZ = document.getElementById("fSortAZ");
+  if (sortAZ) sortAZ.onclick = async () => {
+    const sorted = fieldsList.slice().sort((a, b) => a.name.localeCompare(b.name));
+    if (sorted.every((f, i) => f === fieldsList[i])) return;   // already sorted
+    fieldsList = sorted;
+    if (!ONLINE) { saveListsLocal(); afterListsChanged(); renderFieldsEditor(); return; }
+    const res = await Promise.all(fieldsList.map((f, i) => db.from("lists").update({ position: i + 1 }).eq("id", f.id)));
+    const err = res.find(r => r.error); if (err) { toast("Sort failed: " + err.error.message); return; }
+    await reloadListsAndUI(); renderFieldsEditor();
+  };
   const addFl = () => { const i = document.getElementById("fAddField"); addList("field", i.value).then(ok => { if (ok) { i.value = ""; i.focus(); } }); };
   document.getElementById("mAddChannelBtn").onclick = addCh;
   document.getElementById("mAddPersonBtn").onclick = addPe;
