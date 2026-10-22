@@ -1225,8 +1225,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.11";
+const VERSION = "3.12";
 const CHANGELOG = [
+  "v3.12 — Resilience against Supabase slow spells. (1) reloadListsAndUI now debounces 150 ms, so rapid-fire edits in the Custom fields editor only trigger one SELECT at the end. (2) On a transient fetch error (statement timeout, 5xx, network) both loadLists and refetch keep the cached in-memory state instead of blanking to defaults — your fields / people / board stay on screen while the DB recovers; the error is logged to console, not toasted.",
   "v3.11 — Group-by order on Copy updates follows the dimension's canonical order (lanes in Manage order, brands / channels / owners in list order, priority in High / Medium / Low / No Priority order) instead of alphabetical. Any value not in the canonical list falls back to alphabetical at the end.",
   "v3.10 — Breakdown moved into the Copy updates dialog. Removed the 📊 Stats button on the Notes toolbar. New “Include breakdown” checkbox on the Copy updates dialog prepends a per-bucket × per-lane card-count block (Products by Innovation Year × Lane for Innovation, Cards by Sprint × Lane for Planner) above the per-card entries, so you can paste the full update + the lane totals in one go. Choice persists per browser. “Current year / Next year / Previous year” labels follow the Innovation Year nav state, not the calendar year.",
   "v3.09 — Notes view toolbar gets a 📊 Stats button. Opens a modal with a per-bucket × per-lane breakdown: Innovation groups by year (Current year highlighted, Next year subtitled), Planner groups by ISO sprint week. Totals pill per bucket, lane cells with color accents, (off-lane) counts for cards whose status isn't in the current lane list. Respects the active Notes filters (brand, owner, channel, search, etc.).",
@@ -2296,7 +2297,13 @@ async function refetch() {
     toast("Run supabase/migrations/0007_workspaces.sql — workspaces are degraded until then.");
     ({ data, error } = await db.from("deliverables").select("*").order("created_at", { ascending: true }));
   }
-  if (error) { toast("Load failed: " + error.message); return; }
+  if (error) {
+    // Transient (statement timeout, 5xx, network): keep the cached board rather than clearing to zero.
+    const msg = (error.message || "") + " " + (error.code || "");
+    const transient = /timeout|canceling statement|upstream|gateway|network|fetch|503|502|504/i.test(msg);
+    if (transient) { console.warn("refetch: transient error — keeping cached cards:", error); return; }
+    toast("Load failed: " + error.message); return;
+  }
   cards = data.map(r => ({ id: r.id, title: r.title, brand: r.brand, channel: r.channel,
     owner: r.owner || "", due: r.due || "", end: r.end_date || "", status: r.status, notes: r.notes || "",
     fields: r.fields || {}, createdAt: r.created_at || "" }));
@@ -2441,6 +2448,15 @@ async function loadLists() {
     ({ data, error } = await db.from("lists").select("*").order("position", { ascending: true }));
   }
   if (error) {
+    // Transient errors (statement timeout, 500/503, network): keep whatever we already have in memory and
+    // just log — resetting to defaults would wipe the user's channels/fields/people from the UI for one page.
+    // Only fall back to defaults on real schema problems (table/column missing) which this app's SQL migrations fix.
+    const msg = (error.message || "") + " " + (error.code || "");
+    const transient = /timeout|canceling statement|upstream|gateway|network|fetch|503|502|504/i.test(msg);
+    if (transient) {
+      console.warn("loadLists: transient error — keeping cached lists:", error);
+      return;
+    }
     channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
     statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = [];
     if (!_listsWarned) { _listsWarned = true; toast("Lists not saved yet — run the lists SQL (0002–0004) in Supabase."); }
@@ -2631,7 +2647,19 @@ async function setColor(item, color) {
   const { error } = await db.from("lists").update({ color }).eq("id", item.id);
   if (error) toast("Color save failed: " + error.message); else reloadListsAndUI();
 }
-async function reloadListsAndUI() { await loadLists(); afterListsChanged(); }
+// Debounced lists reload. Quick successive edits (adding 3 fields back-to-back, reordering several lanes, etc.)
+// used to fire one SELECT * FROM lists per edit; now they coalesce into a single read at the trailing edge.
+let _reloadListsPending = null;
+async function reloadListsAndUI() {
+  if (_reloadListsPending) return _reloadListsPending;
+  _reloadListsPending = new Promise(resolve => {
+    setTimeout(async () => {
+      try { await loadLists(); afterListsChanged(); } catch (e) { console.error("reloadListsAndUI failed:", e); }
+      _reloadListsPending = null; resolve();
+    }, 150);
+  });
+  return _reloadListsPending;
+}
 // One-time migration: rename an existing "Backlog" lane to "To Do" (cards on that lane follow), add a fresh
 // "Backlog" lane, and designate it as the backlog lane. Guarded by a localStorage flag AND idempotent (skips if
 // "To Do" already exists). Only runs online — offline installs shouldn't reshape a shared DB.
