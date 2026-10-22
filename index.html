@@ -1214,8 +1214,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.05";
+const VERSION = "3.06";
 const CHANGELOG = [
+  "v3.06 — Red toasts stay 12 s (was 3.5) when the message looks like an error — fail / error / timeout / unauthorized / forbidden / invalid / refused. Click a toast to dismiss. Every toast is also mirrored to the browser console with a timestamp so the quick flash can be inspected after the fact (DevTools → Console).",
   "v3.05 — Two notes-related adds. (1) ＋ Add note on a card where no You: user is set opens the user picker first (now with an ＋ Add new user option) and resumes the note write once a user is picked. (2) Custom fields editor gets an ⇅ Sort A-Z button that resequences positions alphabetically and persists.",
   "v3.04 — Notes record their author. New notes stamp the current “You:” user; the author shows beneath the note in both the modal editor and the Notes-feed sub-rows. Editing an existing note's text doesn't change its author (first-write wins). Legacy notes with no author stay unlabeled.",
   "v3.03 — Channel is now multi-select on cards (same chip pattern as Owners). A card can live in several channels at once; stored as a comma-joined string. Filters, grid grouping, list splits, rename cascade, color-by-channel, and CSV export all honor the multi value. The modal's channel dropdown is replaced with a chip row + ＋ Channel.",
@@ -2255,7 +2256,18 @@ function ruleMatches(c, r) {
 function activeRules() { return filterRules.filter(r => r.op === "empty" || r.op === "notempty" || (r.values && r.values.length)); }
 let _idc = Date.now();
 function uid() { return "c" + (_idc++).toString(36); }
-function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 3500); }
+// Toasts auto-dismiss. Errors stay longer and get an explicit ✕ so a flash can't be missed, and every toast is
+// mirrored to the console with a timestamp so you can inspect what fired after the fact (DevTools → Console).
+let _toastTimer = null;
+function toast(msg) {
+  const t = document.getElementById("toast"); if (!t) return;
+  const isErr = /fail|error|invalid|timeout|unauthor|forbidden|not allowed|refused/i.test(msg || "");
+  try { (isErr ? console.error : console.log)("[toast " + new Date().toISOString() + "] " + msg); } catch (e) {}
+  t.textContent = msg; t.style.display = "block";
+  t.onclick = () => { t.style.display = "none"; if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; } };
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { t.style.display = "none"; _toastTimer = null; }, isErr ? 12000 : 3500);
+}
 
 /* ---------- deliverables data ---------- */
 function loadLocal() { try { return JSON.parse(localStorage.getItem(STORE_KEY)) || sampleData(); } catch (e) { return sampleData(); } }
