@@ -246,6 +246,17 @@
   #notes * { min-width: 0; }   /* let flex/grid children shrink so long strings wrap instead of pushing width */
   #notes .notes-entry { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
   .notes-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+  /* Notes-view 📊 Stats readout — per-bucket (year or sprint) card. */
+  .ns-sec { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .ns-sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .ns-sec-label { font-size: 18px; font-weight: 800; letter-spacing: -.01em; color: var(--text); }
+  .ns-sec-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .ns-sec-total { font-size: 18px; font-weight: 800; color: var(--accent); background: rgba(109,93,252,.14); border-radius: 999px; padding: 2px 14px; min-width: 42px; text-align: center; }
+  .ns-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .ns-cell { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .ns-cell-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); }
+  .ns-cell-val { font-size: 14px; font-weight: 700; color: var(--text); }
+  .ns-unassigned { margin-top: 10px; font-size: 12px; color: var(--muted); }
   .notes-count { flex: 1; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
   .notes-btn { font-size: 12px; padding: 5px 10px; }
   .notes-entry { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 10px; padding: 10px 14px; }
@@ -878,6 +889,15 @@
   </div>
 </div>
 
+<!-- Notes-view stats readout: per-bucket (year or sprint) lane counts. -->
+<div class="overlay" id="notesStatsOverlay">
+  <div class="modal" style="width:620px; max-width:94vw">
+    <button class="x" id="notesStatsX">✕</button>
+    <h2 id="notesStatsTitle">Breakdown</h2>
+    <div id="notesStatsBody"></div>
+  </div>
+</div>
+
 <div class="overlay" id="userOverlay">
   <div class="modal" style="max-width:420px">
     <button class="x" id="userOverlayX">✕</button>
@@ -1224,8 +1244,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.08";
+const VERSION = "3.09";
 const CHANGELOG = [
+  "v3.09 — Notes view toolbar gets a 📊 Stats button. Opens a modal with a per-bucket × per-lane breakdown: Innovation groups by year (Current year highlighted, Next year subtitled), Planner groups by ISO sprint week. Totals pill per bucket, lane cells with color accents, (off-lane) counts for cards whose status isn't in the current lane list. Respects the active Notes filters (brand, owner, channel, search, etc.).",
   "v3.08 — 📋 Copy updates gains a “Group by” dropdown. Pick a dimension (Lane, Brand, Channel, Owner, Priority, Promotion) and the output groups cards under # Group headings before each ## Card block. Multi-valued dims (Owner, Channel) land a card in each group it belongs to. Choice persists per browser.",
   "v3.07 — 📋 Copy updates spells out image additions as “Oct 21 — photo added” instead of the bare “Oct 21 added”.",
   "v3.06 — Red toasts stay 12 s (was 3.5) when the message looks like an error — fail / error / timeout / unauthorized / forbidden / invalid / refused. Click a toast to dismiss. Every toast is also mirrored to the browser console with a timestamp so the quick flash can be inspected after the fact (DevTools → Console).",
@@ -3667,6 +3688,62 @@ function openNotesExport(feed) {
   const inp = document.getElementById("notesExportDays"); if (inp) setTimeout(() => inp.focus(), 40);
 }
 function closeNotesExport() { document.getElementById("notesExportOverlay").classList.remove("show"); }
+// Stats readout — a per-bucket (year on Innovation, sprint-week on Planner) × per-lane card-count grid.
+// Counts are drawn from the currently-filtered cards (same set that drives the Notes feed), so the readout
+// honors whatever brand / owner / channel filter is active.
+function openNotesStats(cardsIn) {
+  const body = document.getElementById("notesStatsBody"); if (!body) return;
+  document.getElementById("notesStatsTitle").textContent = isInnovation() ? "Products by Innovation Year × Lane" : "Cards by Sprint × Lane";
+  body.innerHTML = "";
+  if (!cardsIn || !cardsIn.length) {
+    const n = document.createElement("div"); n.className = "empty list-empty"; n.textContent = "No cards in the current filter."; body.appendChild(n);
+    document.getElementById("notesStatsOverlay").classList.add("show");
+    return;
+  }
+  // Group cards by bucket (year for Innovation; sprint week otherwise). Cards with no bucket land in "(unassigned)".
+  const bucketOf = c => {
+    if (isInnovation()) return (c.fields && c.fields[SPRINT_KEY]) || "(unassigned)";
+    const sp = cardSprint(c); return sp || "(unassigned)";
+  };
+  const byBucket = new Map();
+  cardsIn.forEach(c => { const b = bucketOf(c); if (!byBucket.has(b)) byBucket.set(b, []); byBucket.get(b).push(c); });
+  // Sort buckets: real values ascending (year or ISO-week sorts lexically), (unassigned) last.
+  const buckets = [...byBucket.keys()].sort((a, b) => a === "(unassigned)" ? 1 : b === "(unassigned)" ? -1 : a.localeCompare(b));
+  const todayYear = String((new Date()).getFullYear());
+  const thisSprint = isoWeek(ymd(new Date()));
+  buckets.forEach(b => {
+    const cards = byBucket.get(b);
+    const sec = document.createElement("div"); sec.className = "ns-sec";
+    const head = document.createElement("div"); head.className = "ns-sec-head";
+    const label = isInnovation() ? b : (b === "(unassigned)" ? b : fmtSprint(b));
+    const subtle = isInnovation()
+      ? (b === todayYear ? "Current year" : b === String((new Date()).getFullYear() + 1) ? "Next year" : b === "(unassigned)" ? "No year assigned" : "")
+      : (b === thisSprint ? "This week" : b === "(unassigned)" ? "No sprint" : (sprintRange(b) || ""));
+    head.innerHTML = '<div><div class="ns-sec-label">' + esc(label) + '</div>' + (subtle ? '<div class="ns-sec-sub">' + esc(subtle) + "</div>" : "") + "</div>" +
+      '<div class="ns-sec-total">' + cards.length + "</div>";
+    sec.appendChild(head);
+    // Per-lane counts, in Manage order.
+    const laneCounts = {}; statusList.forEach(s => laneCounts[s.name] = 0);
+    let unassignedLane = 0;
+    cards.forEach(c => { if (c.status && c.status in laneCounts) laneCounts[c.status]++; else unassignedLane++; });
+    const grid = document.createElement("div"); grid.className = "ns-grid";
+    statusList.forEach(s => {
+      const n = laneCounts[s.name] || 0;
+      const cell = document.createElement("div"); cell.className = "ns-cell";
+      cell.style.borderLeft = "4px solid " + statusColor(s.name);
+      cell.innerHTML = '<span class="ns-cell-label">' + esc(s.name) + "</span><span class=\"ns-cell-val\">" + n + "</span>";
+      grid.appendChild(cell);
+    });
+    sec.appendChild(grid);
+    if (unassignedLane) {
+      const u = document.createElement("div"); u.className = "ns-unassigned"; u.textContent = "(off-lane) " + unassignedLane;
+      sec.appendChild(u);
+    }
+    body.appendChild(sec);
+  });
+  document.getElementById("notesStatsOverlay").classList.add("show");
+}
+function closeNotesStats() { document.getElementById("notesStatsOverlay").classList.remove("show"); }
 function buildNotesExportText() {
   const daysInp = document.getElementById("notesExportDays");
   const days = Math.max(1, Math.min(365, parseInt(daysInp.value, 10) || 7));
@@ -3794,7 +3871,9 @@ function renderNotesView() {
   const colAll = document.createElement("button"); colAll.type = "button"; colAll.className = "notes-btn"; colAll.textContent = "▸ Collapse all"; colAll.onclick = () => { notesCollapsed = new Set(feed.map(f => f.key)); notesAllCollapsed = true; renderNotesView(); };
   const exportBtn = document.createElement("button"); exportBtn.type = "button"; exportBtn.className = "notes-btn"; exportBtn.textContent = "📋 Copy updates"; exportBtn.title = "Copy a plain-text summary of the filtered entries for pasting into an email";
   exportBtn.onclick = () => openNotesExport(feed);
-  head.appendChild(count); head.appendChild(expAll); head.appendChild(colAll); head.appendChild(exportBtn); root.appendChild(head);
+  const statsBtn = document.createElement("button"); statsBtn.type = "button"; statsBtn.className = "notes-btn"; statsBtn.textContent = "📊 Stats"; statsBtn.title = "Breakdown of filtered cards by " + (isInnovation() ? "Innovation Year" : "Sprint") + " and lane";
+  statsBtn.onclick = () => openNotesStats(cardsIn);
+  head.appendChild(count); head.appendChild(expAll); head.appendChild(colAll); head.appendChild(exportBtn); head.appendChild(statsBtn); root.appendChild(head);
   if (!feed.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No entries here. Adjust the search or filters."; root.appendChild(empty); return; }
   feed.forEach(item => {
     const c = item.card;
@@ -6716,6 +6795,8 @@ async function init() {
   document.getElementById("notesExportOverlay").onclick = e => { if (e.target.id === "notesExportOverlay") closeNotesExport(); };
   document.getElementById("notesExportCopy").onclick = copyNotesExport;
   document.getElementById("notesExportDays").addEventListener("input", buildNotesExportText);
+  document.getElementById("notesStatsX").onclick = closeNotesStats;
+  document.getElementById("notesStatsOverlay").onclick = e => { if (e.target.id === "notesStatsOverlay") closeNotesStats(); };
   const expGrp = document.getElementById("notesExportGroupBy");
   if (expGrp) {
     const saved = localStorage.getItem("planner-notes-export-groupby") || "";
@@ -6880,7 +6961,7 @@ async function init() {
       catch(err){ alert("Could not read file."); } }; r.readAsText(file); };
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); document.getElementById("notesExportOverlay").classList.remove("show"); }
+    if (e.key === "Escape") { closeModal(); closeManage(); closeFields(); menu.classList.remove("show"); document.getElementById("verOverlay").classList.remove("show"); document.getElementById("dispOverlay").classList.remove("show"); document.getElementById("filterOverlay").classList.remove("show"); document.getElementById("viewsOverlay").classList.remove("show"); document.getElementById("exportOverlay").classList.remove("show"); document.getElementById("emailPasteOverlay").classList.remove("show"); document.getElementById("userOverlay").classList.remove("show"); document.getElementById("notesExportOverlay").classList.remove("show"); document.getElementById("notesStatsOverlay").classList.remove("show"); }
     if (e.key === "Enter" && modalOpen && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && !e.target.isContentEditable) saveModal();
   });
 }
