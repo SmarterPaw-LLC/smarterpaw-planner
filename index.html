@@ -1214,8 +1214,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.06";
+const VERSION = "3.07";
 const CHANGELOG = [
+  "v3.07 — 📋 Copy updates spells out image additions as “Oct 21 — photo added” instead of the bare “Oct 21 added”.",
   "v3.06 — Red toasts stay 12 s (was 3.5) when the message looks like an error — fail / error / timeout / unauthorized / forbidden / invalid / refused. Click a toast to dismiss. Every toast is also mirrored to the browser console with a timestamp so the quick flash can be inspected after the fact (DevTools → Console).",
   "v3.05 — Two notes-related adds. (1) ＋ Add note on a card where no You: user is set opens the user picker first (now with an ＋ Add new user option) and resumes the note write once a user is picked. (2) Custom fields editor gets an ⇅ Sort A-Z button that resequences positions alphabetically and persists.",
   "v3.04 — Notes record their author. New notes stamp the current “You:” user; the author shows beneath the note in both the modal editor and the Notes-feed sub-rows. Editing an existing note's text doesn't change its author (first-write wins). Legacy notes with no author stay unlabeled.",
@@ -3706,7 +3707,7 @@ function buildNotesExportText() {
           const body = stripTags(em.content || "").split("\n").filter(x => x.trim()).slice(0, 20).join("\n   ");
           if (body) lines.push("   " + body);
         } else if (e.kind === "image") {
-          lines.push("- 🖼️ " + (when || "image") + " added");
+          lines.push("- 🖼️ " + (when || "image") + " — photo added");
         } else {
           // Per-entry note row — one line per structured entry (already filtered to in-window above).
           const body = (e.text || "").trim();
