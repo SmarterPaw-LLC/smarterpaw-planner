@@ -148,6 +148,7 @@
   .note-row textarea { padding: 7px 9px; font-size: 13.5px; font-family: inherit; line-height: 1.55; width: 100%; box-sizing: border-box; resize: none; overflow: hidden; }
   .note-row .note-rm { width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 13px; color: var(--danger); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
   .note-row .note-rm:hover { border-color: var(--danger); }
+  .note-row .note-by { grid-column: 2 / 3; font-size: 11px; color: var(--muted); font-style: italic; }
   /* Dated notes feed list — one row per entry, read-only, scrollable. */
   .notes-dated-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 6px; background: rgba(255,255,255,.02); border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
   html[data-theme="light"] .notes-dated-list { background: rgba(0,0,0,.02); }
@@ -155,6 +156,7 @@
   html[data-theme="light"] .notes-dated-row { background: rgba(0,0,0,.03); }
   .notes-dated-row .notes-dated-when { font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .02em; padding-top: 2px; white-space: nowrap; }
   .notes-dated-row .notes-dated-text { white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; color: var(--text); }
+  .notes-dated-row .notes-dated-by { grid-column: 2 / 3; font-size: 11px; color: var(--muted); font-style: italic; margin-top: 2px; }
   .rte-btn { padding: 4px 10px; font-size: 13px; }
   .rte { min-height: 150px; max-height: 320px; overflow-y: auto; padding: 9px 11px; background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 8px; line-height: 1.5; }
@@ -1210,8 +1212,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.03";
+const VERSION = "3.04";
 const CHANGELOG = [
+  "v3.04 — Notes record their author. New notes stamp the current “You:” user; the author shows beneath the note in both the modal editor and the Notes-feed sub-rows. Editing an existing note's text doesn't change its author (first-write wins). Legacy notes with no author stay unlabeled.",
   "v3.03 — Channel is now multi-select on cards (same chip pattern as Owners). A card can live in several channels at once; stored as a comma-joined string. Filters, grid grouping, list splits, rename cascade, color-by-channel, and CSV export all honor the multi value. The modal's channel dropdown is replaced with a chip row + ＋ Channel.",
   "v3.02 — Gallery images are now timestamped on add. Each new upload / paste / drop stamps an addedAt time; the Notes feed shows one 🖼️ Image row per image (with the date it was added), and 📋 Copy updates includes image additions that fall inside the last-N-days window. Legacy gallery items (saved as bare URLs before this release) stay silent in the feed — they have no timestamp.",
   "v3.01 — Silenced the “Stamped N Innovation products as 2027” toast. It was firing on every browser that didn't yet have the migration flag (a new browser, cleared cache, etc.). Migration still runs silently; only failures surface now.",
@@ -1508,7 +1511,7 @@ function parseLegacyNotesIntoEntries(rawHtml, fallbackYmd) {
 function cardNoteEntries(c) {
   if (!c) return [];
   const stored = c.fields && c.fields[NOTES_ENTRIES_KEY];
-  if (Array.isArray(stored)) return stored.filter(e => e && e.text && e.date).map(e => ({ id: e.id || noteId(), date: e.date, text: String(e.text || "") }));
+  if (Array.isArray(stored)) return stored.filter(e => e && e.text && e.date).map(e => ({ id: e.id || noteId(), date: e.date, text: String(e.text || ""), author: e.author || "" }));
   // No structured entries yet — parse the legacy blob. Fallback date = last-updated stamp, else createdAt, else today.
   const fallback = (c.fields && c.fields[NOTES_UPDATED_KEY] ? String(c.fields[NOTES_UPDATED_KEY]).slice(0, 10) : "") || (c.createdAt ? c.createdAt.slice(0, 10) : "") || ymd(new Date());
   return parseLegacyNotesIntoEntries(c.notes, fallback);
@@ -3819,7 +3822,9 @@ function renderNotesView() {
           const row = document.createElement("div"); row.className = "notes-dated-row";
           const when = document.createElement("div"); when.className = "notes-dated-when"; when.textContent = e.date ? fmtDue(e.date) : "—";
           const txt = document.createElement("div"); txt.className = "notes-dated-text"; txt.textContent = e.text || "";
-          row.appendChild(when); row.appendChild(txt); list.appendChild(row);
+          if (e.author) { const by = document.createElement("div"); by.className = "notes-dated-by"; by.textContent = "— " + e.author; row.appendChild(when); row.appendChild(txt); row.appendChild(by); }
+          else { row.appendChild(when); row.appendChild(txt); }
+          list.appendChild(row);
         });
         body.appendChild(list);
       }
@@ -5495,12 +5500,16 @@ function renderModalNotes() {
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "note-rm"; rm.textContent = "✕"; rm.title = "Delete note";
     rm.onclick = () => { modalNoteEntries = modalNoteEntries.filter(e => e.id !== entry.id); renderModalNotes(); };
     row.appendChild(d); row.appendChild(t); row.appendChild(rm);
+    if (entry.author) {
+      const by = document.createElement("div"); by.className = "note-by"; by.textContent = "— " + entry.author;
+      row.appendChild(by);
+    }
     host.appendChild(row);
   });
 }
 function addModalNote() {
   const today = ymd(new Date());
-  modalNoteEntries.unshift({ id: noteId(), date: today, text: "" });
+  modalNoteEntries.unshift({ id: noteId(), date: today, text: "", author: currentUser || "" });
   renderModalNotes();
   const first = document.querySelector("#f_notesList .note-row textarea");
   if (first) first.focus();
@@ -5639,7 +5648,7 @@ function openModal(card, prefill) {
   if (card && card.status && !statusList.some(s => s.name === card.status)) { const o = document.createElement("option"); o.value = card.status; o.textContent = card.status; stSel.appendChild(o); }
   stSel.value = card ? card.status : ((prefill && prefill.status && statusList.some(s => s.name === prefill.status)) ? prefill.status : (statusList[0] ? statusList[0].name : "Backlog"));
   // Structured notes: load from card's entries (parses legacy c.notes blob on first open if no entries exist yet).
-  modalNoteEntries = card ? cardNoteEntries(card).map(e => ({ id: e.id || noteId(), date: e.date, text: e.text })) : [];
+  modalNoteEntries = card ? cardNoteEntries(card).map(e => ({ id: e.id || noteId(), date: e.date, text: e.text, author: e.author || "" })) : [];
   renderModalNotes();
   // Cover photo — explicit cover first; the gallery's first image + Latest Sample Image URL serve as fallbacks,
   // but the modal's hidden input is left blank when no explicit cover is set (so saving doesn't promote a
@@ -5705,7 +5714,7 @@ function saveModal() {
   fields[SPRINTHIST_KEY] = modalSprintHist.slice();   // user's edited history (may be empty); updateCard will add this save's recorded sprints on top
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   // Structured notes — persist entries + derive c.notes HTML snapshot for card previews. Drop empty-body rows.
-  const cleanEntries = modalNoteEntries.map(e => ({ id: e.id || noteId(), date: e.date || ymd(new Date()), text: String(e.text || "").trim() })).filter(e => e.text);
+  const cleanEntries = modalNoteEntries.map(e => { const o = { id: e.id || noteId(), date: e.date || ymd(new Date()), text: String(e.text || "").trim() }; if (e.author) o.author = e.author; return o; }).filter(e => e.text);
   const notes = entriesToNotesHtml(cleanEntries);
   if (cleanEntries.length) fields[NOTES_ENTRIES_KEY] = cleanEntries; else delete fields[NOTES_ENTRIES_KEY];
   // Stamp notes-updated when the entries changed since load.
