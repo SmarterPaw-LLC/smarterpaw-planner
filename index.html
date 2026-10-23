@@ -1229,8 +1229,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.15";
+const VERSION = "3.16";
 const CHANGELOG = [
+  "v3.16 — Modal Brand dropdown pulls from the live brandsList (unioned across workspaces), not the hardcoded Meowi / Doggi / Kitty trio. Add a new brand in Settings → Brand toolkit and it's immediately pickable on cards in both workspaces. Rebuilt on every afterListsChanged + before every modal open; a card's existing brand that isn't in the list is prepended as an option so legacy values aren't lost.",
   "v3.15 — Brands are truly global. (1) brandsList unions across every workspace's rows, deduped by name — a brand added in Innovation shows up in Planner immediately (and vice versa). (2) The brand-colors sentinel row is queried unscoped so colors load regardless of which workspace opens first. (3) On first load after v3.14 with localStorage colors but no DB row, the server copy is seeded automatically so incognito / fresh browsers inherit the palette.",
   "v3.14 — Brand toolkit colors now sync to Supabase (__brand_colors_db__ sentinel row on the lists table), not just localStorage. Fresh browsers, incognito sessions, and new teammates all pick up the saved palette on first page load. localStorage still acts as the hot cache; the server copy is authoritative on load.",
   "v3.13 — Planning view: top “SHOW LANES:” row removed; each lane stat cell inside a column is now a button — click to toggle that lane in/out of the view. Dimmed cells are hidden lanes. Also: hidden the Promotions section (Manage board + modal field + filter / quick-filter chips) on the Innovation workspace since products don't ladder up to promos. Settings → Brand toolkit gains a ＋ Add brand button, applies to both workspaces.",
@@ -2787,7 +2788,7 @@ async function maybeMigrateBacklogTodo() {
   } catch (e) { toast("Backlog migration failed: " + (e && e.message)); }
 }
 function afterListsChanged() {
-  buildChannelSelect(); buildStatusSelect();
+  buildChannelSelect(); buildStatusSelect(); rebuildBrandSelect();
   if (modalOpen) renderOwnerChips();
   if (manageOpen) renderManage();
   if (document.getElementById("fieldsOverlay").classList.contains("show")) renderFieldsEditor();
@@ -5310,9 +5311,18 @@ function addPromoPrompt() {
   }
   s.value = name;
 }
-function fillStaticSelects() {
-  const sb = document.getElementById("f_brand"); sb.innerHTML = "";
-  BRANDS.forEach(b => { const o = document.createElement("option"); o.value = b.name; o.textContent = b.name; sb.appendChild(o); });
+function fillStaticSelects() { rebuildBrandSelect(); }
+// Rebuild the modal's Brand <select> from brandsList (unioned across workspaces). Called at init and whenever
+// the lists change (afterListsChanged → render → openModal rebuilds via its own call too).
+function rebuildBrandSelect() {
+  const sb = document.getElementById("f_brand"); if (!sb) return;
+  const cur = sb.value;
+  sb.innerHTML = "";
+  const list = brandsList.length ? brandsList : BRANDS;
+  list.forEach(b => { const o = document.createElement("option"); o.value = b.name; o.textContent = b.name; sb.appendChild(o); });
+  // Preserve the current selection if it's still a valid option (so a card showing a brand that just got
+  // renamed elsewhere doesn't silently flip to the first entry).
+  if (cur && [...sb.options].some(o => o.value === cur)) sb.value = cur;
 }
 
 /* ---------- owner chips ---------- */
@@ -5846,7 +5856,13 @@ function openModal(card, prefill) {
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
   const _picker = document.getElementById("f_emojiPicker"); if (_picker) _picker.hidden = true;
-  document.getElementById("f_brand").value = card ? card.brand : ((prefill && prefill.brand && BRANDS.some(b => b.name === prefill.brand)) ? prefill.brand : BRANDS[0].name);
+  rebuildBrandSelect();   // ensure the <select> reflects the current brandsList before we set its value
+  const brandSel = document.getElementById("f_brand");
+  const defaultBrand = (brandsList[0] && brandsList[0].name) || (BRANDS[0] && BRANDS[0].name) || "";
+  const chosen = card ? card.brand : ((prefill && prefill.brand && brandsList.some(b => b.name === prefill.brand)) ? prefill.brand : defaultBrand);
+  // Preserve a card's existing brand even if the option isn't in brandsList (e.g. legacy data). Prepend as an option.
+  if (chosen && ![...brandSel.options].some(o => o.value === chosen)) { const o = document.createElement("option"); o.value = chosen; o.textContent = chosen; brandSel.insertBefore(o, brandSel.firstChild); }
+  brandSel.value = chosen;
   buildStatusSelect();
   // Channel: multi-select chips. For a new card without a channel, seed from prefill or the current single-channel filter.
   const prefChannels = (prefill && prefill.channel ? String(prefill.channel).split(",") : []).map(s => s.trim()).filter(Boolean);
