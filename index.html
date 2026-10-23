@@ -1229,8 +1229,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.16";
+const VERSION = "3.17";
 const CHANGELOG = [
+  "v3.17 — Debounced the top search box: the board re-renders 220 ms after you stop typing instead of on every keystroke. Typing stays responsive even on big workspaces.",
   "v3.16 — Modal Brand dropdown pulls from the live brandsList (unioned across workspaces), not the hardcoded Meowi / Doggi / Kitty trio. Add a new brand in Settings → Brand toolkit and it's immediately pickable on cards in both workspaces. Rebuilt on every afterListsChanged + before every modal open; a card's existing brand that isn't in the list is prepended as an option so legacy values aren't lost.",
   "v3.15 — Brands are truly global. (1) brandsList unions across every workspace's rows, deduped by name — a brand added in Innovation shows up in Planner immediately (and vice versa). (2) The brand-colors sentinel row is queried unscoped so colors load regardless of which workspace opens first. (3) On first load after v3.14 with localStorage colors but no DB row, the server copy is seeded automatically so incognito / fresh browsers inherit the palette.",
   "v3.14 — Brand toolkit colors now sync to Supabase (__brand_colors_db__ sentinel row on the lists table), not just localStorage. Fresh browsers, incognito sessions, and new teammates all pick up the saved palette on first page load. localStorage still acts as the hot cache; the server copy is authoritative on load.",
@@ -6670,7 +6671,14 @@ async function init() {
   }
 
   document.getElementById("colorBy").onchange = e => { colorBy = e.target.value; localStorage.setItem(wsKey("planner-colorby"), colorBy); render(); };
-  document.getElementById("search").oninput = e => { searchText = e.target.value; render(); };
+  // Debounce the search render — keystroke latency drops to near-nothing for the input, and only the final
+  // (settled) query re-renders the board. ESC and manual clear still fire immediately via the pill-remove path.
+  let _searchTimer = null;
+  document.getElementById("search").oninput = e => {
+    searchText = e.target.value;
+    if (_searchTimer) clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => { _searchTimer = null; render(); }, 220);
+  };
 
   document.querySelectorAll("#viewToggle button").forEach(b => b.onclick = () => {
     // Entering the List view with no sprint filter defaults to the current week's sprint.
