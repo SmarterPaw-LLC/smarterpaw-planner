@@ -1229,8 +1229,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.14";
+const VERSION = "3.15";
 const CHANGELOG = [
+  "v3.15 — Brands are truly global. (1) brandsList unions across every workspace's rows, deduped by name — a brand added in Innovation shows up in Planner immediately (and vice versa). (2) The brand-colors sentinel row is queried unscoped so colors load regardless of which workspace opens first. (3) On first load after v3.14 with localStorage colors but no DB row, the server copy is seeded automatically so incognito / fresh browsers inherit the palette.",
   "v3.14 — Brand toolkit colors now sync to Supabase (__brand_colors_db__ sentinel row on the lists table), not just localStorage. Fresh browsers, incognito sessions, and new teammates all pick up the saved palette on first page load. localStorage still acts as the hot cache; the server copy is authoritative on load.",
   "v3.13 — Planning view: top “SHOW LANES:” row removed; each lane stat cell inside a column is now a button — click to toggle that lane in/out of the view. Dimmed cells are hidden lanes. Also: hidden the Promotions section (Manage board + modal field + filter / quick-filter chips) on the Innovation workspace since products don't ladder up to promos. Settings → Brand toolkit gains a ＋ Add brand button, applies to both workspaces.",
   "v3.12 — Resilience against Supabase slow spells. (1) reloadListsAndUI now debounces 150 ms, so rapid-fire edits in the Custom fields editor only trigger one SELECT at the end. (2) On a transient fetch error (statement timeout, 5xx, network) both loadLists and refetch keep the cached in-memory state instead of blanking to defaults — your fields / people / board stay on screen while the DB recovers; the error is logged to console, not toasted.",
@@ -2479,6 +2480,21 @@ async function loadLists() {
   const map = (k) => data.filter(r => r.kind === k).map(r => ({ id: r.id, name: r.name, color: r.color || undefined }));
   channelsList = map("channel"); peopleList = map("person"); statusList = map("status");
   brandsList = map("brand");
+  // Brands are a GLOBAL concept (brand toolkit): a brand added in Innovation should also be visible in Planner.
+  // Load brand rows from every workspace, dedupe by name (first row per name wins — gives it a stable id for
+  // rename/remove in the current workspace scope).
+  if (ONLINE && !WS_COL_MISSING) {
+    try {
+      const { data: all } = await db.from("lists").select("id, name, color, workspace").eq("kind", "brand");
+      if (Array.isArray(all)) {
+        const seen = new Map();
+        // Prefer the current workspace's row so rename/remove operate on the local id by default.
+        all.filter(r => r.workspace === currentWorkspace).forEach(r => { if (!seen.has(r.name)) seen.set(r.name, { id: r.id, name: r.name, color: r.color || undefined }); });
+        all.filter(r => r.workspace !== currentWorkspace).forEach(r => { if (!seen.has(r.name)) seen.set(r.name, { id: r.id, name: r.name, color: r.color || undefined }); });
+        brandsList = [...seen.values()];
+      }
+    } catch (e) { console.warn("brand union fetch failed:", e); }
+  }
   // Promotions don't have full list rows (they live in card fields), but we DO store optional color overrides
   // here as lists rows of kind=promotion. Build a {name -> {id, color}} map for promoColor() / Manage.
   promoOverrides = {};
@@ -2488,9 +2504,21 @@ async function loadLists() {
   fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
   // Server-side brand-colors mirror — authoritative over whatever's in localStorage, since it survives
   // incognito / fresh browsers / team members. Load last so it wins over the legacy BRAND_DARK_COLORS_KEY migration.
-  const bcRow = data.find(r => r.kind === "field" && r.name === BRAND_COLORS_DB_KEY);
+  // Brand colors are GLOBAL — the sentinel row may live under any workspace's name. Query it unscoped so a row
+  // inserted on Planner is still found when the browser opens Innovation first (and vice versa).
+  let bcRow = data.find(r => r.kind === "field" && r.name === BRAND_COLORS_DB_KEY);
+  if (!bcRow && ONLINE && !WS_COL_MISSING) {
+    try {
+      const { data: unscoped } = await db.from("lists").select("id, color").eq("kind", "field").eq("name", BRAND_COLORS_DB_KEY).limit(1);
+      if (unscoped && unscoped.length) bcRow = unscoped[0];
+    } catch (e) {}
+  }
   _brandColorsDbRowId = bcRow ? bcRow.id : null;
   if (bcRow && bcRow.color) { try { const m = JSON.parse(bcRow.color); if (m && typeof m === "object") saveBrandColorsGlobal(m); } catch (e) {} }
+  // No DB row yet but localStorage has colors (pre-v3.14 state) → seed server once so other browsers pick them up.
+  if (!bcRow) {
+    try { const existing = getBrandColorsGlobal(); if (existing && Object.keys(existing).length) await syncBrandColorsToDB(); } catch (e) {}
+  }
   const pcRow = data.find(r => r.kind === "field" && r.name === PROMO_COLORS_KEY);
   promoOverrides = {}; _promoOverrideRowId = pcRow ? pcRow.id : null;
   if (pcRow && pcRow.color) { try { const m = JSON.parse(pcRow.color); if (m && typeof m === "object") promoOverrides = m; } catch (e) {} }
