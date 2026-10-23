@@ -481,7 +481,10 @@
   .planning-sec-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
   .planning-count { flex: none; font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1; padding: 2px 10px; background: rgba(109,93,252,.08); border-radius: 999px; }
   .planning-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 4px; }
-  .planning-stat-cell { display: flex; justify-content: space-between; align-items: center; padding: 3px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; }
+  .planning-stat-cell { display: flex; justify-content: space-between; align-items: center; padding: 3px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; cursor: pointer; color: var(--text); }
+  .planning-stat-cell:hover { border-color: var(--accent); }
+  .planning-stat-cell.off { opacity: .45; filter: grayscale(60%); }
+  .planning-stat-cell.off:hover { opacity: .8; }
   .planning-stat-label { color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 600; }
   .planning-stat-val { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .planning-owners { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 4px; border-top: 1px dashed var(--line); }
@@ -931,10 +934,11 @@
 <div id="list"></div>
 <div id="notes"></div>
 <div id="planning">
-  <div class="planning-controls">
+  <div class="planning-controls" style="display:none">
+    <!-- Legacy "SHOW LANES" row — kept in DOM for back-compat but hidden; lane filtering now happens by clicking
+         the lane cells inside each column (and extra breakdowns live in ⚏ Display → Planning). -->
     <span class="planning-controls-label">Show lanes:</span>
     <div id="planningLaneToggles" class="planning-lane-toggles"></div>
-    <span class="planning-controls-hint">Counts respect the current owner / brand / channel filters.</span>
   </div>
   <div id="planningGrid" class="planning-grid"></div>
 </div>
@@ -1003,7 +1007,7 @@
     </div>
     <div class="field"><label>Status</label><select id="f_status"></select></div>
     <div class="field"><label>Priority</label><select id="f_priority"></select></div>
-    <div class="field"><label>Promotion</label>
+    <div class="field" id="f_promoField"><label>Promotion</label>
       <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
     </div>
     <div class="field"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
@@ -1068,7 +1072,7 @@
       <div class="hint" id="fieldsSummary" style="margin-bottom:8px"></div>
       <button id="openFieldsBtn" style="width:100%">✎ Edit custom fields…</button>
     </div>
-    <div class="manage-sec">
+    <div class="manage-sec" id="managePromoSec">
       <span class="seclabel">Promotions</span>
       <input id="mPromoSearch" class="sec-search" placeholder="Filter promotions…" autocomplete="off" />
       <div class="manage-list scroll-cap" id="managePromos"></div>
@@ -1225,8 +1229,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.12";
+const VERSION = "3.13";
 const CHANGELOG = [
+  "v3.13 — Planning view: top “SHOW LANES:” row removed; each lane stat cell inside a column is now a button — click to toggle that lane in/out of the view. Dimmed cells are hidden lanes. Also: hidden the Promotions section (Manage board + modal field + filter / quick-filter chips) on the Innovation workspace since products don't ladder up to promos. Settings → Brand toolkit gains a ＋ Add brand button, applies to both workspaces.",
   "v3.12 — Resilience against Supabase slow spells. (1) reloadListsAndUI now debounces 150 ms, so rapid-fire edits in the Custom fields editor only trigger one SELECT at the end. (2) On a transient fetch error (statement timeout, 5xx, network) both loadLists and refetch keep the cached in-memory state instead of blanking to defaults — your fields / people / board stay on screen while the DB recovers; the error is logged to console, not toasted.",
   "v3.11 — Group-by order on Copy updates follows the dimension's canonical order (lanes in Manage order, brands / channels / owners in list order, priority in High / Medium / Low / No Priority order) instead of alphabetical. Any value not in the canonical list falls back to alphabetical at the end.",
   "v3.10 — Breakdown moved into the Copy updates dialog. Removed the 📊 Stats button on the Notes toolbar. New “Include breakdown” checkbox on the Copy updates dialog prepends a per-bucket × per-lane card-count block (Products by Innovation Year × Lane for Innovation, Cards by Sprint × Lane for Planner) above the per-card entries, so you can paste the full update + the lane totals in one go. Choice persists per browser. “Current year / Next year / Previous year” labels follow the Innovation Year nav state, not the calendar year.",
@@ -1764,11 +1769,12 @@ function qfDims() {
   const base = [
     { key: "brand", label: "Brand", vals: () => brandsList.map(b => b.name), color: brandColor, valsOf: c => c.brand ? [c.brand] : [] },
     { key: "channel", label: "Channel", vals: () => channelsList.map(c => c.name), color: channelColorOf, valsOf: c => splitChannels(c.channel) },
-    { key: "promotion", label: "Promotions", vals: () => [...legendPromoSet(), ...(filters.promotion || [])].filter((v, i, a) => a.indexOf(v) === i).sort((a,b)=>a.localeCompare(b)), color: promoColor, valsOf: c => { const p = cardPromo(c); return p ? [p] : []; } },
-    { key: "priority", label: "Priority", vals: () => PRIORITIES.map(p => p.name), color: priorityColor, valsOf: c => [cardPriority(c)] },
-    { key: "status", label: "Lane", vals: () => statusList.map(s => s.name), color: statusColor, valsOf: c => c.status ? [c.status] : [] },
-    { key: "owner", label: "Owner", vals: () => peopleList.map(p => p.name), color: () => null, valsOf: c => splitOwners(c.owner) },
   ];
+  // Promotions are a Planner concept; Innovation doesn't surface them in filters or quick-filter rows.
+  if (!isInnovation()) base.push({ key: "promotion", label: "Promotions", vals: () => [...legendPromoSet(), ...(filters.promotion || [])].filter((v, i, a) => a.indexOf(v) === i).sort((a,b)=>a.localeCompare(b)), color: promoColor, valsOf: c => { const p = cardPromo(c); return p ? [p] : []; } });
+  base.push({ key: "priority", label: "Priority", vals: () => PRIORITIES.map(p => p.name), color: priorityColor, valsOf: c => [cardPriority(c)] });
+  base.push({ key: "status", label: "Lane", vals: () => statusList.map(s => s.name), color: statusColor, valsOf: c => c.status ? [c.status] : [] });
+  base.push({ key: "owner", label: "Owner", vals: () => peopleList.map(p => p.name), color: () => null, valsOf: c => splitOwners(c.owner) });
   // Custom fields with options (Dropdown or Multi-select) are togglable as quick-filter rows too.
   fieldsList.filter(fieldHasOptions).forEach(f => {
     base.push({
@@ -1859,6 +1865,9 @@ function applyWorkspace() {
   const add = document.getElementById("addBtn"); if (add) add.textContent = "+ " + wsDef().noun;
   // XLSX importer visible on Innovation only; it's targeted at the SP Line Review workbook.
   const xField = document.getElementById("importXlsxField"); if (xField) xField.style.display = currentWorkspace === "innovation" ? "" : "none";
+  // Promotions are a marketing-planner concept; hide the Manage section + modal field on Innovation.
+  const promoSec = document.getElementById("managePromoSec"); if (promoSec) promoSec.style.display = currentWorkspace === "innovation" ? "none" : "";
+  const promoField = document.getElementById("f_promoField"); if (promoField) promoField.style.display = currentWorkspace === "innovation" ? "none" : "";
   syncSprintNavLabels();
 }
 // Innovation workspace uses YEAR buckets instead of ISO weeks. innovationYear is the center year for the
@@ -2621,7 +2630,6 @@ function resetBrandDarkColor(name) { clearBrandColorGlobal(name, "dark"); afterL
 function renderSettingsBrands() {
   const root = document.getElementById("settingsBrandList"); if (!root) return;
   root.innerHTML = "";
-  if (!brandsList.length) { const e = document.createElement("div"); e.className = "none"; e.textContent = "No brands yet."; root.appendChild(e); return; }
   brandsList.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(b => {
     const row = document.createElement("div"); row.className = "manage-row";
     const left = document.createElement("span"); left.className = "row-left";
@@ -2640,6 +2648,17 @@ function renderSettingsBrands() {
     row.appendChild(left);
     root.appendChild(row);
   });
+  if (!brandsList.length) { const e = document.createElement("div"); e.className = "none"; e.textContent = "No brands yet."; root.appendChild(e); }
+  // + Add brand — new brand lands in the current workspace's list; the color toolkit immediately shows a row for it.
+  const addRow = document.createElement("div"); addRow.className = "manage-row";
+  const addBtn = document.createElement("button"); addBtn.type = "button"; addBtn.className = "owner-chip add"; addBtn.textContent = "＋ Add brand";
+  addBtn.onclick = async () => {
+    const name = (prompt("New brand name:") || "").trim(); if (!name) return;
+    const ok = await addList("brand", name);
+    if (ok) renderSettingsBrands();
+  };
+  addRow.appendChild(addBtn);
+  root.appendChild(addRow);
 }
 async function setColor(item, color) {
   item.color = color;
@@ -3287,10 +3306,25 @@ function renderSprintPlanning() {
       const laneStats = document.createElement("div"); laneStats.className = "planning-stats";
       const laneCounts = {}; lanes.forEach(n => laneCounts[n] = 0);
       list.forEach(c => { if (c.status in laneCounts) laneCounts[c.status]++; });
-      lanes.forEach(n => {
-        const cell = document.createElement("div"); cell.className = "planning-stat-cell";
+      // Render EVERY lane (not just the "active" filter set) so click-to-toggle works on the hidden ones too.
+      // Inactive lanes are dimmed; clicking a cell toggles that lane in the planningLanes filter.
+      const allLanes = statusList.map(s => s.name);
+      const laneSetVis = new Set(lanes);
+      // Need counts for ALL lanes, not just active ones.
+      const allLaneCounts = {}; allLanes.forEach(n => allLaneCounts[n] = 0);
+      list.forEach(c => { if (c.status in allLaneCounts) allLaneCounts[c.status]++; });
+      allLanes.forEach(n => {
+        const on = laneSetVis.has(n);
+        const cell = document.createElement("button"); cell.type = "button"; cell.className = "planning-stat-cell" + (on ? "" : " off");
         cell.style.borderLeft = "3px solid " + statusColor(n);
-        cell.innerHTML = `<span class="planning-stat-label">${esc(n)}</span><span class="planning-stat-val">${laneCounts[n]}</span>`;
+        cell.title = on ? "Click to hide " + n + " from this view" : "Click to show " + n;
+        cell.innerHTML = `<span class="planning-stat-label">${esc(n)}</span><span class="planning-stat-val">${allLaneCounts[n]}</span>`;
+        cell.onclick = (e) => {
+          e.stopPropagation();
+          if (!planningLanes) planningLanes = new Set(statusList.map(x => x.name));
+          if (planningLanes.has(n)) planningLanes.delete(n); else planningLanes.add(n);
+          savePlanningLanes(); renderSprintPlanning();
+        };
         laneStats.appendChild(cell);
       });
       s.appendChild(laneStats);
