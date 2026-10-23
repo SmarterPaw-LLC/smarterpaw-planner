@@ -1229,8 +1229,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.13";
+const VERSION = "3.14";
 const CHANGELOG = [
+  "v3.14 — Brand toolkit colors now sync to Supabase (__brand_colors_db__ sentinel row on the lists table), not just localStorage. Fresh browsers, incognito sessions, and new teammates all pick up the saved palette on first page load. localStorage still acts as the hot cache; the server copy is authoritative on load.",
   "v3.13 — Planning view: top “SHOW LANES:” row removed; each lane stat cell inside a column is now a button — click to toggle that lane in/out of the view. Dimmed cells are hidden lanes. Also: hidden the Promotions section (Manage board + modal field + filter / quick-filter chips) on the Innovation workspace since products don't ladder up to promos. Settings → Brand toolkit gains a ＋ Add brand button, applies to both workspaces.",
   "v3.12 — Resilience against Supabase slow spells. (1) reloadListsAndUI now debounces 150 ms, so rapid-fire edits in the Custom fields editor only trigger one SELECT at the end. (2) On a transient fetch error (statement timeout, 5xx, network) both loadLists and refetch keep the cached in-memory state instead of blanking to defaults — your fields / people / board stay on screen while the DB recovers; the error is logged to console, not toasted.",
   "v3.11 — Group-by order on Copy updates follows the dimension's canonical order (lanes in Manage order, brands / channels / owners in list order, priority in High / Medium / Low / No Priority order) instead of alphabetical. Any value not in the canonical list falls back to alphabetical at the end.",
@@ -1461,6 +1462,10 @@ let _promoOverrideRowId = null;   // id of the sentinel row (null until first sa
 // applies the same in Planner and Innovation. Stored in localStorage keyed by brand name, with { light, dark }.
 // Falls back to the brand row's lists.color (legacy per-workspace) and then DEFAULT_BRAND_HEX.
 const BRAND_COLORS_LS_KEY = "planner-brand-colors-global";
+// Server-side mirror so brand colors survive incognito / new browsers / new team members. localStorage still
+// acts as the hot cache; the sentinel row (`kind=field, name=__brand_colors_db__`) holds the authoritative map.
+const BRAND_COLORS_DB_KEY = "__brand_colors_db__";
+let _brandColorsDbRowId = null;
 // Legacy sentinel key — still filtered out of fieldsList so existing rows don't pollute the fields editor.
 const BRAND_DARK_COLORS_KEY = "__brand_dark_colors__";
 function getBrandColorsGlobal() {
@@ -2480,7 +2485,12 @@ async function loadLists() {
   data.filter(r => r.kind === "promotion").forEach(r => { if (r.color) promoOverrides[r.name] = { id: r.id, color: r.color }; });
   // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
   // The sentinel name PROMO_COLORS_KEY holds a JSON {promoName: hexColor} map — pulled into promoOverrides, not fieldsList.
-  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  // Server-side brand-colors mirror — authoritative over whatever's in localStorage, since it survives
+  // incognito / fresh browsers / team members. Load last so it wins over the legacy BRAND_DARK_COLORS_KEY migration.
+  const bcRow = data.find(r => r.kind === "field" && r.name === BRAND_COLORS_DB_KEY);
+  _brandColorsDbRowId = bcRow ? bcRow.id : null;
+  if (bcRow && bcRow.color) { try { const m = JSON.parse(bcRow.color); if (m && typeof m === "object") saveBrandColorsGlobal(m); } catch (e) {} }
   const pcRow = data.find(r => r.kind === "field" && r.name === PROMO_COLORS_KEY);
   promoOverrides = {}; _promoOverrideRowId = pcRow ? pcRow.id : null;
   if (pcRow && pcRow.color) { try { const m = JSON.parse(pcRow.color); if (m && typeof m === "object") promoOverrides = m; } catch (e) {} }
@@ -2622,9 +2632,29 @@ async function setPromoColor(name, color) { promoOverrides[name] = color; await 
 async function resetPromoColor(name) { if (!(name in promoOverrides)) return; delete promoOverrides[name]; await savePromoOverrides(); }
 // Global brand-color writes — localStorage-only, workspace-agnostic. Both Planner and Innovation reflect
 // the change on next render.
-function setBrandLightColor(name, hex) { setBrandColorGlobal(name, "light", hex); afterListsChanged(); renderSettingsBrands(); }
-function setBrandDarkColor(name, hex) { setBrandColorGlobal(name, "dark", hex); afterListsChanged(); renderSettingsBrands(); }
-function resetBrandDarkColor(name) { clearBrandColorGlobal(name, "dark"); afterListsChanged(); renderSettingsBrands(); }
+// Persist the current global brand-color map to Supabase (the __brand_colors_db__ sentinel row). Chatty saves are
+// fine — the row is small (<1KB) and this runs only when a color changes. Debounce would complicate reload races.
+async function syncBrandColorsToDB() {
+  if (!ONLINE) return;
+  const payload = JSON.stringify(getBrandColorsGlobal() || {});
+  try {
+    if (_brandColorsDbRowId) {
+      const { error } = await db.from("lists").update({ color: payload }).eq("id", _brandColorsDbRowId);
+      if (error) console.warn("brand-color DB sync failed:", error);
+    } else {
+      // First-ever save for this project. Lists require a workspace — pick 'planner' as home so the row is
+      // discoverable from both workspaces (loadLists ignores workspace scope for this sentinel's data).
+      const row = wsStamp ? wsStamp({ kind: "field", name: BRAND_COLORS_DB_KEY, color: payload, position: 99999 }) : { kind: "field", name: BRAND_COLORS_DB_KEY, color: payload, position: 99999, workspace: "planner" };
+      row.workspace = "planner";   // force; brand colors are global
+      const { data, error } = await db.from("lists").insert(row).select("id").single();
+      if (error) { console.warn("brand-color DB insert failed:", error); return; }
+      _brandColorsDbRowId = data.id;
+    }
+  } catch (e) { console.warn("brand-color DB sync threw:", e); }
+}
+function setBrandLightColor(name, hex) { setBrandColorGlobal(name, "light", hex); syncBrandColorsToDB(); afterListsChanged(); renderSettingsBrands(); }
+function setBrandDarkColor(name, hex) { setBrandColorGlobal(name, "dark", hex); syncBrandColorsToDB(); afterListsChanged(); renderSettingsBrands(); }
+function resetBrandDarkColor(name) { clearBrandColorGlobal(name, "dark"); syncBrandColorsToDB(); afterListsChanged(); renderSettingsBrands(); }
 // Brand toolkit section in the ⋯ Settings dialog. Pulls brand names from the current workspace's list
 // (Jason keeps the same brand set across workspaces so this works as the shared toolkit).
 function renderSettingsBrands() {
@@ -2766,7 +2796,7 @@ async function removeList(kind, item) {
   }
   const { error } = await db.from("lists").delete().eq("id", item.id);
   if (error) { toast("Remove failed: " + error.message); return; }
-  if (kind === "brand") clearBrandColorGlobal(item.name, null);   // drop both light + dark overrides from the global toolkit
+  if (kind === "brand") { clearBrandColorGlobal(item.name, null); syncBrandColorsToDB(); }   // drop both light + dark overrides from the global toolkit
   if (kind === "field") await refetch();
   reloadListsAndUI();
 }
@@ -2798,7 +2828,7 @@ function cascadeRenameLocal(kind, old, neu) {
   });
   if (kind === "brand") {
     const g = getBrandColorsGlobal();
-    if (g[old]) { g[neu] = g[old]; delete g[old]; saveBrandColorsGlobal(g); }
+    if (g[old]) { g[neu] = g[old]; delete g[old]; saveBrandColorsGlobal(g); syncBrandColorsToDB(); }
   }
 }
 async function cascadeRenameDB(kind, old, neu) {
@@ -2813,7 +2843,7 @@ async function cascadeRenameDB(kind, old, neu) {
     // Reassign across BOTH workspaces since brand is a global concept now (brand toolkit).
     await db.from("deliverables").update({ brand: neu }).eq("brand", old);
     const g = getBrandColorsGlobal();
-    if (g[old]) { g[neu] = g[old]; delete g[old]; saveBrandColorsGlobal(g); }
+    if (g[old]) { g[neu] = g[old]; delete g[old]; saveBrandColorsGlobal(g); await syncBrandColorsToDB(); }
     return;
   }
   if (kind === "person") {
