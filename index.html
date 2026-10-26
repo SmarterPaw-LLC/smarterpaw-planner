@@ -255,15 +255,12 @@
   .gallery-grid.tile.sz-sm { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .gallery-grid.tile.sz-md { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
   .gallery-grid.tile.sz-lg { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
-  .gallery-grid.mosaic { column-gap: 12px; }
-  .gallery-grid.mosaic.sz-sm { column-count: 6; }
-  .gallery-grid.mosaic.sz-md { column-count: 4; }
-  .gallery-grid.mosaic.sz-lg { column-count: 2; }
-  @media (max-width: 1200px) { .gallery-grid.mosaic.sz-sm { column-count: 5; } .gallery-grid.mosaic.sz-md { column-count: 3; } .gallery-grid.mosaic.sz-lg { column-count: 2; } }
-  @media (max-width: 800px) { .gallery-grid.mosaic.sz-sm { column-count: 3; } .gallery-grid.mosaic.sz-md { column-count: 2; } .gallery-grid.mosaic.sz-lg { column-count: 1; } }
-  @media (max-width: 500px) { .gallery-grid.mosaic { column-count: 1; } }
+  /* Mosaic = flex row of equal-width column divs; each column is a vertical stack of tiles. JS decides the
+     column count based on size + viewport and distributes tiles round-robin so sparse content lays out
+     side-by-side instead of stacking in the first column (which is what CSS multi-column balancing does). */
+  .gallery-grid.mosaic { display: flex; gap: 12px; align-items: flex-start; }
+  .gallery-grid.mosaic .mosaic-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
   .gallery-tile { background: var(--panel); border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
-  .gallery-grid.mosaic .gallery-tile { display: inline-block; width: 100%; margin-bottom: 12px; break-inside: avoid; }
   .gallery-tile.done { opacity: .72; }
   .gallery-tile-img { background: var(--panel-2); cursor: zoom-in; display: flex; align-items: center; justify-content: center; }
   .gallery-grid.tile .gallery-tile-img { aspect-ratio: 4 / 3; }
@@ -1263,8 +1260,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.22";
+const VERSION = "3.23";
 const CHANGELOG = [
+  "v3.23 — Mosaic gallery now uses JS-managed flex columns instead of CSS multi-column. Sparse content (e.g. 2 images in a 6-col mosaic) actually spreads side-by-side instead of stacking in column 1 (which was CSS column-balance's default behavior). Round-robin distribution per column, 1–6 columns based on size + viewport.",
   "v3.22 — Ctrl/Cmd + V anywhere in an open card modal pastes a clipboard screenshot into the Image gallery. Previously only worked when the gallery drop-zone itself had focus (divs don't receive paste events by default). Text pastes into focused inputs / textareas / contenteditables still go to text — the gallery only grabs the paste when the clipboard has image data and the focused field doesn't also have text.",
   "v3.21 — Gallery view gets a size seg (S / M / L) next to Tile / Mosaic. Six combinations total: small / medium / large thumbnails in either Tile (uniform cropped) or Mosaic (natural aspect, CSS columns) mode. Both the size and layout mode persist per browser.",
   "v3.20 — Gallery view is image-first now. One tile per IMAGE across every filtered card (explicit cover + every gallery item + Innovation's Latest Sample Image URL), not one tile per card. Cards without a renderable image don't appear. Click the image to open the lightbox at that image (←/→ to flip through that card's other images); click the title to open the full modal. New ⬛ Tile / ▦ Mosaic toggle in the gallery header: Tile = uniform cropped grid, Mosaic = CSS columns at natural height so images aren't cropped. Mode persists per browser. Gallery container scrolls now (fixed missing overflow).",
@@ -4280,18 +4278,18 @@ function renderGalleryView() {
   root.appendChild(head);
   if (!tiles.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No images here. Add images to a card's gallery, or adjust the filters."; root.appendChild(empty); return; }
   const grid = document.createElement("div"); grid.className = "gallery-grid " + (_galleryMode === "mosaic" ? "mosaic" : "tile") + " sz-" + _gallerySize;
-  tiles.forEach(({ card: c, url, idx, all }) => {
+  // Mosaic uses JS-managed columns so sparse content actually spreads side-by-side instead of CSS column
+  // balancing stacking everything in column 1. Tile keeps the simpler CSS grid.
+  const buildTile = ({ card: c, url, idx, all }) => {
     const tile = document.createElement("div"); tile.className = "gallery-tile";
     tile.style.borderLeftColor = colorFor(c); applyPromo(tile, c);
     const isDone = !!(completeLane && c.status === completeLane);
     if (isDone) tile.classList.add("done");
-    // Image: click opens the lightbox at this image within the card's image set (←/→ to navigate siblings).
     const imgWrap = document.createElement("div"); imgWrap.className = "gallery-tile-img";
     const im = document.createElement("img"); im.src = url; im.alt = ""; im.loading = "lazy";
-    im.onerror = () => tile.remove();   // drop broken tiles outright
+    im.onerror = () => tile.remove();
     im.onclick = (e) => { e.stopPropagation(); openImageViewer(all, idx, c.title || "image"); };
     imgWrap.appendChild(im); tile.appendChild(imgWrap);
-    // Body: title opens the modal; meta chips driven by Display settings. Keeps curator access to the card.
     const body = document.createElement("div"); body.className = "gallery-tile-body";
     const title = document.createElement("div"); title.className = "gallery-tile-title";
     title.innerHTML = doneBadge(c) + schedBadge(c) + reviewBadge(c) + esc(c.title);
@@ -4300,8 +4298,20 @@ function renderGalleryView() {
     const badges = dimBadges(c);
     if (badges) { const meta = document.createElement("div"); meta.className = "gallery-tile-meta" + (curDisp().badge ? "" : " text"); meta.innerHTML = badges; body.appendChild(meta); }
     tile.appendChild(body);
-    grid.appendChild(tile);
-  });
+    return tile;
+  };
+  if (_galleryMode === "mosaic") {
+    // Column count follows the size + viewport. Items distribute shortest-column-first after each image loads
+    // its intrinsic height; initial pass goes round-robin so the first paint is already side-by-side.
+    const w = window.innerWidth || 1600;
+    const base = _gallerySize === "sm" ? 6 : _gallerySize === "lg" ? 2 : 4;
+    const numCols = w <= 500 ? 1 : w <= 800 ? Math.min(base, 2) : w <= 1200 ? Math.max(1, base - 1) : base;
+    const cols = [];
+    for (let i = 0; i < numCols; i++) { const c = document.createElement("div"); c.className = "mosaic-col"; cols.push(c); grid.appendChild(c); }
+    tiles.forEach((t, i) => { cols[i % numCols].appendChild(buildTile(t)); });
+  } else {
+    tiles.forEach(t => grid.appendChild(buildTile(t)));
+  }
   root.appendChild(grid);
 }
 function renderList() {
