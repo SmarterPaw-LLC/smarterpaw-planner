@@ -246,6 +246,22 @@
   #notes * { min-width: 0; }   /* let flex/grid children shrink so long strings wrap instead of pushing width */
   #notes .notes-entry { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
   .notes-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+  /* Gallery view — responsive grid of card tiles with cover + title + meta chips. */
+  #gallery { flex-direction: column; padding: 10px 14px; }
+  .gallery-head { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .gallery-count { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
+  .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .gallery-tile { background: var(--panel); border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
+  .gallery-tile.done { opacity: .72; }
+  .gallery-tile-img { aspect-ratio: 4 / 3; background: var(--panel-2); display: flex; align-items: center; justify-content: center; font-size: 28px; color: var(--muted); }
+  .gallery-tile-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .gallery-tile-img.no-img { background: var(--panel-2); }
+  .gallery-tile-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .gallery-tile-title { font-weight: 600; font-size: 13.5px; line-height: 1.35; color: var(--text); }
+  .gallery-tile:hover .gallery-tile-title { color: var(--accent); }
+  .gallery-tile-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .gallery-tile-meta.text { gap: 0; color: var(--muted); font-size: 12px; }
+  .gallery-tile.has-promo { box-shadow: inset 0 3px 0 0 var(--promo); }
   .notes-count { flex: 1; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
   .notes-btn { font-size: 12px; padding: 5px 10px; }
   .notes-entry { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 10px; padding: 10px 14px; }
@@ -841,7 +857,7 @@
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
   <button id="userBtn" class="user-btn" title="Filter to your work (click to change)">You: <b id="userBtnName">All</b> ▾</button>
   <button id="overdueBtn" class="user-btn" title="Show unfinished cards from past sprints (relative to today; not a saved view)">⚠ Overdue</button>
-  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button><button data-v="notes">Notes</button><button data-v="planning">📋 Planning</button></div>
+  <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button><button data-v="gallery">Gallery</button><button data-v="notes">Notes</button><button data-v="planning">📋 Planning</button></div>
   <button class="primary orange" id="addBtn">+ Deliverable</button>
   <div class="header-spacer"></div>
   <input class="search" id="search" placeholder="Search…" />
@@ -936,6 +952,7 @@
 <div id="grid"><div id="gridToolbar" class="grid-toolbar" style="display:none"></div><div id="gridBulkBar" class="grid-bulk-bar" style="display:none"></div><div class="grid-wrap"><table id="gridTable"></table></div></div>
 
 <div id="list"></div>
+<div id="gallery"></div>
 <div id="notes"></div>
 <div id="planning">
   <div class="planning-controls" style="display:none">
@@ -1233,8 +1250,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.18";
+const VERSION = "3.19";
 const CHANGELOG = [
+  "v3.19 — New Gallery view in the view toggle (between List and Notes). Responsive grid of tiles — one per card — showing its cover photo (coverSrcOf: explicit cover → first gallery image → Latest Sample Image URL) + title + the dim badges you've configured for Gallery in ⚏ Display (defaults: Brand / Channel / Owners). Honors all the usual filters, search, saved views, + Product / + Deliverable, color-by. Works on all workspaces.",
   "v3.18 — Download images from the gallery. ⬇ button on each gallery thumbnail in the modal (next to ✕) and in the lightbox (next to ✕) saves the image to your computer. Filename uses the card title + index + extension (jpg/png/webp).",
   "v3.17 — Debounced the top search box: the board re-renders 220 ms after you stop typing instead of on every keystroke. Typing stays responsive even on big workspaces.",
   "v3.16 — Modal Brand dropdown pulls from the live brandsList (unioned across workspaces), not the hardcoded Meowi / Doggi / Kitty trio. Add a new brand in Settings → Brand toolkit and it's immediately pickable on cards in both workspaces. Rebuilt on every afterListsChanged + before every modal open; a card's existing brand that isn't in the list is prepended as an option so legacy values aren't lost.",
@@ -1988,13 +2006,14 @@ function loadDisplay() {
     sort: { key: (d.sort && d.sort.key) || "", dir: (d.sort && d.sort.dir === -1) ? -1 : 1 },
     eventSize: ["compact", "comfortable", "spacious"].includes(d.eventSize) ? d.eventSize : "compact",
   });
-  if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT) };
-  if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT) };   // migrate old single setting
-  return { board: norm(DISP_DEFAULT), calendar: norm(DISP_DEFAULT), list: norm(LIST_DISP_DEFAULT) };
+  const galleryDefault = { dims: ["brand", "channel", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
+  if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT), gallery: norm(raw.gallery || galleryDefault) };
+  if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault) };   // migrate old single setting
+  return { board: norm(DISP_DEFAULT), calendar: norm(DISP_DEFAULT), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault) };
 }
 let displaySettings = loadDisplay();
 function saveDisplay() { localStorage.setItem("planner-display", JSON.stringify(displaySettings)); }
-function curDisp() { return displaySettings[view === "calendar" ? "calendar" : view === "list" ? "list" : "board"]; }
+function curDisp() { return displaySettings[view === "calendar" ? "calendar" : view === "list" ? "list" : view === "gallery" ? "gallery" : "board"]; }
 // Sortable keys offered in the unified Filter & Sort panel ("" = manual / creation order).
 function sortDims() {
   return [{ key: "", label: "— None (manual order) —" }, { key: "title", label: "Title" }, { key: "due", label: "Due date" }, { key: "end", label: "End date" },
@@ -3609,6 +3628,7 @@ function render() {
   else if (view === "list") renderList();
   else if (view === "notes") renderNotesView();
   else if (view === "planning") renderSprintPlanning();
+  else if (view === "gallery") renderGalleryView();
   else renderBoard();
 }
 let listExpanded = new Set();   // task ids whose subtasks are expanded in the List view
@@ -4197,6 +4217,47 @@ function renderNotesView() {
     root.appendChild(entry);
   });
 }
+// Gallery view — a responsive grid of cards, each with its cover image + title + dim badges. Shares all the
+// filter/search/sort machinery with Board and List; display settings (which dims to show, badge vs. text,
+// sort) are configured via ⚏ Display and persisted per browser alongside the other views' settings.
+function renderGalleryView() {
+  const root = document.getElementById("gallery"); root.innerHTML = "";
+  const cardsIn = visibleCards();
+  // Toolbar: entry count + sort hint (same style as Notes).
+  const head = document.createElement("div"); head.className = "gallery-head";
+  const count = document.createElement("span"); count.className = "gallery-count"; count.textContent = cardsIn.length + " item" + (cardsIn.length === 1 ? "" : "s");
+  head.appendChild(count); root.appendChild(head);
+  if (!cardsIn.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No items here. Adjust the search or filters."; root.appendChild(empty); return; }
+  const grid = document.createElement("div"); grid.className = "gallery-grid";
+  cardsIn.forEach(c => {
+    const tile = document.createElement("div"); tile.className = "gallery-tile";
+    tile.style.borderLeftColor = colorFor(c); applyPromo(tile, c);
+    const isDone = !!(completeLane && c.status === completeLane);
+    if (isDone) tile.classList.add("done");
+    // Image area — same cover resolution as the board thumbnail. Fallback to a placeholder when no image.
+    const imgWrap = document.createElement("div"); imgWrap.className = "gallery-tile-img";
+    const src = coverSrcOf(c);
+    if (src && isRenderableImageUrl(src)) {
+      const im = document.createElement("img"); im.src = src; im.alt = ""; im.loading = "lazy";
+      im.onerror = () => { imgWrap.classList.add("no-img"); imgWrap.textContent = "📷"; };
+      imgWrap.appendChild(im);
+    } else {
+      imgWrap.classList.add("no-img"); imgWrap.textContent = "📷";
+    }
+    tile.appendChild(imgWrap);
+    // Body: title + meta chips driven by Display settings.
+    const body = document.createElement("div"); body.className = "gallery-tile-body";
+    const title = document.createElement("div"); title.className = "gallery-tile-title";
+    title.innerHTML = doneBadge(c) + schedBadge(c) + reviewBadge(c) + esc(c.title);
+    body.appendChild(title);
+    const badges = dimBadges(c);
+    if (badges) { const meta = document.createElement("div"); meta.className = "gallery-tile-meta" + (curDisp().badge ? "" : " text"); meta.innerHTML = badges; body.appendChild(meta); }
+    tile.appendChild(body);
+    tile.onclick = (e) => { if (e.target.closest("a")) return; openModal(c); };
+    grid.appendChild(tile);
+  });
+  root.appendChild(grid);
+}
 function renderList() {
   const root = document.getElementById("list");
   const prevBody = root.querySelector(".list-body");
@@ -4442,6 +4503,7 @@ function setView(v) {
   document.getElementById("calendar").style.display = v === "calendar" ? "flex" : "none";
   document.getElementById("grid").style.display = v === "grid" ? "flex" : "none";
   document.getElementById("list").style.display = v === "list" ? "flex" : "none";
+  document.getElementById("gallery").style.display = v === "gallery" ? "flex" : "none";
   document.getElementById("notes").style.display = v === "notes" ? "flex" : "none";
   document.getElementById("planning").style.display = v === "planning" ? "flex" : "none";
   document.getElementById("calSettingsBtn").style.display = "";   // Display config exists for every view (cards on Board/Cal/List, columns on Grid)
@@ -4932,7 +4994,7 @@ function allGridGroupPaths() {
 }
 function openDisp() {
   const grid = view === "grid";
-  document.getElementById("dispTitle").textContent = grid ? "Grid columns" : ("Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : "Board"));
+  document.getElementById("dispTitle").textContent = grid ? "Grid columns" : ("Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : view === "gallery" ? "Gallery" : view === "notes" ? "Notes" : "Board"));
   document.getElementById("dispHint").textContent = grid
     ? "Choose which columns appear (saved with bookmarks and views). Sort lives in ⚲ Filter & sort, or click a column header."
     : "Applies to the current view only — Board, Calendar and List are independent. Saved in this browser.";
@@ -6528,7 +6590,7 @@ function renderChangelog() {
   CHANGELOG.forEach((line, i) => { const d = document.createElement("div"); d.className = "cl" + (i === 0 ? " new" : ""); d.textContent = line; box.appendChild(d); });
 }
 // ── URL state (bookmarkable filtered views) ─────────────────────────
-const VIEW_KEYS = ["board", "calendar", "grid", "list", "notes", "planning"];
+const VIEW_KEYS = ["board", "calendar", "grid", "list", "gallery", "notes", "planning"];
 function currentParams() {
   const p = new URLSearchParams();
   // Workspace rides at the front — `planner` stays bare for back-compat with existing bookmarks.
