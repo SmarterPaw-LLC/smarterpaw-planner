@@ -246,19 +246,26 @@
   #notes * { min-width: 0; }   /* let flex/grid children shrink so long strings wrap instead of pushing width */
   #notes .notes-entry { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
   .notes-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
-  /* Gallery view — responsive grid of card tiles with cover + title + meta chips. */
-  #gallery { flex-direction: column; padding: 10px 14px; }
+  /* Gallery view — one tile per IMAGE across every filtered card. Tile mode = uniform cropped grid;
+     Mosaic mode = CSS columns at natural image aspect so nothing is cropped. */
+  #gallery { flex-direction: column; padding: 10px 14px; overflow-y: auto; }
   .gallery-head { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
   .gallery-count { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
-  .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-  .gallery-tile { background: var(--panel); border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
+  .gallery-grid.tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .gallery-grid.mosaic { column-count: 4; column-gap: 12px; }
+  @media (max-width: 1200px) { .gallery-grid.mosaic { column-count: 3; } }
+  @media (max-width: 800px) { .gallery-grid.mosaic { column-count: 2; } }
+  @media (max-width: 500px) { .gallery-grid.mosaic { column-count: 1; } }
+  .gallery-tile { background: var(--panel); border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  .gallery-grid.mosaic .gallery-tile { display: inline-block; width: 100%; margin-bottom: 12px; break-inside: avoid; }
   .gallery-tile.done { opacity: .72; }
-  .gallery-tile-img { aspect-ratio: 4 / 3; background: var(--panel-2); display: flex; align-items: center; justify-content: center; font-size: 28px; color: var(--muted); }
-  .gallery-tile-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .gallery-tile-img.no-img { background: var(--panel-2); }
+  .gallery-tile-img { background: var(--panel-2); cursor: zoom-in; display: flex; align-items: center; justify-content: center; }
+  .gallery-grid.tile .gallery-tile-img { aspect-ratio: 4 / 3; }
+  .gallery-grid.tile .gallery-tile-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gallery-grid.mosaic .gallery-tile-img img { width: 100%; height: auto; display: block; }
   .gallery-tile-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
-  .gallery-tile-title { font-weight: 600; font-size: 13.5px; line-height: 1.35; color: var(--text); }
-  .gallery-tile:hover .gallery-tile-title { color: var(--accent); }
+  .gallery-tile-title { font-weight: 600; font-size: 13.5px; line-height: 1.35; color: var(--text); cursor: pointer; }
+  .gallery-tile-title:hover { color: var(--accent); }
   .gallery-tile-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .gallery-tile-meta.text { gap: 0; color: var(--muted); font-size: 12px; }
   .gallery-tile.has-promo { box-shadow: inset 0 3px 0 0 var(--promo); }
@@ -1250,8 +1257,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.19";
+const VERSION = "3.20";
 const CHANGELOG = [
+  "v3.20 — Gallery view is image-first now. One tile per IMAGE across every filtered card (explicit cover + every gallery item + Innovation's Latest Sample Image URL), not one tile per card. Cards without a renderable image don't appear. Click the image to open the lightbox at that image (←/→ to flip through that card's other images); click the title to open the full modal. New ⬛ Tile / ▦ Mosaic toggle in the gallery header: Tile = uniform cropped grid, Mosaic = CSS columns at natural height so images aren't cropped. Mode persists per browser. Gallery container scrolls now (fixed missing overflow).",
   "v3.19 — New Gallery view in the view toggle (between List and Notes). Responsive grid of tiles — one per card — showing its cover photo (coverSrcOf: explicit cover → first gallery image → Latest Sample Image URL) + title + the dim badges you've configured for Gallery in ⚏ Display (defaults: Brand / Channel / Owners). Honors all the usual filters, search, saved views, + Product / + Deliverable, color-by. Works on all workspaces.",
   "v3.18 — Download images from the gallery. ⬇ button on each gallery thumbnail in the modal (next to ✕) and in the lightbox (next to ✕) saves the image to your computer. Filename uses the card title + index + extension (jpg/png/webp).",
   "v3.17 — Debounced the top search box: the board re-renders 220 ms after you stop typing instead of on every keystroke. Typing stays responsive even on big workspaces.",
@@ -4217,43 +4225,64 @@ function renderNotesView() {
     root.appendChild(entry);
   });
 }
-// Gallery view — a responsive grid of cards, each with its cover image + title + dim badges. Shares all the
-// filter/search/sort machinery with Board and List; display settings (which dims to show, badge vs. text,
-// sort) are configured via ⚏ Display and persisted per browser alongside the other views' settings.
+// Return every renderable image URL attached to a card: explicit cover + each gallery item + the legacy
+// Latest Sample Image URL. Deduped, URL-filtered (http/data only, no Drive/SharePoint). Order preserves intent:
+// cover first (so the primary image leads the tile group), then gallery order.
+function cardAllImageUrls(c) {
+  if (!c || !c.fields) return [];
+  const seen = new Set(); const out = [];
+  const push = u => { if (u && isRenderableImageUrl(u) && !seen.has(u)) { seen.add(u); out.push(u); } };
+  push(c.fields[COVER_KEY]);
+  cardGalleryUrls(c).forEach(push);
+  push(c.fields["Latest Sample Image URL"]);
+  return out;
+}
+// Gallery view — one tile per image across every filtered card. Cards with no renderable images are omitted.
+// Two modes: "tile" (uniform grid, images cropped to a fixed aspect) and "mosaic" (CSS columns, images at
+// their natural aspect so nothing is cropped). Mode persists per browser.
+let _galleryMode = localStorage.getItem("planner-gallery-mode") || "tile";
 function renderGalleryView() {
   const root = document.getElementById("gallery"); root.innerHTML = "";
   const cardsIn = visibleCards();
-  // Toolbar: entry count + sort hint (same style as Notes).
+  // Expand to (card, url, indexWithinCard) tuples; drop cards with no images.
+  const tiles = [];
+  cardsIn.forEach(c => { const imgs = cardAllImageUrls(c); imgs.forEach((url, idx) => tiles.push({ card: c, url, idx, all: imgs })); });
+  // Toolbar: image count + layout toggle.
   const head = document.createElement("div"); head.className = "gallery-head";
-  const count = document.createElement("span"); count.className = "gallery-count"; count.textContent = cardsIn.length + " item" + (cardsIn.length === 1 ? "" : "s");
-  head.appendChild(count); root.appendChild(head);
-  if (!cardsIn.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No items here. Adjust the search or filters."; root.appendChild(empty); return; }
-  const grid = document.createElement("div"); grid.className = "gallery-grid";
-  cardsIn.forEach(c => {
+  const count = document.createElement("span"); count.className = "gallery-count"; count.textContent = tiles.length + " image" + (tiles.length === 1 ? "" : "s");
+  head.appendChild(count);
+  const spacer = document.createElement("span"); spacer.style.flex = "1"; head.appendChild(spacer);
+  const seg = document.createElement("div"); seg.className = "seg";
+  [["tile", "⬛ Tile"], ["mosaic", "▦ Mosaic"]].forEach(([v, lbl]) => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = lbl;
+    if (_galleryMode === v) b.classList.add("active");
+    b.onclick = () => { _galleryMode = v; localStorage.setItem("planner-gallery-mode", v); renderGalleryView(); };
+    seg.appendChild(b);
+  });
+  head.appendChild(seg);
+  root.appendChild(head);
+  if (!tiles.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No images here. Add images to a card's gallery, or adjust the filters."; root.appendChild(empty); return; }
+  const grid = document.createElement("div"); grid.className = "gallery-grid " + (_galleryMode === "mosaic" ? "mosaic" : "tile");
+  tiles.forEach(({ card: c, url, idx, all }) => {
     const tile = document.createElement("div"); tile.className = "gallery-tile";
     tile.style.borderLeftColor = colorFor(c); applyPromo(tile, c);
     const isDone = !!(completeLane && c.status === completeLane);
     if (isDone) tile.classList.add("done");
-    // Image area — same cover resolution as the board thumbnail. Fallback to a placeholder when no image.
+    // Image: click opens the lightbox at this image within the card's image set (←/→ to navigate siblings).
     const imgWrap = document.createElement("div"); imgWrap.className = "gallery-tile-img";
-    const src = coverSrcOf(c);
-    if (src && isRenderableImageUrl(src)) {
-      const im = document.createElement("img"); im.src = src; im.alt = ""; im.loading = "lazy";
-      im.onerror = () => { imgWrap.classList.add("no-img"); imgWrap.textContent = "📷"; };
-      imgWrap.appendChild(im);
-    } else {
-      imgWrap.classList.add("no-img"); imgWrap.textContent = "📷";
-    }
-    tile.appendChild(imgWrap);
-    // Body: title + meta chips driven by Display settings.
+    const im = document.createElement("img"); im.src = url; im.alt = ""; im.loading = "lazy";
+    im.onerror = () => tile.remove();   // drop broken tiles outright
+    im.onclick = (e) => { e.stopPropagation(); openImageViewer(all, idx, c.title || "image"); };
+    imgWrap.appendChild(im); tile.appendChild(imgWrap);
+    // Body: title opens the modal; meta chips driven by Display settings. Keeps curator access to the card.
     const body = document.createElement("div"); body.className = "gallery-tile-body";
     const title = document.createElement("div"); title.className = "gallery-tile-title";
     title.innerHTML = doneBadge(c) + schedBadge(c) + reviewBadge(c) + esc(c.title);
+    title.onclick = (e) => { e.stopPropagation(); openModal(c); };
     body.appendChild(title);
     const badges = dimBadges(c);
     if (badges) { const meta = document.createElement("div"); meta.className = "gallery-tile-meta" + (curDisp().badge ? "" : " text"); meta.innerHTML = badges; body.appendChild(meta); }
     tile.appendChild(body);
-    tile.onclick = (e) => { if (e.target.closest("a")) return; openModal(c); };
     grid.appendChild(tile);
   });
   root.appendChild(grid);
