@@ -1267,8 +1267,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.26";
+const VERSION = "3.27";
 const CHANGELOG = [
+  "v3.27 — Emails list on a card displays newest-first (by addedAt). Storage order is unchanged; only the render is reversed, so Save still writes the authoritative sequence.",
   "v3.26 — Modal layout: Emails section moved to sit right below Notes, so both sides of the activity log are adjacent and the 📧 Email button in the Notes toolbar points at the list it drops into.",
   "v3.25 — Email paste resolves Gmail's relative-time strings to the absolute date at paste moment. “10:33 AM (35 minutes ago)” → “10:33 AM, Oct 23, 2026”. Also handles bare “35 minutes ago”, “3 hours ago”, and “yesterday”. Both the stored sent field and the rendered email block are normalized so the summary stays meaningful weeks later. Already-stored emails with the relative string in them can be fixed via the inline Date header editor added in v3.24.",
   "v3.24 — Email headers are editable in place. Expand any email on a card and the From / To / Subject / Date fields show as text inputs above the body. Fix a “(no headers)” paste by filling the fields in; the collapsed summary updates on blur. Persisted on Save with the rest of the card.",
@@ -5681,7 +5682,9 @@ function renderEmailsEdit() {
   const box = document.getElementById("f_emails"); if (!box) return;
   box.innerHTML = "";
   document.getElementById("f_emailCount").textContent = modalEmails.length ? "(" + modalEmails.length + ")" : "";
-  modalEmails.forEach((em, idx) => {
+  // Display newest-first (by addedAt); storage order stays untouched so saveModal keeps the authoritative sequence.
+  const ordered = modalEmails.slice().sort((a, b) => String(b.addedAt || "").localeCompare(String(a.addedAt || "")));
+  ordered.forEach((em, idx) => {
     const row = document.createElement("div"); row.className = "email-item";
     const head = document.createElement("div"); head.className = "email-item-head";
     const chev = document.createElement("button"); chev.type = "button"; chev.className = "email-item-chev";
