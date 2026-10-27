@@ -1052,10 +1052,6 @@
       <div id="f_subs" class="subs-edit"></div>
       <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask… (end with “:” for a group header, or paste a multi-line list)" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button><button type="button" id="f_subAddHeaderBtn" class="ghost" title="Add a group header (section title)">＋ Header</button></div>
     </div>
-    <div class="field"><label>Emails <span id="f_emailCount" class="opt"></span></label>
-      <div id="f_emails" class="emails-edit"></div>
-      <button type="button" id="f_emailAdd" class="ghost" style="width:100%">＋ Add email (paste)</button>
-    </div>
     <div class="field"><label>Linked deliverables <span id="f_linkCount" class="opt"></span> <span class="opt">— appears on both cards</span></label>
       <div id="f_links" class="links-edit"></div>
       <div class="link-picker">
@@ -1067,9 +1063,13 @@
     <div class="field"><label>Notes <span id="f_notesUpdated" class="opt"></span></label>
       <div class="notes-list-tools">
         <button type="button" class="rte-btn" id="f_notesAdd" title="Add a new note stamped with today's date">＋ Add note</button>
-        <button type="button" class="rte-btn" id="f_notesEmail" title="Paste an email — added to this deliverable's Emails list above">📧 Email</button>
+        <button type="button" class="rte-btn" id="f_notesEmail" title="Paste an email — added to this deliverable's Emails list below">📧 Email</button>
       </div>
       <div id="f_notesList" class="notes-list"></div>
+    </div>
+    <div class="field"><label>Emails <span id="f_emailCount" class="opt"></span></label>
+      <div id="f_emails" class="emails-edit"></div>
+      <button type="button" id="f_emailAdd" class="ghost" style="width:100%">＋ Add email (paste)</button>
     </div>
     <div class="modal-actions">
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
@@ -1267,8 +1267,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.25";
+const VERSION = "3.26";
 const CHANGELOG = [
+  "v3.26 — Modal layout: Emails section moved to sit right below Notes, so both sides of the activity log are adjacent and the 📧 Email button in the Notes toolbar points at the list it drops into.",
   "v3.25 — Email paste resolves Gmail's relative-time strings to the absolute date at paste moment. “10:33 AM (35 minutes ago)” → “10:33 AM, Oct 23, 2026”. Also handles bare “35 minutes ago”, “3 hours ago”, and “yesterday”. Both the stored sent field and the rendered email block are normalized so the summary stays meaningful weeks later. Already-stored emails with the relative string in them can be fixed via the inline Date header editor added in v3.24.",
   "v3.24 — Email headers are editable in place. Expand any email on a card and the From / To / Subject / Date fields show as text inputs above the body. Fix a “(no headers)” paste by filling the fields in; the collapsed summary updates on blur. Persisted on Save with the rest of the card.",
   "v3.23 — Mosaic gallery now uses JS-managed flex columns instead of CSS multi-column. Sparse content (e.g. 2 images in a 6-col mosaic) actually spreads side-by-side instead of stacking in column 1 (which was CSS column-balance's default behavior). Round-robin distribution per column, 1–6 columns based on size + viewport.",
