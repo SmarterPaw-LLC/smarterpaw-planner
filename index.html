@@ -1270,8 +1270,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.30";
+const VERSION = "3.31";
 const CHANGELOG = [
+  "v3.31 — New Custom-field type: Link (URL). Modal cell renders as a text input with a persistent 🔗 Open button, placeholder https://..., and auto-prepends https:// on open if you forgot the scheme. One-time migration: text fields whose name ends in “Link”, “Links”, “URL” or “URLs” (Design Assets Link, Spec Sheet Link, Sample Request Link, Latest Sample Image URL, etc.) automatically convert to the Link type on next load. Guarded by a localStorage flag so it only runs once.",
   "v3.30 — New Custom-field type: Currency ($). Edit Custom fields → pick Currency on a field — the modal input shows a $ prefix with 2-decimal step; stored values render as $1,234.50 across the grid, badges, Copy updates, and bulk-edit (numeric semantics for filters). Available on both workspaces.",
   "v3.29 — Fix the “click outside the modal makes images add / remove / add / remove” flicker. updateCard now applies the patch to the local in-memory card BEFORE writing to Supabase and skips the follow-up refetch on success — removes the race where refetch returned the pre-write snapshot and the view flickered back to the old state until the write propagated. On error we still refetch to restore truth.",
   "v3.28 — Email paste without a Date / Sent header now defaults the Date field to the paste moment instead of leaving it blank.",
@@ -1935,6 +1936,7 @@ const FIELD_TYPES = [    // selectable types for a custom field
   { v: "number",   label: "Number" },
   { v: "currency", label: "Currency ($)" },
   { v: "date",     label: "Date" },
+  { v: "link",     label: "Link (URL)" },
   { v: "select",   label: "Dropdown (pick one)" },
   { v: "multi",    label: "Multi-select" },
 ];
@@ -2860,6 +2862,25 @@ async function reloadListsAndUI() {
 // One-time: stamp every existing Innovation card without a sprint value as sprint="2027" so the year-based nav
 // has something to show on first open. Runs after cards are loaded, chunked 20 at a time so a large batch
 // doesn't trip Supabase's statement timeout. Guarded by a localStorage flag so it only runs once per browser.
+// One-time: convert text fields whose name ends in "Link" or "URL" to the Link type, so they render with the
+// 🔗 Open button in the modal. Guarded by a localStorage flag so it only runs once per browser.
+async function maybeMigrateUrlFieldsToLink() {
+  if (localStorage.getItem("planner-link-field-migrated-v1")) return;
+  const nameMatches = f => /(?:\s|^)(?:url|link)s?$/i.test(f.name);
+  const toMigrate = fieldsList.filter(f => f.type === "text" && f.id && nameMatches(f));
+  localStorage.setItem("planner-link-field-migrated-v1", "1");   // flag before writes so a mid-run reload doesn't duplicate
+  if (!toMigrate.length) return;
+  if (!ONLINE) {
+    toMigrate.forEach(f => { f.type = "link"; });
+    afterListsChanged(); return;
+  }
+  const CHUNK = 10;
+  for (let i = 0; i < toMigrate.length; i += CHUNK) {
+    const batch = toMigrate.slice(i, i + CHUNK);
+    await Promise.all(batch.map(f => db.from("lists").update({ color: JSON.stringify({ type: "link", options: [] }) }).eq("id", f.id)));
+  }
+  await reloadListsAndUI();
+}
 async function maybeMigrateInnovationYear2027() {
   if (!isInnovation()) return;
   if (localStorage.getItem("planner-innov-year-2027-seeded")) return;
@@ -4854,7 +4875,7 @@ function bulkEditFields() {
     { key: "sprint", label: "Sprint week", type: "date" },   // pick any day → snapped to that ISO week (blank clears)
   ].concat(fieldsList.map(f => ({
     key: "field:" + f.name, label: f.name,
-    type: f.type === "multi" ? "multi" : (fieldHasOptions(f) ? "select" : (f.type === "date" ? "date" : (f.type === "number" || f.type === "currency") ? "number" : "text")),
+    type: f.type === "multi" ? "multi" : (fieldHasOptions(f) ? "select" : (f.type === "date" ? "date" : (f.type === "number" || f.type === "currency") ? "number" : "text")),   // link is edited as text in bulk
     options: fieldHasOptions(f) ? () => (f.type === "multi" ? (f.options || []) : ["", ...(f.options || [])]) : null,
     labels: v => v || "— clear —",
   })));
@@ -5887,12 +5908,15 @@ function renderFieldInputs(values) {
       if (f.type === "number") inp.type = "number";
       else if (f.type === "currency") { inp.type = "number"; inp.step = "0.01"; inp.min = "0"; inp.placeholder = "0.00"; inp.inputMode = "decimal"; }
       else if (f.type === "date") inp.type = "date";
-      if (f.type === "text" || !f.type) {
+      if (f.type === "text" || f.type === "link" || !f.type) {
+        inp.placeholder = f.type === "link" ? "https://..." : "";
         const row = document.createElement("div"); row.className = "field-link-row";
         row.appendChild(inp);
         const open = document.createElement("button"); open.type = "button"; open.className = "field-link-open"; open.textContent = "🔗 Open"; open.title = "Open the URL in a new tab";
-        const refresh = () => { open.style.display = /^https?:\/\//i.test(inp.value || "") ? "" : "none"; };
-        open.onclick = () => { try { window.open(inp.value, "_blank", "noopener,noreferrer"); } catch (e) {} };
+        // Link type: always show the button (even if blank) so it's a stable affordance. Text type: show only
+        // when the value looks like a URL.
+        const refresh = () => { open.style.display = (f.type === "link" || /^https?:\/\//i.test(inp.value || "")) ? "" : "none"; };
+        open.onclick = () => { const v = (inp.value || "").trim(); if (!v) return; const url = /^https?:\/\//i.test(v) ? v : "https://" + v; try { window.open(url, "_blank", "noopener,noreferrer"); } catch (e) {} };
         inp.addEventListener("input", refresh); refresh();
         row.appendChild(open);
         wrap.appendChild(row);
@@ -6906,6 +6930,7 @@ async function init() {
   renderChangelog();
   await refetch();
   await maybeMigrateInnovationYear2027();
+  await maybeMigrateUrlFieldsToLink();
   setView(view);   // apply restored view (container visibility + active toggle)
   // If no current user is persisted, open the picker on first session load (people list is loaded by now).
   if (!currentUser && !sessionStorage.getItem("planner-user-asked")) {
