@@ -1267,8 +1267,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.24";
+const VERSION = "3.25";
 const CHANGELOG = [
+  "v3.25 — Email paste resolves Gmail's relative-time strings to the absolute date at paste moment. “10:33 AM (35 minutes ago)” → “10:33 AM, Oct 23, 2026”. Also handles bare “35 minutes ago”, “3 hours ago”, and “yesterday”. Both the stored sent field and the rendered email block are normalized so the summary stays meaningful weeks later. Already-stored emails with the relative string in them can be fixed via the inline Date header editor added in v3.24.",
   "v3.24 — Email headers are editable in place. Expand any email on a card and the From / To / Subject / Date fields show as text inputs above the body. Fix a “(no headers)” paste by filling the fields in; the collapsed summary updates on blur. Persisted on Save with the rest of the card.",
   "v3.23 — Mosaic gallery now uses JS-managed flex columns instead of CSS multi-column. Sparse content (e.g. 2 images in a 6-col mosaic) actually spreads side-by-side instead of stacking in column 1 (which was CSS column-balance's default behavior). Round-robin distribution per column, 1–6 columns based on size + viewport.",
   "v3.22 — Ctrl/Cmd + V anywhere in an open card modal pastes a clipboard screenshot into the Image gallery. Previously only worked when the gallery drop-zone itself had focus (divs don't receive paste events by default). Text pastes into focused inputs / textareas / contenteditables still go to text — the gallery only grabs the paste when the clipboard has image data and the focused field doesn't also have text.",
@@ -1742,17 +1743,53 @@ function cardSubtasks(c) { return (c.fields && Array.isArray(c.fields[SUBTASKS_K
 // content is the sanitized HTML of the styled email block; from/to/sent/subject are convenience copies of the header fields for compact listing.
 function cardEmails(c) { return (c.fields && Array.isArray(c.fields[EMAILS_KEY])) ? c.fields[EMAILS_KEY] : []; }
 function emailId() { return "e_" + Math.random().toString(36).slice(2, 10); }
+// Resolve Gmail-style relative times ("10:33 AM (35 minutes ago)" / "35 minutes ago") into an absolute date so
+// the stored "sent" doesn't become meaningless as time passes. Reference time defaults to now; pass the paste
+// moment to pin against that. Non-relative strings are returned unchanged.
+function normalizeEmailSent(raw, ref) {
+  if (!raw) return raw || "";
+  const now = ref instanceof Date ? ref : new Date();
+  const unitMs = u => u.startsWith("sec") ? 1e3 : u.startsWith("min") ? 60e3 : (u.startsWith("hr") || u.startsWith("hour")) ? 3600e3 : u.startsWith("day") ? 86400e3 : u.startsWith("week") ? 7*86400e3 : u.startsWith("month") ? 30*86400e3 : u.startsWith("year") ? 365*86400e3 : 0;
+  const dateStr = d => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const s = String(raw).trim();
+  // "(X unit(s) ago)" trailing or embedded — strip and append absolute date.
+  const parens = /\s*\(\s*(\d+)\s+(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)\s+ago\s*\)/i;
+  const pm = parens.exec(s);
+  if (pm) {
+    const ms = parseInt(pm[1], 10) * unitMs(pm[2].toLowerCase());
+    const d = new Date(now.getTime() - ms);
+    const before = s.replace(parens, "").replace(/\s+$/, "");
+    return before + (before ? ", " : "") + dateStr(d);
+  }
+  // Bare "X minutes ago" without parens.
+  const bare = /^(\d+)\s+(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)\s+ago$/i;
+  const bm = bare.exec(s);
+  if (bm) {
+    const ms = parseInt(bm[1], 10) * unitMs(bm[2].toLowerCase());
+    const d = new Date(now.getTime() - ms);
+    return d.toLocaleString(undefined, { hour: "numeric", minute: "2-digit", month: "short", day: "numeric", year: "numeric" });
+  }
+  // "Yesterday" with optional time prefix.
+  const yest = /\byesterday\b/i;
+  if (yest.test(s)) {
+    const d = new Date(now.getTime() - 86400e3);
+    return s.replace(yest, dateStr(d));
+  }
+  return s;
+}
 // Given raw plain-text pasted from an email client, produce {content, from, to, sent, subject} — reusing the same
 // header-extraction logic as formatEmailPaste so headers show as key/value pairs and the body is preserved.
 function makeEmailEntry(rawText) {
   if (!rawText || !rawText.trim()) return null;
   const { headers } = _parseEmail(rawText);
   const h = {}; headers.forEach(x => { const k = x.k.toLowerCase(); if (!h[k]) h[k] = x.v; });
+  const pasteMoment = new Date();
+  const sent = normalizeEmailSent(h["sent"] || h["date"] || "", pasteMoment);
   return {
     id: emailId(),
-    addedAt: (new Date()).toISOString(),
-    from: h["from"] || "", to: h["to"] || "", sent: h["sent"] || h["date"] || "", subject: h["subject"] || "",
-    content: sanitizeNotes(formatEmailPaste(rawText)),
+    addedAt: pasteMoment.toISOString(),
+    from: h["from"] || "", to: h["to"] || "", sent, subject: h["subject"] || "",
+    content: sanitizeNotes(formatEmailPaste(rawText, pasteMoment)),
   };
 }
 function subProgress(c) { const st = cardSubtasks(c).filter(s => s.type !== "header"); const done = st.filter(s => s.done).length; return { done, total: st.length, pct: st.length ? Math.round(done / st.length * 100) : 0 }; }
@@ -3085,12 +3122,17 @@ function _parseEmail(text) {
   return { headers: found.map(h => ({ k: h.k, v: h.v })), bodyStart, lines };
 }
 // Turn email-shaped plain text into a <div class="email"> block using _parseEmail.
-function formatEmailPaste(text) {
+function formatEmailPaste(text, pasteMoment) {
+  const ref = pasteMoment instanceof Date ? pasteMoment : new Date();
   const { headers, bodyStart, lines } = _parseEmail(text);
   const body = lines.slice(bodyStart).join("\n").replace(/^\s+|\s+$/g, "");
   const urlRe = /(https?:\/\/[^\s]+[^\s.,;:!?)\]])/g;
   const encBody = esc(body).split(urlRe).map((p, idx) => idx % 2 === 1 ? `<a href="${p}" target="_blank" rel="noopener noreferrer">${p}</a>` : p).join("").replace(/\n/g, "<br>");
-  const hdrHtml = headers.map(h => `<div class="email-line"><span class="email-k">${esc(h.k)}:</span> <span class="email-v">${esc(h.v)}</span></div>`).join("");
+  // Resolve relative times inside the Sent / Date header so the rendered block stays meaningful over time.
+  const hdrHtml = headers.map(h => {
+    const v = /^(sent|date)$/i.test(h.k) ? normalizeEmailSent(h.v, ref) : h.v;
+    return `<div class="email-line"><span class="email-k">${esc(h.k)}:</span> <span class="email-v">${esc(v)}</span></div>`;
+  }).join("");
   return `<div class="email"><div class="email-hdr">${hdrHtml}</div><div class="email-body">${encBody}</div></div>`;
 }
 // Turn a clipboard paste into notes HTML. Prefers text/html when the source (Google Docs, Word, web pages) has
