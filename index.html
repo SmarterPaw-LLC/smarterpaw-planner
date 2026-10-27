@@ -1267,8 +1267,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.28";
+const VERSION = "3.29";
 const CHANGELOG = [
+  "v3.29 — Fix the “click outside the modal makes images add / remove / add / remove” flicker. updateCard now applies the patch to the local in-memory card BEFORE writing to Supabase and skips the follow-up refetch on success — removes the race where refetch returned the pre-write snapshot and the view flickered back to the old state until the write propagated. On error we still refetch to restore truth.",
   "v3.28 — Email paste without a Date / Sent header now defaults the Date field to the paste moment instead of leaving it blank.",
   "v3.27 — Emails list on a card displays newest-first (by addedAt). Storage order is unchanged; only the render is reversed, so Save still writes the authoritative sequence.",
   "v3.26 — Modal layout: Emails section moved to sit right below Notes, so both sides of the activity log are adjacent and the 📧 Email button in the Notes toolbar points at the list it drops into.",
@@ -2464,9 +2465,18 @@ async function updateCard(id, d) {
   const hist = new Set([...preHist, ...merged]);
   recordedSprints(d).forEach(w => hist.add(w));
   if (hist.size) { d.fields = d.fields || {}; d.fields[HIST_SPRINTS_KEY] = [...hist].filter(Boolean).sort(); }
-  if (!ONLINE) { Object.assign(cards.find(c => c.id === id), d); saveLocal(); render(); return; }
+  // Optimistic update: apply the patch to the in-memory card BEFORE sending to Supabase and re-render once.
+  // Without this, the view-behind-the-modal shows stale state during the brief window between the DB write
+  // starting and refetch's response landing, which flickers when the modal closes on save-and-click-out
+  // (gallery tiles / list rows add/remove/add as refetch catches up).
+  const localTarget = cards.find(c => c.id === id);
+  if (localTarget) Object.assign(localTarget, d);
+  if (!ONLINE) { saveLocal(); render(); return; }
+  render();   // show the new state immediately
   const { error } = await db.from("deliverables").update(dbObj(d)).eq("id", id);
-  if (error) toast("Update failed: " + error.message); else refetch();
+  if (error) { toast("Update failed: " + error.message); refetch(); }   // on error, pull truth back
+  // On success, skip the refetch — local already matches what we just wrote. Realtime (if enabled) or the
+  // next natural refetch (new card, delete, filter navigation) will catch any out-of-band drift.
 }
 async function patchStatus(id, status) {
   const c = cards.find(x => x.id === id); if (!c) return;
