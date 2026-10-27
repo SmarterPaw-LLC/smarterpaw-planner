@@ -146,6 +146,10 @@
   .note-row { display: grid; grid-template-columns: 88px 1fr 24px; gap: 8px; align-items: start; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
   .note-row input[type="date"] { padding: 3px 4px; font-size: 10.5px; width: 100%; box-sizing: border-box; }
   .note-row textarea { padding: 7px 9px; font-size: 13.5px; font-family: inherit; line-height: 1.55; width: 100%; box-sizing: border-box; resize: none; overflow: hidden; }
+  .note-row .note-text { padding: 7px 9px; font-size: 13.5px; font-family: inherit; line-height: 1.55; width: 100%; box-sizing: border-box; min-height: 28px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .note-row .note-text:focus { border-color: var(--accent); }
+  .email-item-body[contenteditable="true"] { outline: none; }
+  .email-item-body[contenteditable="true"]:focus { background: var(--panel); border-radius: 4px; }
   .note-row .note-rm { width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 13px; color: var(--danger); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
   .note-row .note-rm:hover { border-color: var(--danger); }
   .note-row .note-by { grid-column: 2 / 3; font-size: 11px; color: var(--muted); font-style: italic; }
@@ -1275,8 +1279,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.32";
+const VERSION = "3.33";
 const CHANGELOG = [
+  "v3.33 — Highlighting now works inside the card modal too. Note rows and expanded email bodies are rich-text editable (contenteditable), so selecting text in the editor shows the floating ✨ Highlight pill just like on the Notes feed. Modal highlights sync into modalNoteEntries / modalEmails on apply and persist with Save (no DB write mid-edit, so Cancel still discards). Replaces the v3.32 textareas that only showed <mark> tags as literal text.",
   "v3.32 — Highlight text in notes and emails. Select text in an email body or dated note row (anywhere in the Notes view), click the floating ✨ Highlight pill, and the selection gets wrapped in a yellow <mark>. Legible in both light and dark themes. Persists per-email or per-note on the card. Modal textarea editing shows the mark tags verbatim so you can remove or move them manually.",
   "v3.31 — New Custom-field type: Link (URL). Modal cell renders as a text input with a persistent 🔗 Open button, placeholder https://..., and auto-prepends https:// on open if you forgot the scheme. One-time migration: text fields whose name ends in “Link”, “Links”, “URL” or “URLs” (Design Assets Link, Spec Sheet Link, Sample Request Link, Latest Sample Image URL, etc.) automatically convert to the Link type on next load. Guarded by a localStorage flag so it only runs once.",
   "v3.30 — New Custom-field type: Currency ($). Edit Custom fields → pick Currency on a field — the modal input shows a $ prefix with 2-decimal step; stored values render as $1,234.50 across the grid, badges, Copy updates, and bulk-edit (numeric semantics for filters). Available on both workspaces.",
@@ -4118,8 +4123,22 @@ function _hlApplyToSelection(container) {
 }
 async function _hlSavePersist(container) {
   const cardId = container.dataset.hlCardId; const kind = container.dataset.hlKind;
-  const c = cards.find(x => x.id === cardId); if (!c) return;
   const nextHtml = sanitizeNotes(container.innerHTML);
+  // Modal kinds live only in modalNoteEntries / modalEmails until the user hits Save; just sync those arrays
+  // so Save picks the highlight up. No DB write — saveModal owns persistence for in-flight edits.
+  if (kind === "note-modal") {
+    const entryId = container.dataset.hlEntryId;
+    const live = (typeof modalNoteEntries !== "undefined") && modalNoteEntries.find(e => e.id === entryId);
+    if (live) live.text = nextHtml;
+    return;
+  }
+  if (kind === "email-modal") {
+    const emailId = container.dataset.hlEmailId;
+    const live = (typeof modalEmails !== "undefined") && modalEmails.find(em => em.id === emailId);
+    if (live) live.content = nextHtml;
+    return;
+  }
+  const c = cards.find(x => x.id === cardId); if (!c) return;
   const fields = Object.assign({}, c.fields || {});
   if (kind === "email") {
     const emailId = container.dataset.hlEmailId;
@@ -5833,7 +5852,15 @@ function renderEmailsEdit() {
       headersBox.appendChild(mkField("Subject", "subject", "Email subject"));
       headersBox.appendChild(mkField("Date", "sent", "Sent date (free text)"));
       row.appendChild(headersBox);
-      const body = document.createElement("div"); body.className = "email-item-body"; body.innerHTML = em.content || "";
+      // Contenteditable so highlights apply inline. Save flow pulls em.content from modalEmails on Save, and
+      // _hlSavePersist's "email-modal" branch syncs em.content when the pill is clicked.
+      const body = document.createElement("div"); body.className = "email-item-body hl-container";
+      body.setAttribute("contenteditable", "true");
+      body.dataset.hlKind = "email-modal"; body.dataset.hlCardId = (document.getElementById("f_id") || {}).value || ""; body.dataset.hlEmailId = em.id || "";
+      body.innerHTML = sanitizeNotes(em.content || "");
+      body.addEventListener("input", () => { em.content = sanitizeNotes(body.innerHTML); });
+      body.addEventListener("blur", () => { em.content = sanitizeNotes(body.innerHTML); });
+      body.addEventListener("paste", ev => { const cd = ev.clipboardData; if (!cd) return; const txt = cd.getData("text/plain"); if (txt == null) return; ev.preventDefault(); document.execCommand("insertText", false, txt); });
       row.appendChild(body);
     }
     box.appendChild(row);
@@ -6076,15 +6103,22 @@ function renderModalNotes() {
   host.innerHTML = "";
   // Keep newest-first ordering in render, but preserve original order of equal-date entries.
   const sorted = modalNoteEntries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const cardId = (document.getElementById("f_id") || {}).value || "";
   sorted.forEach(entry => {
     const row = document.createElement("div"); row.className = "note-row"; row.dataset.id = entry.id;
     const d = document.createElement("input"); d.type = "date"; d.value = entry.date || "";
     d.addEventListener("change", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) live.date = d.value; });
-    const t = document.createElement("textarea"); t.value = entry.text || ""; t.rows = 1;
-    const grow = () => { t.style.height = "auto"; t.style.height = Math.max(44, t.scrollHeight) + "px"; };
-    t.addEventListener("input", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) live.text = t.value; grow(); });
-    // Fit initial content once the row is in the DOM (scrollHeight is only measurable after insertion).
-    requestAnimationFrame(grow);
+    // Contenteditable instead of textarea so <mark> highlights render inline. Participates in the hl-container
+    // system via data attrs so the floating ✨ pill wraps selected text and saves on blur.
+    const t = document.createElement("div"); t.className = "note-text hl-container";
+    t.setAttribute("contenteditable", "true");
+    t.dataset.hlKind = "note-modal"; t.dataset.hlCardId = cardId; t.dataset.hlEntryId = entry.id;
+    t.innerHTML = sanitizeNotes(entry.text || "");
+    const grabHtml = () => sanitizeNotes(t.innerHTML).replace(/<br\s*\/?>$/i, "").trim();
+    t.addEventListener("input", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) live.text = grabHtml(); });
+    t.addEventListener("blur", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) { live.text = grabHtml(); t.innerHTML = sanitizeNotes(live.text || ""); } });
+    // Keep paste from importing weird formatting — treat as plain text; browser will insert at caret.
+    t.addEventListener("paste", e => { const cd = e.clipboardData; if (!cd) return; const txt = cd.getData("text/plain"); if (txt == null) return; e.preventDefault(); document.execCommand("insertText", false, txt); });
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "note-rm"; rm.textContent = "✕"; rm.title = "Delete note";
     rm.onclick = () => { modalNoteEntries = modalNoteEntries.filter(e => e.id !== entry.id); renderModalNotes(); };
     row.appendChild(d); row.appendChild(t); row.appendChild(rm);
@@ -6105,7 +6139,7 @@ function _addModalNoteNow() {
   const today = ymd(new Date());
   modalNoteEntries.unshift({ id: noteId(), date: today, text: "", author: currentUser || "" });
   renderModalNotes();
-  const first = document.querySelector("#f_notesList .note-row textarea");
+  const first = document.querySelector("#f_notesList .note-row .note-text");
   if (first) first.focus();
 }
 // Image gallery — modalGallery is the working array of image URLs (data URLs for uploads, http(s) URLs for
