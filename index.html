@@ -634,6 +634,9 @@
   .card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px 8px 0 0; margin: -11px -11px 8px; }
   .field-link-row { display: flex; gap: 6px; align-items: stretch; }
   .field-link-row input { flex: 1; min-width: 0; }
+  .field-currency-row { display: flex; align-items: stretch; }
+  .field-currency-row .field-currency-prefix { display: flex; align-items: center; justify-content: center; padding: 0 10px; background: var(--panel-2); border: 1px solid var(--line); border-right: none; border-radius: 8px 0 0 8px; font-weight: 600; color: var(--muted); }
+  .field-currency-row input { flex: 1; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .field-link-open:hover { border-color: var(--accent); background: rgba(109,93,252,.06); }
   .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
@@ -1267,8 +1270,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.29";
+const VERSION = "3.30";
 const CHANGELOG = [
+  "v3.30 — New Custom-field type: Currency ($). Edit Custom fields → pick Currency on a field — the modal input shows a $ prefix with 2-decimal step; stored values render as $1,234.50 across the grid, badges, Copy updates, and bulk-edit (numeric semantics for filters). Available on both workspaces.",
   "v3.29 — Fix the “click outside the modal makes images add / remove / add / remove” flicker. updateCard now applies the patch to the local in-memory card BEFORE writing to Supabase and skips the follow-up refetch on success — removes the race where refetch returned the pre-write snapshot and the view flickered back to the old state until the write propagated. On error we still refetch to restore truth.",
   "v3.28 — Email paste without a Date / Sent header now defaults the Date field to the paste moment instead of leaving it blank.",
   "v3.27 — Emails list on a card displays newest-first (by addedAt). Storage order is unchanged; only the render is reversed, so Save still writes the authoritative sequence.",
@@ -1896,7 +1900,7 @@ function dimInfo(c, key) {
   if (key === "promotion") { const p = cardPromo(c); return { text: p, color: promoColor(p) }; }
   if (key === "sprint") return { text: fmtSprintFull(cardSprint(c)), color: null };
   if (key === "dates") return { text: fmtRange(c.due, c.end), color: null };
-  if (key.indexOf("field:") === 0) { const n = key.slice(6); return { text: (c.fields && c.fields[n]) || "", color: null }; }
+  if (key.indexOf("field:") === 0) { const n = key.slice(6); return { text: fmtFieldValue(fieldByName(n), (c.fields && c.fields[n]) || ""), color: null }; }
   return { text: "", color: null };
 }
 function dimChipHtml(c, k) {
@@ -1927,14 +1931,27 @@ let statusList = [];     // [{id?, name, color?}] — the Kanban lanes, in order
 let brandsList = [];     // [{id?, name, color}]
 let fieldsList = [];     // [{id?, name, type, options}] — custom field definitions
 const FIELD_TYPES = [    // selectable types for a custom field
-  { v: "text",   label: "Text" },
-  { v: "number", label: "Number" },
-  { v: "date",   label: "Date" },
-  { v: "select", label: "Dropdown (pick one)" },
-  { v: "multi",  label: "Multi-select" },
+  { v: "text",     label: "Text" },
+  { v: "number",   label: "Number" },
+  { v: "currency", label: "Currency ($)" },
+  { v: "date",     label: "Date" },
+  { v: "select",   label: "Dropdown (pick one)" },
+  { v: "multi",    label: "Multi-select" },
 ];
 const FIELD_TYPE_VALS = FIELD_TYPES.map(t => t.v);
 function fieldHasOptions(f) { return f.type === "select" || f.type === "multi"; }
+// Format a raw stored value for display based on its field type. Currency gets a locale-formatted $N,NNN.NN;
+// everything else returns the raw string. Called from grid cells, dim badges, and the Copy updates export so
+// stored "1234.5" shows as "$1,234.50" without changing persistence.
+function fmtFieldValue(f, v) {
+  if (!v && v !== 0) return "";
+  if (f && f.type === "currency") {
+    const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
+    if (!isFinite(n)) return String(v);
+    return "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  return String(v);
+}
 function fieldByName(n) { return fieldsList.find(f => f.name === n); }
 function splitMulti(v) { return (v || "").split(",").map(s => s.trim()).filter(Boolean); }
 // Workspace scope — "planner" (Channel Planner) or "innovation" (Product Innovation). All reads from
@@ -4731,7 +4748,7 @@ function gridValue(c, key) {
     if (entries.length) return entries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(e => (e.date ? fmtMMDDYY(e.date) + " - " : "") + (e.text || "")).join("\n");
     return (c.notes || "").replace(/<br\s*\/?\s*>/gi, "\n").replace(/<\/?p[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').trim();
   }
-  if (key.indexOf("field:") === 0) return (c.fields && c.fields[key.slice(6)]) || "";
+  if (key.indexOf("field:") === 0) { const n = key.slice(6); return fmtFieldValue(fieldByName(n), (c.fields && c.fields[n]) || ""); }
   return c[key] || "";
 }
 function renderGrid() {
@@ -4837,7 +4854,7 @@ function bulkEditFields() {
     { key: "sprint", label: "Sprint week", type: "date" },   // pick any day → snapped to that ISO week (blank clears)
   ].concat(fieldsList.map(f => ({
     key: "field:" + f.name, label: f.name,
-    type: f.type === "multi" ? "multi" : (fieldHasOptions(f) ? "select" : (f.type === "date" ? "date" : f.type === "number" ? "number" : "text")),
+    type: f.type === "multi" ? "multi" : (fieldHasOptions(f) ? "select" : (f.type === "date" ? "date" : (f.type === "number" || f.type === "currency") ? "number" : "text")),
     options: fieldHasOptions(f) ? () => (f.type === "multi" ? (f.options || []) : ["", ...(f.options || [])]) : null,
     labels: v => v || "— clear —",
   })));
@@ -5867,7 +5884,9 @@ function renderFieldInputs(values) {
       // small "🔗 Open" button so the hyperlink is one click away from the modal (text inputs can't be
       // intrinsically clickable). The button hides itself if the user clears or overwrites the URL.
       const inp = document.createElement("input"); inp.dataset.field = f.name; inp.value = cur;
-      if (f.type === "number") inp.type = "number"; else if (f.type === "date") inp.type = "date";
+      if (f.type === "number") inp.type = "number";
+      else if (f.type === "currency") { inp.type = "number"; inp.step = "0.01"; inp.min = "0"; inp.placeholder = "0.00"; inp.inputMode = "decimal"; }
+      else if (f.type === "date") inp.type = "date";
       if (f.type === "text" || !f.type) {
         const row = document.createElement("div"); row.className = "field-link-row";
         row.appendChild(inp);
@@ -5876,6 +5895,11 @@ function renderFieldInputs(values) {
         open.onclick = () => { try { window.open(inp.value, "_blank", "noopener,noreferrer"); } catch (e) {} };
         inp.addEventListener("input", refresh); refresh();
         row.appendChild(open);
+        wrap.appendChild(row);
+      } else if (f.type === "currency") {
+        const row = document.createElement("div"); row.className = "field-currency-row";
+        const dollar = document.createElement("span"); dollar.className = "field-currency-prefix"; dollar.textContent = "$";
+        row.appendChild(dollar); row.appendChild(inp);
         wrap.appendChild(row);
       } else {
         wrap.appendChild(inp);
