@@ -337,6 +337,13 @@
   .email-item-rm:hover { color: var(--danger); }
   .email-item-body { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 13px; }
   .email-item.collapsed .email-item-body { display: none; }
+  /* Editable email headers (From / To / Subject / Date) — shown when the item is expanded, above the body. */
+  .email-item-headers { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 10px; padding: 10px 12px; border-top: 1px solid var(--line); background: rgba(255,255,255,.02); }
+  html[data-theme="light"] .email-item-headers { background: rgba(0,0,0,.02); }
+  .email-item-field { display: flex; flex-direction: column; gap: 2px; }
+  .email-item-field label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
+  .email-item-field input { padding: 4px 6px; font-size: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; color: var(--text); }
+  .email-item-field input:focus { outline: none; border-color: var(--accent); }
   /* Inline-editable note area — cursor changes to text on hover; placeholder shows when empty. */
   .notes-editable { min-height: 30px; padding: 6px 8px; border-radius: 6px; cursor: text; outline: none; }
   .notes-editable:hover { background: rgba(255,255,255,.02); }
@@ -1260,8 +1267,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.23";
+const VERSION = "3.24";
 const CHANGELOG = [
+  "v3.24 — Email headers are editable in place. Expand any email on a card and the From / To / Subject / Date fields show as text inputs above the body. Fix a “(no headers)” paste by filling the fields in; the collapsed summary updates on blur. Persisted on Save with the rest of the card.",
   "v3.23 — Mosaic gallery now uses JS-managed flex columns instead of CSS multi-column. Sparse content (e.g. 2 images in a 6-col mosaic) actually spreads side-by-side instead of stacking in column 1 (which was CSS column-balance's default behavior). Round-robin distribution per column, 1–6 columns based on size + viewport.",
   "v3.22 — Ctrl/Cmd + V anywhere in an open card modal pastes a clipboard screenshot into the Image gallery. Previously only worked when the gallery drop-zone itself had focus (divs don't receive paste events by default). Text pastes into focused inputs / textareas / contenteditables still go to text — the gallery only grabs the paste when the clipboard has image data and the focused field doesn't also have text.",
   "v3.21 — Gallery view gets a size seg (S / M / L) next to Tile / Mosaic. Six combinations total: small / medium / large thumbnails in either Tile (uniform cropped) or Mosaic (natural aspect, CSS columns) mode. Both the size and layout mode persist per browser.",
@@ -5646,6 +5654,22 @@ function renderEmailsEdit() {
     head.appendChild(chev); head.appendChild(summary); head.appendChild(rm); row.appendChild(head);
     head.onclick = () => { em._expanded = collapsed; renderEmailsEdit(); };
     if (!collapsed) {
+      // Editable headers — updates modalEmails in place so Save persists them. renderEmailsEdit() rebuilds
+      // the summary line as the user types so the collapsed-view meta stays in sync.
+      const headersBox = document.createElement("div"); headersBox.className = "email-item-headers";
+      const mkField = (label, key, placeholder) => {
+        const w = document.createElement("div"); w.className = "email-item-field";
+        const lbl = document.createElement("label"); lbl.textContent = label;
+        const inp = document.createElement("input"); inp.type = "text"; inp.value = em[key] || ""; if (placeholder) inp.placeholder = placeholder;
+        inp.addEventListener("input", () => { em[key] = inp.value; });
+        inp.addEventListener("blur", () => { summary.querySelector(".email-item-meta").textContent = [em.from, em.subject].filter(Boolean).join(" · ") || "(no headers)"; const whenEl = summary.querySelector(".email-item-when"); if (whenEl) whenEl.textContent = em.sent || whenEl.textContent; });
+        w.appendChild(lbl); w.appendChild(inp); return w;
+      };
+      headersBox.appendChild(mkField("From", "from", "sender@example.com"));
+      headersBox.appendChild(mkField("To", "to", "recipient@example.com"));
+      headersBox.appendChild(mkField("Subject", "subject", "Email subject"));
+      headersBox.appendChild(mkField("Date", "sent", "Sent date (free text)"));
+      row.appendChild(headersBox);
       const body = document.createElement("div"); body.className = "email-item-body"; body.innerHTML = em.content || "";
       row.appendChild(body);
     }
