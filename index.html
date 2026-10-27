@@ -1267,8 +1267,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.27";
+const VERSION = "3.28";
 const CHANGELOG = [
+  "v3.28 — Email paste without a Date / Sent header now defaults the Date field to the paste moment instead of leaving it blank.",
   "v3.27 — Emails list on a card displays newest-first (by addedAt). Storage order is unchanged; only the render is reversed, so Save still writes the authoritative sequence.",
   "v3.26 — Modal layout: Emails section moved to sit right below Notes, so both sides of the activity log are adjacent and the 📧 Email button in the Notes toolbar points at the list it drops into.",
   "v3.25 — Email paste resolves Gmail's relative-time strings to the absolute date at paste moment. “10:33 AM (35 minutes ago)” → “10:33 AM, Oct 23, 2026”. Also handles bare “35 minutes ago”, “3 hours ago”, and “yesterday”. Both the stored sent field and the rendered email block are normalized so the summary stays meaningful weeks later. Already-stored emails with the relative string in them can be fixed via the inline Date header editor added in v3.24.",
@@ -1786,7 +1787,9 @@ function makeEmailEntry(rawText) {
   const { headers } = _parseEmail(rawText);
   const h = {}; headers.forEach(x => { const k = x.k.toLowerCase(); if (!h[k]) h[k] = x.v; });
   const pasteMoment = new Date();
-  const sent = normalizeEmailSent(h["sent"] || h["date"] || "", pasteMoment);
+  // If no Date / Sent header was present in the paste, use the paste moment as the fallback timestamp.
+  const rawSent = h["sent"] || h["date"] || "";
+  const sent = rawSent ? normalizeEmailSent(rawSent, pasteMoment) : pasteMoment.toLocaleString(undefined, { hour: "numeric", minute: "2-digit", month: "short", day: "numeric", year: "numeric" });
   return {
     id: emailId(),
     addedAt: pasteMoment.toISOString(),
