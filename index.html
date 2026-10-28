@@ -1322,8 +1322,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.37";
+const VERSION = "3.38";
 const CHANGELOG = [
+  "v3.38 — Planning view: configurable column rollups. The grids at the top of each year/week column were hardcoded (Lane + Owner). Now Display → Planning lets you pick which dimensions roll up there — any combination of Lane, Brand, Channel, Owners, Priority, Promotion, Sprint, Dates, or any custom field (dropdown / multi-select / etc). Drag to reorder; each rollup renders as its own count grid above the card list. The Lane rollup still click-toggles show/hide (its original behavior); every other rollup's cells click-toggle the matching quick filter so you can scope the whole page from one tap.",
   "v3.37 — Field groups: sections now render as colored cards in the card modal, and each field can be sized ⅓, ½ or full width inside its section. In Manage → Custom fields → Groups, each group card has a color swatch (click to pick, ✕ to reset to muted default) that sets the modal section's left-rail + header color; each ON chip gets ◀ ▶ arrows (reorder) + ⅓/½/1 toggles (width). Fields render in a 12-column grid under their section header so three ⅓ fields fit on one row. Replaces the v3.36 chip drag — the drag was clashing with the group-card drag and swallowing group reorders; arrows don't ambiguate.",
   "v3.36 — Drag to reorder field groups and the fields inside each group. Each group card has a ⋮⋮ grip on the left — grab it to drop the group above or below another; the modal section headers follow that order. Within a group, the \"on\" chips (the ones already assigned) are draggable: grab one and drop it left/right of a sibling to change the order fields render under that section header. OFF chips still click-to-add; ON chips still click-to-remove.",
   "v3.35 — Field groups. In Manage → Custom fields, scroll to the new Groups section and define named groups (e.g. \"Product configuration\", \"Cost & price\"), then tap any custom-field chip to add it to that group. On the card modal those fields render under their group's section header instead of in the default flat list. A field can live in only one group at a time (adding it elsewhere moves it); ungrouped fields keep their existing Display-order slot. Per workspace: Planner and Innovation each have their own groups. Persists to the sentinel row __field_groups__.",
@@ -1958,6 +1959,34 @@ function availableDims() {
     { key: "status", label: "Lane / status" }, { key: "priority", label: "Priority" }, { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }, { key: "dates", label: "Dates" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
 }
+// Values a card contributes to a given dimension's rollup. Lane/brand/sprint/promotion/priority/field=single;
+// channel/owners are multi; missing → empty array (card doesn't count anywhere for that dim).
+function cardDimValues(c, key) {
+  if (key === "status") return c.status ? [c.status] : [];
+  if (key === "brand") return c.brand ? [c.brand] : [];
+  if (key === "channel") return splitChannels(c.channel);
+  if (key === "owners") return splitOwners(c.owner);
+  if (key === "priority") { const p = cardPriority(c); return p ? [p] : []; }
+  if (key === "promotion") { const p = cardPromo(c); return p ? [p] : []; }
+  if (key === "sprint") { const s = cardSprint(c); return s ? [fmtSprintFull(s)] : []; }
+  if (key === "dates") return (c.due || c.end) ? [fmtRange(c.due, c.end)] : [];
+  if (key.indexOf("field:") === 0) {
+    const n = key.slice(6); const f = fieldByName(n); const raw = c.fields && c.fields[n];
+    if (!raw) return [];
+    if (f && f.type === "multi") return splitMulti(raw);
+    return [fmtFieldValue(f, raw)];
+  }
+  return [];
+}
+// Color used to tint a value within a dimension's rollup grid. Fall back to muted for dims without a palette.
+function dimValueColor(key, val) {
+  if (key === "status") return statusColor(val);
+  if (key === "brand") return brandColor(val);
+  if (key === "channel") return channelColorOf(val);
+  if (key === "priority") return priorityColor(val);
+  if (key === "promotion") return promoColor(val);
+  return "";
+}
 function dimInfo(c, key) {
   if (key === "brand") return { text: c.brand, color: brandColor(c.brand) };
   if (key === "channel") { const chs = splitChannels(c.channel); return { text: chs.join(", "), color: channelColorOf(chs[0] || "") }; }
@@ -2157,13 +2186,22 @@ function loadDisplay() {
     eventSize: ["compact", "comfortable", "spacious"].includes(d.eventSize) ? d.eventSize : "compact",
   });
   const galleryDefault = { dims: ["brand", "channel", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
-  if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT), gallery: norm(raw.gallery || galleryDefault) };
-  if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault) };   // migrate old single setting
-  return { board: norm(DISP_DEFAULT), calendar: norm(DISP_DEFAULT), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault) };
+  // Planning view: the "dims" slot holds the ROLLUP dimensions rendered as mini stat grids at the top of each
+  // column (one grid per dim), instead of per-card badges. Default matches the pre-config behavior (Lane + Owner).
+  const normPlanning = d => ({
+    dims: Array.isArray(d && d.dims) && d.dims.length ? d.dims.slice() : ["status", "owners"],
+    badge: d && d.badge !== false,
+    sort: { key: (d && d.sort && d.sort.key) || "", dir: (d && d.sort && d.sort.dir === -1) ? -1 : 1 },
+    eventSize: "compact",
+  });
+  const planningDefault = { dims: ["status", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
+  if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT), gallery: norm(raw.gallery || galleryDefault), planning: normPlanning(raw.planning || planningDefault) };
+  if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault), planning: normPlanning(planningDefault) };   // migrate old single setting
+  return { board: norm(DISP_DEFAULT), calendar: norm(DISP_DEFAULT), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault), planning: normPlanning(planningDefault) };
 }
 let displaySettings = loadDisplay();
 function saveDisplay() { localStorage.setItem("planner-display", JSON.stringify(displaySettings)); }
-function curDisp() { return displaySettings[view === "calendar" ? "calendar" : view === "list" ? "list" : view === "gallery" ? "gallery" : "board"]; }
+function curDisp() { return displaySettings[view === "calendar" ? "calendar" : view === "list" ? "list" : view === "gallery" ? "gallery" : view === "planning" ? "planning" : "board"]; }
 // Sortable keys offered in the unified Filter & Sort panel ("" = manual / creation order).
 function sortDims() {
   return [{ key: "", label: "— None (manual order) —" }, { key: "title", label: "Title" }, { key: "due", label: "Due date" }, { key: "end", label: "End date" },
@@ -3614,6 +3652,55 @@ function activePlanningLanes() {
   return statusList.map(s => s.name);
 }
 function savePlanningLanes() { if (planningLanes) localStorage.setItem(wsKey("planner-planning-lanes"), JSON.stringify([...planningLanes])); else localStorage.removeItem(wsKey("planner-planning-lanes")); }
+// Build one rollup grid (title + cells for every discovered value) for a given dimension over a card list.
+// Status reuses the existing planningLanes show/hide semantics; other dimensions click-toggle the quick filter.
+function buildPlanningRollup(dimKey, list, enabledLanes) {
+  const wrap = document.createElement("div"); wrap.className = "planning-stats planning-stats-" + esc(dimKey.replace(":", "-"));
+  // Count values. For "status" we want to show EVERY lane (even zero-count) so hidden lanes stay toggleable;
+  // for other dims we only show values that have at least one card in this list.
+  const counts = new Map();
+  if (dimKey === "status") statusList.forEach(s => counts.set(s.name, 0));
+  list.forEach(c => cardDimValues(c, dimKey).forEach(v => counts.set(v, (counts.get(v) || 0) + 1)));
+  if (dimKey === "owners") {
+    // Keep "(unassigned)" visible for owners when a card has no owner.
+    list.forEach(c => { if (!cardDimValues(c, "owners").length) counts.set("(unassigned)", (counts.get("(unassigned)") || 0) + 1); });
+  }
+  const entries = [...counts.entries()];
+  // Sort: status by lane order; owners by count desc; everything else by count desc then alpha.
+  if (dimKey === "status") entries.sort((a, b) => statusList.findIndex(s => s.name === a[0]) - statusList.findIndex(s => s.name === b[0]));
+  else entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const laneSetVis = new Set(enabledLanes || []);
+  const filterKey = dimKey === "status" ? null : (dimKey === "owners" ? "owner" : dimKey);
+  const activeSet = filterKey && filters[filterKey] instanceof Set ? filters[filterKey] : null;
+  entries.forEach(([val, n]) => {
+    const on = dimKey === "status" ? laneSetVis.has(val) : (activeSet ? activeSet.has(val) : true);
+    const cell = document.createElement("button"); cell.type = "button"; cell.className = "planning-stat-cell" + (on ? "" : " off");
+    const color = dimValueColor(dimKey, val); if (color) cell.style.borderLeft = "3px solid " + color;
+    cell.innerHTML = `<span class="planning-stat-label">${esc(val)}</span><span class="planning-stat-val">${n}</span>`;
+    if (dimKey === "status") {
+      cell.title = on ? "Click to hide " + val + " from this view" : "Click to show " + val;
+      cell.onclick = e => {
+        e.stopPropagation();
+        if (!planningLanes) planningLanes = new Set(statusList.map(x => x.name));
+        if (planningLanes.has(val)) planningLanes.delete(val); else planningLanes.add(val);
+        savePlanningLanes(); renderSprintPlanning();
+      };
+    } else if (val === "(unassigned)") {
+      cell.disabled = true; cell.title = "Cards with no " + dimKey + " set"; cell.style.cursor = "default";
+    } else {
+      cell.title = (activeSet && activeSet.has(val)) ? "Remove " + val + " from the " + dimKey + " filter" : "Filter to " + val;
+      cell.onclick = e => {
+        e.stopPropagation();
+        if (!(filters[filterKey] instanceof Set)) filters[filterKey] = new Set();
+        if (filters[filterKey].has(val)) { filters[filterKey].delete(val); if (!filters[filterKey].size) delete filters[filterKey]; }
+        else filters[filterKey].add(val);
+        updateFilterBtn && updateFilterBtn(); render();
+      };
+    }
+    wrap.appendChild(cell);
+  });
+  return wrap;
+}
 // Sprint-planning view (a real view alongside Board / Calendar / etc, not an overlay). Applies the current
 // quick-filters (owner, brand, channel, etc.) so scoping to "Jason" or "Meowi" flows through, but ignores
 // sprint filter and the overdue toggle — this view has its own week semantics (backlog / last / next).
@@ -3675,55 +3762,12 @@ function renderSprintPlanning() {
     head.innerHTML = `<div><h3>${esc(title)}</h3><div class="planning-sec-sub">${esc(subtitle)}</div></div><span class="planning-count">${list.length}</span>`;
     s.appendChild(head);
     if (showStats) {
-      // Per-lane counts (respects the enabled-lanes toggle).
-      const laneStats = document.createElement("div"); laneStats.className = "planning-stats";
-      const laneCounts = {}; lanes.forEach(n => laneCounts[n] = 0);
-      list.forEach(c => { if (c.status in laneCounts) laneCounts[c.status]++; });
-      // Render EVERY lane (not just the "active" filter set) so click-to-toggle works on the hidden ones too.
-      // Inactive lanes are dimmed; clicking a cell toggles that lane in the planningLanes filter.
-      const allLanes = statusList.map(s => s.name);
-      const laneSetVis = new Set(lanes);
-      // Need counts for ALL lanes, not just active ones.
-      const allLaneCounts = {}; allLanes.forEach(n => allLaneCounts[n] = 0);
-      list.forEach(c => { if (c.status in allLaneCounts) allLaneCounts[c.status]++; });
-      allLanes.forEach(n => {
-        const on = laneSetVis.has(n);
-        const cell = document.createElement("button"); cell.type = "button"; cell.className = "planning-stat-cell" + (on ? "" : " off");
-        cell.style.borderLeft = "3px solid " + statusColor(n);
-        cell.title = on ? "Click to hide " + n + " from this view" : "Click to show " + n;
-        cell.innerHTML = `<span class="planning-stat-label">${esc(n)}</span><span class="planning-stat-val">${allLaneCounts[n]}</span>`;
-        cell.onclick = (e) => {
-          e.stopPropagation();
-          if (!planningLanes) planningLanes = new Set(statusList.map(x => x.name));
-          if (planningLanes.has(n)) planningLanes.delete(n); else planningLanes.add(n);
-          savePlanningLanes(); renderSprintPlanning();
-        };
-        laneStats.appendChild(cell);
-      });
-      s.appendChild(laneStats);
-      // Per-owner counts. A card with multiple owners is counted once for each owner. Unassigned rolls up
-      // under "(unassigned)".
-      const owners = {};
-      list.forEach(c => { const os = splitOwners(c.owner); if (!os.length) owners["(unassigned)"] = (owners["(unassigned)"] || 0) + 1; else os.forEach(o => owners[o] = (owners[o] || 0) + 1); });
-      const ownerRow = document.createElement("div"); ownerRow.className = "planning-owners";
-      const activeOwners = filters.owner || new Set();
-      Object.keys(owners).sort((a, b) => owners[b] - owners[a] || a.localeCompare(b)).forEach(name => {
-        const pill = document.createElement("button"); pill.type = "button";
-        const on = activeOwners.has(name);
-        pill.className = "planning-owner-pill" + (on ? " on" : "");
-        pill.innerHTML = `<span>${esc(name)}</span><b>${owners[name]}</b>`;
-        pill.title = on ? "Remove " + name + " from the owner filter" : "Filter to " + name;
-        // Skip "(unassigned)" — no owner-filter value maps to it cleanly.
-        if (name === "(unassigned)") { pill.disabled = true; pill.title = "Cards with no owner assigned"; pill.style.cursor = "default"; }
-        else pill.onclick = () => {
-          if (!filters.owner) filters.owner = new Set();
-          if (filters.owner.has(name)) { filters.owner.delete(name); if (!filters.owner.size) delete filters.owner; }
-          else filters.owner.add(name);
-          updateFilterBtn && updateFilterBtn(); render();
-        };
-        ownerRow.appendChild(pill);
-      });
-      if (ownerRow.children.length) s.appendChild(ownerRow);
+      // Render one rollup grid per Display → Planning dimension. "status" keeps its special click-to-toggle
+      // (hides that lane across the view); every other dim's cells click to toggle filters[dim] like the
+      // regular quick filters do.
+      const dsp = displaySettings.planning || { dims: ["status", "owners"] };
+      const rollupDims = (dsp.dims && dsp.dims.length) ? dsp.dims : ["status", "owners"];
+      rollupDims.forEach(dimKey => s.appendChild(buildPlanningRollup(dimKey, list, lanes)));
     }
     // Cards
     const cardsBox = document.createElement("div"); cardsBox.className = "planning-cards";
@@ -5294,7 +5338,8 @@ function renderDispSettings() {
   const all = availableDims();
   // Section 1 — shown-on-card list in ds.dims order. Drag to reorder.
   const shownWrap = document.createElement("div"); shownWrap.className = "disp-shown";
-  const shownLabel = document.createElement("div"); shownLabel.className = "disp-sub-label"; shownLabel.textContent = "Shown on each item (drag to reorder)";
+  const shownLabel = document.createElement("div"); shownLabel.className = "disp-sub-label";
+  shownLabel.textContent = view === "planning" ? "Column rollups (drag to reorder)" : "Shown on each item (drag to reorder)";
   shownWrap.appendChild(shownLabel);
   ds.dims.forEach((key, idx) => {
     const d = all.find(x => x.key === key); if (!d) return;
@@ -5413,10 +5458,13 @@ function allGridGroupPaths() {
 }
 function openDisp() {
   const grid = view === "grid";
-  document.getElementById("dispTitle").textContent = grid ? "Grid columns" : ("Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : view === "gallery" ? "Gallery" : view === "notes" ? "Notes" : "Board"));
+  const planning = view === "planning";
+  document.getElementById("dispTitle").textContent = grid ? "Grid columns" : ("Display on " + (view === "calendar" ? "Calendar" : view === "list" ? "List" : view === "gallery" ? "Gallery" : view === "notes" ? "Notes" : planning ? "Planning" : "Board"));
   document.getElementById("dispHint").textContent = grid
     ? "Choose which columns appear (saved with bookmarks and views). Sort lives in ⚲ Filter & sort, or click a column header."
-    : "Applies to the current view only — Board, Calendar and List are independent. Saved in this browser.";
+    : planning
+      ? "Pick the dimensions that appear as rollup grids at the top of each year/week column. Lane rollup still toggles show/hide for that lane; other rollups click-filter."
+      : "Applies to the current view only — Board, Calendar and List are independent. Saved in this browser.";
   renderDispSettings(); document.getElementById("dispOverlay").classList.add("show");
 }
 function calNav(dir) {
