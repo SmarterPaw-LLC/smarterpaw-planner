@@ -1332,8 +1332,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.40";
+const VERSION = "3.41";
 const CHANGELOG = [
+  "v3.41 — Planning cards: the lane/status chip pinned to the top-right now respects Display → Planning → Shown on each item. Add \"Lane / status\" to show it (default), remove it to hide it entirely. Same list controls the badge row below, so you can show status in both places or neither.",
   "v3.40 — Innovation workspace: new global \"Start year\" setting in Settings (⋯) → Innovation workspace. Enter 2026 and the Planning view will hide the 2025 column entirely so empty historical years don't eat screen space. Floor is shared across users via a sentinel row (same pattern as brand colors), so one person's edit applies to the whole team. Also: stacked Planning rollups now render in their own labeled, bordered blocks so Lane / Owner / Brand / etc read as distinct groups instead of blurring into one giant grid.",
   "v3.39 — Planning view's Display dialog now exposes TWO lists: Column rollups (the count grids at the top of each year/week column) AND Shown on each item (the badges on each card). Pick independently — e.g. roll up Lane + Owner at the top while showing Brand + Pricing Status + MSRP on each card. v3.38's config carried over: whatever rollups you had are preserved, and card badges default to Brand/Channel/Owners if nothing else was saved.",
   "v3.38 — Planning view: configurable column rollups. The grids at the top of each year/week column were hardcoded (Lane + Owner). Now Display → Planning lets you pick which dimensions roll up there — any combination of Lane, Brand, Channel, Owners, Priority, Promotion, Sprint, Dates, or any custom field (dropdown / multi-select / etc). Drag to reorder; each rollup renders as its own count grid above the card list. The Lane rollup still click-toggles show/hide (its original behavior); every other rollup's cells click-toggle the matching quick filter so you can scope the whole page from one tap.",
@@ -2233,14 +2234,14 @@ function loadDisplay() {
   const normPlanning = d => {
     const legacyRollups = Array.isArray(d && d.dims) && !("rollups" in (d || {})) && d.dims.length && d.dims.every(k => ["status", "owners", "brand", "channel", "priority", "promotion", "sprint", "dates"].includes(k) || k.indexOf("field:") === 0) ? d.dims.slice() : null;
     return {
-      dims: Array.isArray(d && d.cardDims) && d.cardDims.length ? d.cardDims.slice() : (legacyRollups ? ["brand", "channel", "owners"] : (Array.isArray(d && d.dims) && d.dims.length ? d.dims.slice() : ["brand", "channel", "owners"])),
+      dims: Array.isArray(d && d.cardDims) && d.cardDims.length ? d.cardDims.slice() : (legacyRollups ? ["status", "brand", "channel", "owners"] : (Array.isArray(d && d.dims) && d.dims.length ? d.dims.slice() : ["status", "brand", "channel", "owners"])),
       rollups: Array.isArray(d && d.rollups) && d.rollups.length ? d.rollups.slice() : (legacyRollups || ["status", "owners"]),
       badge: d && d.badge !== false,
       sort: { key: (d && d.sort && d.sort.key) || "", dir: (d && d.sort && d.sort.dir === -1) ? -1 : 1 },
       eventSize: "compact",
     };
   };
-  const planningDefault = { dims: ["brand", "channel", "owners"], rollups: ["status", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
+  const planningDefault = { dims: ["status", "brand", "channel", "owners"], rollups: ["status", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
   if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT), gallery: norm(raw.gallery || galleryDefault), planning: normPlanning(raw.planning || planningDefault) };
   if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault), planning: normPlanning(planningDefault) };   // migrate old single setting
   return { board: norm(DISP_DEFAULT), calendar: norm(DISP_DEFAULT), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault), planning: normPlanning(planningDefault) };
@@ -3844,14 +3845,16 @@ function renderSprintPlanning() {
       item.style.borderLeftColor = colorFor(c);
       item.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; item.classList.add("dragging"); });
       item.addEventListener("dragend", () => { item.classList.remove("dragging"); document.querySelectorAll(".planning-sec.drop-over").forEach(el => el.classList.remove("drop-over")); });
-      // Card dim row driven by Display → Planning "Shown on each item". Lane always shows as the colored chip on
-      // the top-right so it remains the anchor; other dims (brand/channel/owners/custom fields/etc.) render as
-      // the configurable badge/text row below.
+      // Card dim row driven by Display → Planning "Shown on each item". Lane/status, when included in that list,
+      // renders as the special colored chip pinned to the top-right (its historical slot); other dims render in
+      // the badge/text row below. Remove "status" from the Shown list to hide the lane chip entirely.
+      const dsp = curDisp();
+      const showStatus = dsp.dims.includes("status");
       const badges = dimBadges(c, ["status"]);
-      const badge = `<span class="planning-card-lane" style="background:${statusColor(c.status)}">${esc(c.status || "")}</span>`;
+      const badge = showStatus ? `<span class="planning-card-lane" style="background:${statusColor(c.status)}">${esc(c.status || "")}</span>` : "";
       const done = doneBadge(c);
       item.innerHTML = `<div class="planning-card-top">${done}${schedBadge(c) + reviewBadge(c)}<span class="planning-card-title">${esc(c.title)}</span>${badge}</div>` +
-        (badges ? `<div class="planning-card-meta${curDisp().badge ? "" : " text"}">${badges}</div>` : "");
+        (badges ? `<div class="planning-card-meta${dsp.badge ? "" : " text"}">${badges}</div>` : "");
       item.onclick = () => openModal(c);
       // Per-card push forward — one week at a time. Only on Last week and This week (Next week has no visible
       // "further" section to land in). Deliberate button, no bulk sweep, so mistakes are one card at a time.
