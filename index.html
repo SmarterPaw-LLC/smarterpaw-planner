@@ -1334,8 +1334,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.43";
+const VERSION = "3.44";
 const CHANGELOG = [
+  "v3.44 — Planning rollup click behavior is now uniform across every dim. Lane/status used to click-to-hide (toggle planningLanes); every other rollup used click-to-filter. Both now click-to-filter: tap TO DO to scope to TO DO cards, tap IN PROGRESS to add IN PROGRESS alongside, tap again to drop it. The lane-visibility toggles above the view still exist for hiding entire lanes.",
   "v3.43 — Planning rollups + card right-chip get two more controls. (1) Display → Planning now has a 'Pin to top-right of each card' picker — any dim (or None) can occupy the chip slot that used to be hardcoded to Lane. (2) Clicking a rollup value (e.g. the Walmart cell in Channel) no longer collapses that rollup to only the clicked value — it still filters the card list, but the rollup counts stay faceted so every channel's running count remains visible, matching how the Lane rollup already worked.",
   "v3.42 — Innovation Planning now spans every year from the start-year floor through the farthest card. The old 3-year window (center-1 / center / center+1) was swallowing any card scheduled further out — set a 2026 floor and a card for 2028 would silently disappear. Columns now extend forward automatically so every planned year gets its own column; the center-year nav still controls arrow labels.",
   "v3.41 — Planning cards: the lane/status chip pinned to the top-right now respects Display → Planning → Shown on each item. Add \"Lane / status\" to show it (default), remove it to hide it entirely. Same list controls the badge row below, so you can show status in both places or neither.",
@@ -3745,23 +3746,17 @@ function buildPlanningRollup(dimKey, list, enabledLanes, sprintPredicate, bl) {
   // Sort: status by lane order; owners by count desc; everything else by count desc then alpha.
   if (dimKey === "status") entries.sort((a, b) => statusList.findIndex(s => s.name === a[0]) - statusList.findIndex(s => s.name === b[0]));
   else entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const laneSetVis = new Set(enabledLanes || []);
-  const clickFilterKey = dimKey === "status" ? null : filterKey;
-  const activeSet = clickFilterKey && filters[clickFilterKey] instanceof Set ? filters[clickFilterKey] : null;
+  // Click semantics are uniform across every rollup: toggle filters[filterKey]. An empty filter set = "show
+  // all" (the default). Clicking a cell adds that value; clicking it again removes it; clicking a second
+  // value adds it alongside. The lane-visibility toggles above the view (planningLanes) still work
+  // independently for hiding entire lanes from the display.
+  const activeSet = filterKey && filters[filterKey] instanceof Set ? filters[filterKey] : null;
   entries.forEach(([val, n]) => {
-    const on = dimKey === "status" ? laneSetVis.has(val) : (activeSet ? activeSet.has(val) : true);
+    const on = activeSet ? activeSet.has(val) : true;
     const cell = document.createElement("button"); cell.type = "button"; cell.className = "planning-stat-cell" + (on ? "" : " off");
     const color = dimValueColor(dimKey, val); if (color) cell.style.borderLeft = "3px solid " + color;
     cell.innerHTML = `<span class="planning-stat-label">${esc(val)}</span><span class="planning-stat-val">${n}</span>`;
-    if (dimKey === "status") {
-      cell.title = on ? "Click to hide " + val + " from this view" : "Click to show " + val;
-      cell.onclick = e => {
-        e.stopPropagation();
-        if (!planningLanes) planningLanes = new Set(statusList.map(x => x.name));
-        if (planningLanes.has(val)) planningLanes.delete(val); else planningLanes.add(val);
-        savePlanningLanes(); renderSprintPlanning();
-      };
-    } else if (val === "(unassigned)") {
+    if (val === "(unassigned)") {
       cell.disabled = true; cell.title = "Cards with no " + dimKey + " set"; cell.style.cursor = "default";
     } else {
       cell.title = (activeSet && activeSet.has(val)) ? "Remove " + val + " from the " + dimKey + " filter" : "Filter to " + val;
