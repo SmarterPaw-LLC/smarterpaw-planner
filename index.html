@@ -1279,8 +1279,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.33";
+const VERSION = "3.34";
 const CHANGELOG = [
+  "v3.34 — New sort option: Last image added. In Filter & Sort → Sort by, pick \"Last image added\" to order cards by the newest-dated image in their gallery (newest first by default; cards with no dated images sink to the end). On the Gallery view it also re-orders the individual tiles by each image's own addedAt, so the newest uploads from any card lead the grid.",
   "v3.33 — Highlighting now works inside the card modal too. Note rows and expanded email bodies are rich-text editable (contenteditable), so selecting text in the editor shows the floating ✨ Highlight pill just like on the Notes feed. Modal highlights sync into modalNoteEntries / modalEmails on apply and persist with Save (no DB write mid-edit, so Cancel still discards). Replaces the v3.32 textareas that only showed <mark> tags as literal text.",
   "v3.32 — Highlight text in notes and emails. Select text in an email body or dated note row (anywhere in the Notes view), click the floating ✨ Highlight pill, and the selection gets wrapped in a yellow <mark>. Legible in both light and dark themes. Persists per-email or per-note on the card. Modal textarea editing shows the mark tags verbatim so you can remove or move them manually.",
   "v3.31 — New Custom-field type: Link (URL). Modal cell renders as a text input with a persistent 🔗 Open button, placeholder https://..., and auto-prepends https:// on open if you forgot the scheme. One-time migration: text fields whose name ends in “Link”, “Links”, “URL” or “URLs” (Design Assets Link, Spec Sheet Link, Sample Request Link, Latest Sample Image URL, etc.) automatically convert to the Link type on next load. Guarded by a localStorage flag so it only runs once.",
@@ -2113,8 +2114,16 @@ function curDisp() { return displaySettings[view === "calendar" ? "calendar" : v
 function sortDims() {
   return [{ key: "", label: "— None (manual order) —" }, { key: "title", label: "Title" }, { key: "due", label: "Due date" }, { key: "end", label: "End date" },
     { key: "priority", label: "Priority" }, { key: "status", label: "Status / Lane" }, { key: "brand", label: "Brand" }, { key: "channel", label: "Channel" }, { key: "owner", label: "Owners" },
-    { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }]
+    { key: "promotion", label: "Promotion" }, { key: "sprint", label: "Sprint" }, { key: "lastImage", label: "Last image added" }]
     .concat(fieldsList.map(f => ({ key: "field:" + f.name, label: f.name })));
+}
+// Max image addedAt across a card's gallery (ISO string, empty if nothing dated). Used by the "Last image
+// added" sort to order cards (and, inside Gallery, individual tiles) by recency.
+function cardLastImageAt(c) {
+  const g = cardGallery(c); if (!g.length) return "";
+  let max = "";
+  for (const img of g) { const a = img && img.addedAt; if (a && a > max) max = a; }
+  return max;
 }
 function sortLabel(key) { const d = sortDims().find(x => x.key === key); return d ? d.label : key; }
 function cardSortKey(c, key) {
@@ -2122,6 +2131,9 @@ function cardSortKey(c, key) {
   if (key === "due" || key === "end") return c[key] || "9999-99-99";          // undated sort last
   if (key === "sprint") return cardSprint(c) || "9999-W99";
   if (key === "promotion") return cardPromo(c).toLowerCase();
+  // "Last image added" — invert so newest sorts first under default ascending direction. Cards with no dated
+  // images drop to the end (positive sentinel bigger than any -ts).
+  if (key === "lastImage") { const a = cardLastImageAt(c); return a ? -(Date.parse(a) || 0) : Number.MAX_SAFE_INTEGER; }
   if (key.indexOf("field:") === 0) return ((c.fields && c.fields[key.slice(6)]) || "").toLowerCase();
   return String(c[key] || "").toLowerCase();                                   // title, brand, channel, owner
 }
@@ -4441,7 +4453,21 @@ function renderGalleryView() {
   const cardsIn = visibleCards();
   // Expand to (card, url, indexWithinCard) tuples; drop cards with no images.
   const tiles = [];
-  cardsIn.forEach(c => { const imgs = cardAllImageUrls(c); imgs.forEach((url, idx) => tiles.push({ card: c, url, idx, all: imgs })); });
+  cardsIn.forEach(c => {
+    const imgs = cardAllImageUrls(c);
+    const gal = cardGallery(c);
+    const whenFor = u => { const hit = gal.find(x => x.url === u); return (hit && hit.addedAt) || ""; };
+    imgs.forEach((url, idx) => tiles.push({ card: c, url, idx, all: imgs, addedAt: whenFor(url) }));
+  });
+  // When sort = "Last image added", re-order tiles by each image's own addedAt (newest first by default) so the
+  // tile grid actually reflects image recency rather than card recency.
+  if (sortKey === "lastImage") {
+    tiles.sort((a, b) => {
+      const ta = a.addedAt ? (Date.parse(a.addedAt) || 0) : -Infinity;
+      const tb = b.addedAt ? (Date.parse(b.addedAt) || 0) : -Infinity;
+      return (ta === tb ? 0 : ta > tb ? -1 : 1) * sortDir;
+    });
+  }
   // Toolbar: image count + layout toggle.
   const head = document.createElement("div"); head.className = "gallery-head";
   const count = document.createElement("span"); count.className = "gallery-count"; count.textContent = tiles.length + " image" + (tiles.length === 1 ? "" : "s");
