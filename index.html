@@ -1332,8 +1332,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.41";
+const VERSION = "3.42";
 const CHANGELOG = [
+  "v3.42 — Innovation Planning now spans every year from the start-year floor through the farthest card. The old 3-year window (center-1 / center / center+1) was swallowing any card scheduled further out — set a 2026 floor and a card for 2028 would silently disappear. Columns now extend forward automatically so every planned year gets its own column; the center-year nav still controls arrow labels.",
   "v3.41 — Planning cards: the lane/status chip pinned to the top-right now respects Display → Planning → Shown on each item. Add \"Lane / status\" to show it (default), remove it to hide it entirely. Same list controls the badge row below, so you can show status in both places or neither.",
   "v3.40 — Innovation workspace: new global \"Start year\" setting in Settings (⋯) → Innovation workspace. Enter 2026 and the Planning view will hide the 2025 column entirely so empty historical years don't eat screen space. Floor is shared across users via a sentinel row (same pattern as brand colors), so one person's edit applies to the whole team. Also: stacked Planning rollups now render in their own labeled, bordered blocks so Lane / Owner / Brand / etc read as distinct groups instead of blurring into one giant grid.",
   "v3.39 — Planning view's Display dialog now exposes TWO lists: Column rollups (the count grids at the top of each year/week column) AND Shown on each item (the badges on each card). Pick independently — e.g. roll up Lane + Owner at the top while showing Brand + Pricing Status + MSRP on each card. v3.38's config carried over: whatever rollups you had are preserved, and card badges default to Brand/Channel/Owners if nothing else was saved.",
@@ -3872,12 +3873,19 @@ function renderSprintPlanning() {
   };
   grid.appendChild(sec(innov ? "⏸️ Hold / Unassigned" : "📥 Backlog", bl ? "Cards on the “" + bl + "” lane" : "Set a Backlog lane in Manage → status to populate this section.", backlog, false, "backlog"));
   if (innov) {
-    // Global "Innovation start year" floor — hide columns whose year is before the configured floor so the
-    // planner doesn't waste real estate on historical/empty years.
-    const floor = innovationStartYear || 0;
-    if (parseInt(lastWk, 10) >= floor) grid.appendChild(sec("← " + lastWk, "Previous year", last, true, "week", lastWk));
-    if (parseInt(thisWk, 10) >= floor) grid.appendChild(sec(thisWk, "Current year", thisW, true, "week", thisWk));
-    if (parseInt(nextWk, 10) >= floor) grid.appendChild(sec(nextWk + " →", "Next year", next, true, "week", nextWk));
+    // Innovation workspace columns: span EVERY year from the floor (or center-1) through the max card year,
+    // so a card planned for 2028 always has a column to live in instead of silently falling out of view when
+    // the three-year window doesn't reach it.
+    const floor = innovationStartYear || (innovationYear - 1);
+    let maxYr = Math.max(floor, innovationYear + 1);
+    searched.forEach(c => cardCurrentSprints(c).forEach(y => { const n = parseInt(y, 10); if (!isNaN(n) && n > maxYr) maxYr = n; }));
+    for (let yr = floor; yr <= maxYr; yr++) {
+      const yrStr = String(yr);
+      const bucket = searched.filter(c => c.status !== bl && inLane(c) && cardCurrentSprints(c).includes(yrStr));
+      const label = yr === innovationYear - 1 ? "← " + yrStr : yr === innovationYear + 1 ? yrStr + " →" : yrStr;
+      const sub = yr === innovationYear ? "Current year" : yr < innovationYear ? "Previous year" : "Future year";
+      grid.appendChild(sec(label, sub, bucket, true, "week", yrStr));
+    }
   } else {
     grid.appendChild(sec("← Last week", "Wk " + lastWk.split("-W")[1] + " · " + sprintRange(lastWk), last, true, "week", lastWk));
     grid.appendChild(sec("This week", "Wk " + thisWk.split("-W")[1] + " · " + sprintRange(thisWk), thisW, true, "week", thisWk));
