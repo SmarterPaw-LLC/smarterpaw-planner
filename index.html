@@ -562,6 +562,9 @@
   .planning-sec-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
   .planning-count { flex: none; font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1; padding: 2px 10px; background: rgba(109,93,252,.08); border-radius: 999px; }
   .planning-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 4px; }
+  .planning-rollup { margin-bottom: 12px; padding: 6px 8px 8px; background: color-mix(in srgb, var(--panel) 60%, transparent); border: 1px solid var(--line); border-radius: 8px; }
+  .planning-rollup + .planning-rollup { margin-top: 2px; }
+  .planning-rollup-head { font-size: 10px; text-transform: uppercase; letter-spacing: .9px; color: var(--muted); font-weight: 700; margin: 0 0 6px; }
   .planning-stat-cell { display: flex; justify-content: space-between; align-items: center; padding: 3px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; cursor: pointer; color: var(--text); }
   .planning-stat-cell:hover { border-color: var(--accent); }
   .planning-stat-cell.off { opacity: .45; filter: grayscale(60%); }
@@ -1225,6 +1228,12 @@
       <span class="seclabel">Brand toolkit <span class="menu-sec-hint">shared across workspaces</span></span>
       <div class="manage-list" id="settingsBrandList"></div>
     </div>
+    <div class="manage-sec" id="settingsInnovationSec">
+      <span class="seclabel">Innovation workspace <span class="menu-sec-hint">shared across users</span></span>
+      <div class="field" style="margin-bottom:0"><label for="settingsInnovStart">Start year (hide planning columns before this)</label>
+        <input type="number" id="settingsInnovStart" min="2000" max="2100" step="1" style="width:120px" />
+      </div>
+    </div>
     <h3 style="margin:16px 0 6px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px">Data &amp; backup</h3>
     <div class="field"><button id="exportJsonBtn" style="width:100%">⬇ Export backup (.json)</button></div>
     <div class="field"><button id="importJsonBtn" style="width:100%">⬆ Import backup (.json)</button></div>
@@ -1323,8 +1332,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.39";
+const VERSION = "3.40";
 const CHANGELOG = [
+  "v3.40 — Innovation workspace: new global \"Start year\" setting in Settings (⋯) → Innovation workspace. Enter 2026 and the Planning view will hide the 2025 column entirely so empty historical years don't eat screen space. Floor is shared across users via a sentinel row (same pattern as brand colors), so one person's edit applies to the whole team. Also: stacked Planning rollups now render in their own labeled, bordered blocks so Lane / Owner / Brand / etc read as distinct groups instead of blurring into one giant grid.",
   "v3.39 — Planning view's Display dialog now exposes TWO lists: Column rollups (the count grids at the top of each year/week column) AND Shown on each item (the badges on each card). Pick independently — e.g. roll up Lane + Owner at the top while showing Brand + Pricing Status + MSRP on each card. v3.38's config carried over: whatever rollups you had are preserved, and card badges default to Brand/Channel/Owners if nothing else was saved.",
   "v3.38 — Planning view: configurable column rollups. The grids at the top of each year/week column were hardcoded (Lane + Owner). Now Display → Planning lets you pick which dimensions roll up there — any combination of Lane, Brand, Channel, Owners, Priority, Promotion, Sprint, Dates, or any custom field (dropdown / multi-select / etc). Drag to reorder; each rollup renders as its own count grid above the card list. The Lane rollup still click-toggles show/hide (its original behavior); every other rollup's cells click-toggle the matching quick filter so you can scope the whole page from one tap.",
   "v3.37 — Field groups: sections now render as colored cards in the card modal, and each field can be sized ⅓, ½ or full width inside its section. In Manage → Custom fields → Groups, each group card has a color swatch (click to pick, ✕ to reset to muted default) that sets the modal section's left-rail + header color; each ON chip gets ◀ ▶ arrows (reorder) + ⅓/½/1 toggles (width). Fields render in a 12-column grid under their section header so three ⅓ fields fit on one row. Replaces the v3.36 chip drag — the drag was clashing with the group-card drag and swallowing group reorders; arrows don't ambiguate.",
@@ -2087,6 +2097,33 @@ function applyWorkspace() {
 const DEFAULT_INNOVATION_YEAR = 2027;
 let innovationYear = parseInt(localStorage.getItem("planner-innovation-year") || String(DEFAULT_INNOVATION_YEAR), 10) || DEFAULT_INNOVATION_YEAR;
 function saveInnovationYear() { localStorage.setItem("planner-innovation-year", String(innovationYear)); }
+// Innovation start year — a GLOBAL floor (shared across users via a sentinel `lists` row). The Planning view
+// hides any column whose year is before this floor so historical/empty years don't take up screen space. 0 =
+// no floor. Sentinel row pattern mirrors brand colors (unscoped query so one team member's edit applies to all).
+const INNOVATION_START_YEAR_KEY = "__innovation_start_year__";
+let innovationStartYear = parseInt(localStorage.getItem("planner-innovation-start-year") || "0", 10) || 0;
+let _innovationStartYearRowId = null;
+function saveInnovationStartYearLocal() { localStorage.setItem("planner-innovation-start-year", String(innovationStartYear || 0)); }
+async function syncInnovationStartYearToDB() {
+  if (!ONLINE) return;
+  const payload = String(innovationStartYear || 0);
+  try {
+    if (_innovationStartYearRowId) {
+      const { error } = await db.from("lists").update({ color: payload }).eq("id", _innovationStartYearRowId);
+      if (error) console.warn("innovation start year sync failed:", error);
+    } else {
+      const row = { kind: "field", name: INNOVATION_START_YEAR_KEY, color: payload, position: 99997, workspace: "planner" };
+      const { data, error } = await db.from("lists").insert(row).select("id").single();
+      if (error) { console.warn("innovation start year insert failed:", error); return; }
+      _innovationStartYearRowId = data.id;
+    }
+  } catch (e) { console.warn("innovation start year sync threw:", e); }
+}
+async function setInnovationStartYear(y) {
+  const n = parseInt(y, 10);
+  innovationStartYear = isNaN(n) || n < 2000 || n > 2100 ? 0 : n;
+  saveInnovationStartYearLocal(); await syncInnovationStartYearToDB(); render();
+}
 function syncSprintNavLabels() {
   const cap = document.querySelector(".qf-sprint-label"); if (!cap) return;
   const btns = document.querySelectorAll("#sprintQuick button");
@@ -2744,7 +2781,17 @@ async function loadLists() {
   data.filter(r => r.kind === "promotion").forEach(r => { if (r.color) promoOverrides[r.name] = { id: r.id, color: r.color }; });
   // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
   // The sentinel name PROMO_COLORS_KEY holds a JSON {promoName: hexColor} map — pulled into promoOverrides, not fieldsList.
-  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY && r.name !== FIELD_GROUPS_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY && r.name !== FIELD_GROUPS_KEY && r.name !== INNOVATION_START_YEAR_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  // Innovation start-year sentinel (global). Unscoped lookup so a row written under any workspace resolves.
+  let isyRow = data.find(r => r.kind === "field" && r.name === INNOVATION_START_YEAR_KEY);
+  if (!isyRow && ONLINE && !WS_COL_MISSING) {
+    try {
+      const { data: unscoped } = await db.from("lists").select("id, color").eq("kind", "field").eq("name", INNOVATION_START_YEAR_KEY).limit(1);
+      if (unscoped && unscoped.length) isyRow = unscoped[0];
+    } catch (e) {}
+  }
+  _innovationStartYearRowId = isyRow ? isyRow.id : null;
+  if (isyRow && isyRow.color != null) { const n = parseInt(isyRow.color, 10); innovationStartYear = isNaN(n) ? 0 : n; saveInnovationStartYearLocal(); }
   // Field groups (per-workspace). Shape: {groups: [{id, name, fields: [fieldName,...]}]}. Groups whose field
   // list is empty are kept so the user can see / edit / remove them in the Groups editor.
   const fgRow = data.find(r => r.kind === "field" && r.name === FIELD_GROUPS_KEY);
@@ -3664,7 +3711,13 @@ function savePlanningLanes() { if (planningLanes) localStorage.setItem(wsKey("pl
 // Build one rollup grid (title + cells for every discovered value) for a given dimension over a card list.
 // Status reuses the existing planningLanes show/hide semantics; other dimensions click-toggle the quick filter.
 function buildPlanningRollup(dimKey, list, enabledLanes) {
+  // Wrap each rollup in a labeled block so stacked rollups don't visually blur into one giant grid.
+  const block = document.createElement("div"); block.className = "planning-rollup";
+  const head = document.createElement("div"); head.className = "planning-rollup-head";
+  head.textContent = dimLabelFor(dimKey);
+  block.appendChild(head);
   const wrap = document.createElement("div"); wrap.className = "planning-stats planning-stats-" + esc(dimKey.replace(":", "-"));
+  block.appendChild(wrap);
   // Count values. For "status" we want to show EVERY lane (even zero-count) so hidden lanes stay toggleable;
   // for other dims we only show values that have at least one card in this list.
   const counts = new Map();
@@ -3708,7 +3761,12 @@ function buildPlanningRollup(dimKey, list, enabledLanes) {
     }
     wrap.appendChild(cell);
   });
-  return wrap;
+  return block;
+}
+// Human-readable label for a dim key — matches availableDims() labels so the rollup header reads the same as
+// the Display dialog chip. Falls back to the key itself for safety.
+function dimLabelFor(key) {
+  const d = availableDims().find(x => x.key === key); return d ? d.label : key;
 }
 // Sprint-planning view (a real view alongside Board / Calendar / etc, not an overlay). Applies the current
 // quick-filters (owner, brand, channel, etc.) so scoping to "Jason" or "Meowi" flows through, but ignores
@@ -3811,9 +3869,12 @@ function renderSprintPlanning() {
   };
   grid.appendChild(sec(innov ? "⏸️ Hold / Unassigned" : "📥 Backlog", bl ? "Cards on the “" + bl + "” lane" : "Set a Backlog lane in Manage → status to populate this section.", backlog, false, "backlog"));
   if (innov) {
-    grid.appendChild(sec("← " + lastWk, "Previous year", last, true, "week", lastWk));
-    grid.appendChild(sec(thisWk, "Current year", thisW, true, "week", thisWk));
-    grid.appendChild(sec(nextWk + " →", "Next year", next, true, "week", nextWk));
+    // Global "Innovation start year" floor — hide columns whose year is before the configured floor so the
+    // planner doesn't waste real estate on historical/empty years.
+    const floor = innovationStartYear || 0;
+    if (parseInt(lastWk, 10) >= floor) grid.appendChild(sec("← " + lastWk, "Previous year", last, true, "week", lastWk));
+    if (parseInt(thisWk, 10) >= floor) grid.appendChild(sec(thisWk, "Current year", thisW, true, "week", thisWk));
+    if (parseInt(nextWk, 10) >= floor) grid.appendChild(sec(nextWk + " →", "Next year", next, true, "week", nextWk));
   } else {
     grid.appendChild(sec("← Last week", "Wk " + lastWk.split("-W")[1] + " · " + sprintRange(lastWk), last, true, "week", lastWk));
     grid.appendChild(sec("This week", "Wk " + thisWk.split("-W")[1] + " · " + sprintRange(thisWk), thisW, true, "week", thisWk));
@@ -7849,7 +7910,16 @@ async function init() {
   const addGrpInp = document.getElementById("fAddGroup"); if (addGrpInp) addGrpInp.addEventListener("keydown", e => { if (e.key === "Enter") addGrp(); });
 
   const menu = document.getElementById("menuOverlay");
-  document.getElementById("menuBtn").onclick = () => { renderSettingsBrands(); menu.classList.add("show"); };
+  document.getElementById("menuBtn").onclick = () => {
+    renderSettingsBrands();
+    // Innovation workspace controls — only shown when the current workspace is Innovation (its one setting is
+    // the global start-year floor for the Planning view).
+    const innovSec = document.getElementById("settingsInnovationSec");
+    if (innovSec) innovSec.style.display = isInnovation() ? "" : "none";
+    const inp = document.getElementById("settingsInnovStart");
+    if (inp) { inp.value = innovationStartYear ? String(innovationStartYear) : ""; inp.placeholder = "no floor"; inp.onchange = () => setInnovationStartYear(inp.value); }
+    menu.classList.add("show");
+  };
   document.getElementById("menuClose").onclick = () => menu.classList.remove("show");
   menu.onclick = e => { if (e.target.id === "menuOverlay") menu.classList.remove("show"); };
   document.getElementById("csvBtn").onclick = exportCSV;
