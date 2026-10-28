@@ -589,7 +589,8 @@
   .planning-card-top { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .planning-card-title { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
   .planning-card-lane { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .2px; color: #fff; padding: 1px 7px; border-radius: 999px; }
-  .planning-card-meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .planning-card-meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+  .planning-card-meta.text { gap: 0; }
   #calendar { display: none; flex: 1; flex-direction: column; padding: 14px 20px; overflow: hidden; }
   .cal-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
   .cal-label { font-weight: 700; font-size: 15px; margin-left: 6px; }
@@ -1322,8 +1323,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.38";
+const VERSION = "3.39";
 const CHANGELOG = [
+  "v3.39 — Planning view's Display dialog now exposes TWO lists: Column rollups (the count grids at the top of each year/week column) AND Shown on each item (the badges on each card). Pick independently — e.g. roll up Lane + Owner at the top while showing Brand + Pricing Status + MSRP on each card. v3.38's config carried over: whatever rollups you had are preserved, and card badges default to Brand/Channel/Owners if nothing else was saved.",
   "v3.38 — Planning view: configurable column rollups. The grids at the top of each year/week column were hardcoded (Lane + Owner). Now Display → Planning lets you pick which dimensions roll up there — any combination of Lane, Brand, Channel, Owners, Priority, Promotion, Sprint, Dates, or any custom field (dropdown / multi-select / etc). Drag to reorder; each rollup renders as its own count grid above the card list. The Lane rollup still click-toggles show/hide (its original behavior); every other rollup's cells click-toggle the matching quick filter so you can scope the whole page from one tap.",
   "v3.37 — Field groups: sections now render as colored cards in the card modal, and each field can be sized ⅓, ½ or full width inside its section. In Manage → Custom fields → Groups, each group card has a color swatch (click to pick, ✕ to reset to muted default) that sets the modal section's left-rail + header color; each ON chip gets ◀ ▶ arrows (reorder) + ⅓/½/1 toggles (width). Fields render in a 12-column grid under their section header so three ⅓ fields fit on one row. Replaces the v3.36 chip drag — the drag was clashing with the group-card drag and swallowing group reorders; arrows don't ambiguate.",
   "v3.36 — Drag to reorder field groups and the fields inside each group. Each group card has a ⋮⋮ grip on the left — grab it to drop the group above or below another; the modal section headers follow that order. Within a group, the \"on\" chips (the ones already assigned) are draggable: grab one and drop it left/right of a sibling to change the order fields render under that section header. OFF chips still click-to-add; ON chips still click-to-remove.",
@@ -2186,15 +2188,22 @@ function loadDisplay() {
     eventSize: ["compact", "comfortable", "spacious"].includes(d.eventSize) ? d.eventSize : "compact",
   });
   const galleryDefault = { dims: ["brand", "channel", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
-  // Planning view: the "dims" slot holds the ROLLUP dimensions rendered as mini stat grids at the top of each
-  // column (one grid per dim), instead of per-card badges. Default matches the pre-config behavior (Lane + Owner).
-  const normPlanning = d => ({
-    dims: Array.isArray(d && d.dims) && d.dims.length ? d.dims.slice() : ["status", "owners"],
-    badge: d && d.badge !== false,
-    sort: { key: (d && d.sort && d.sort.key) || "", dir: (d && d.sort && d.sort.dir === -1) ? -1 : 1 },
-    eventSize: "compact",
-  });
-  const planningDefault = { dims: ["status", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
+  // Planning view: two independent lists.
+  //   dims    = badges rendered on each card (same semantics as Board/Calendar/List)
+  //   rollups = count grids rendered at the top of each year/week column
+  // Migration note: v3.38 shipped with planning.dims holding what became rollups. If a user has that stored
+  // config, lift it into planning.rollups and reset planning.dims to the sensible card-display default.
+  const normPlanning = d => {
+    const legacyRollups = Array.isArray(d && d.dims) && !("rollups" in (d || {})) && d.dims.length && d.dims.every(k => ["status", "owners", "brand", "channel", "priority", "promotion", "sprint", "dates"].includes(k) || k.indexOf("field:") === 0) ? d.dims.slice() : null;
+    return {
+      dims: Array.isArray(d && d.cardDims) && d.cardDims.length ? d.cardDims.slice() : (legacyRollups ? ["brand", "channel", "owners"] : (Array.isArray(d && d.dims) && d.dims.length ? d.dims.slice() : ["brand", "channel", "owners"])),
+      rollups: Array.isArray(d && d.rollups) && d.rollups.length ? d.rollups.slice() : (legacyRollups || ["status", "owners"]),
+      badge: d && d.badge !== false,
+      sort: { key: (d && d.sort && d.sort.key) || "", dir: (d && d.sort && d.sort.dir === -1) ? -1 : 1 },
+      eventSize: "compact",
+    };
+  };
+  const planningDefault = { dims: ["brand", "channel", "owners"], rollups: ["status", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
   if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT), gallery: norm(raw.gallery || galleryDefault), planning: normPlanning(raw.planning || planningDefault) };
   if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault), planning: normPlanning(planningDefault) };   // migrate old single setting
   return { board: norm(DISP_DEFAULT), calendar: norm(DISP_DEFAULT), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault), planning: normPlanning(planningDefault) };
@@ -3765,8 +3774,8 @@ function renderSprintPlanning() {
       // Render one rollup grid per Display → Planning dimension. "status" keeps its special click-to-toggle
       // (hides that lane across the view); every other dim's cells click to toggle filters[dim] like the
       // regular quick filters do.
-      const dsp = displaySettings.planning || { dims: ["status", "owners"] };
-      const rollupDims = (dsp.dims && dsp.dims.length) ? dsp.dims : ["status", "owners"];
+      const dsp = displaySettings.planning || { rollups: ["status", "owners"] };
+      const rollupDims = (dsp.rollups && dsp.rollups.length) ? dsp.rollups : ["status", "owners"];
       rollupDims.forEach(dimKey => s.appendChild(buildPlanningRollup(dimKey, list, lanes)));
     }
     // Cards
@@ -3777,11 +3786,14 @@ function renderSprintPlanning() {
       item.style.borderLeftColor = colorFor(c);
       item.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; item.classList.add("dragging"); });
       item.addEventListener("dragend", () => { item.classList.remove("dragging"); document.querySelectorAll(".planning-sec.drop-over").forEach(el => el.classList.remove("drop-over")); });
-      const meta = [c.brand, c.channel, c.owner].filter(Boolean).join(" · ");
+      // Card dim row driven by Display → Planning "Shown on each item". Lane always shows as the colored chip on
+      // the top-right so it remains the anchor; other dims (brand/channel/owners/custom fields/etc.) render as
+      // the configurable badge/text row below.
+      const badges = dimBadges(c, ["status"]);
       const badge = `<span class="planning-card-lane" style="background:${statusColor(c.status)}">${esc(c.status || "")}</span>`;
       const done = doneBadge(c);
       item.innerHTML = `<div class="planning-card-top">${done}${schedBadge(c) + reviewBadge(c)}<span class="planning-card-title">${esc(c.title)}</span>${badge}</div>` +
-        (meta ? `<div class="planning-card-meta">${esc(meta)}</div>` : "");
+        (badges ? `<div class="planning-card-meta${curDisp().badge ? "" : " text"}">${badges}</div>` : "");
       item.onclick = () => openModal(c);
       // Per-card push forward — one week at a time. Only on Last week and This week (Next week has no visible
       // "further" section to land in). Deliberate button, no bulk sweep, so mistakes are one card at a time.
@@ -5327,6 +5339,48 @@ function setCalMode(m) {
   document.querySelectorAll("#calModeSeg button").forEach(b => b.classList.toggle("active", b.dataset.m === m));
   render();
 }
+// Shared Display dialog "ordered list + available chips" block. Used by the Planning view's rollups section
+// alongside the main shown-on-item section. `arr` is the backing array that gets mutated in place; drag reorder
+// and the +chip adds flow through saveDisplay() + a dialog re-render.
+function _buildDispList(labelText, arr, all) {
+  const wrap = document.createElement("div"); wrap.className = "disp-shown";
+  const lab = document.createElement("div"); lab.className = "disp-sub-label"; lab.textContent = labelText;
+  wrap.appendChild(lab);
+  arr.forEach((key, idx) => {
+    const d = all.find(x => x.key === key); if (!d) return;
+    const row = document.createElement("div"); row.className = "disp-shown-row"; row.dataset.idx = String(idx);
+    const grip = document.createElement("span"); grip.className = "disp-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
+    grip.addEventListener("mousedown", () => { row.draggable = true; });
+    grip.addEventListener("mouseup", () => { row.draggable = false; });
+    row.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; row.classList.add("dragging"); });
+    row.addEventListener("dragend", () => { row.classList.remove("dragging"); row.draggable = false; wrap.querySelectorAll(".disp-shown-row.drag-over-top,.disp-shown-row.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+    row.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = row.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; row.classList.toggle("drag-over-top", above); row.classList.toggle("drag-over-bot", !above); });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over-top", "drag-over-bot"));
+    row.addEventListener("drop", e => {
+      e.preventDefault(); const from = +e.dataTransfer.getData("text/plain"); const r = row.getBoundingClientRect(); let to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1);
+      row.classList.remove("drag-over-top", "drag-over-bot"); if (isNaN(from) || from === to || from === to - 1) return;
+      const [moved] = arr.splice(from, 1); if (from < to) to--; arr.splice(to, 0, moved); saveDisplay();
+      renderDispSettings(); render();
+    });
+    const name = document.createElement("span"); name.className = "disp-shown-name"; name.textContent = d.label;
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "disp-shown-rm"; rm.textContent = "✕"; rm.title = "Hide this dimension";
+    rm.onclick = () => { const i = arr.indexOf(key); if (i >= 0) arr.splice(i, 1); saveDisplay(); renderDispSettings(); render(); };
+    row.appendChild(grip); row.appendChild(name); row.appendChild(rm); wrap.appendChild(row);
+  });
+  if (!arr.length) { const e = document.createElement("div"); e.className = "disp-sub-empty"; e.textContent = "Nothing shown — pick from below."; wrap.appendChild(e); }
+  const avail = document.createElement("div"); avail.className = "disp-avail";
+  const al = document.createElement("div"); al.className = "disp-sub-label"; al.textContent = "Available (click to show)";
+  avail.appendChild(al);
+  const rest = all.filter(d => !arr.includes(d.key));
+  if (!rest.length) { const e = document.createElement("div"); e.className = "disp-sub-empty"; e.textContent = "All dimensions are shown."; avail.appendChild(e); }
+  rest.forEach(d => {
+    const chip = document.createElement("button"); chip.type = "button"; chip.className = "disp-avail-chip"; chip.textContent = "+ " + d.label;
+    chip.onclick = () => { arr.push(d.key); saveDisplay(); renderDispSettings(); render(); };
+    avail.appendChild(chip);
+  });
+  wrap.appendChild(avail);
+  return wrap;
+}
 function renderDispSettings() {
   const grid = view === "grid";
   document.getElementById("dispCardSec").style.display = grid ? "none" : "";
@@ -5337,9 +5391,15 @@ function renderDispSettings() {
   const box = document.getElementById("dispDims"); box.innerHTML = "";
   const all = availableDims();
   // Section 1 — shown-on-card list in ds.dims order. Drag to reorder.
+  // Planning: also render a rollups list ABOVE the card-dim list. Both sections share look + drag mechanics;
+  // the rollups list operates on ds.rollups, the card-dim list on ds.dims (same as every other view).
+  if (view === "planning") {
+    const rollupsWrap = _buildDispList("Column rollups (drag to reorder)", ds.rollups || (ds.rollups = ["status", "owners"]), all);
+    box.appendChild(rollupsWrap);
+  }
   const shownWrap = document.createElement("div"); shownWrap.className = "disp-shown";
   const shownLabel = document.createElement("div"); shownLabel.className = "disp-sub-label";
-  shownLabel.textContent = view === "planning" ? "Column rollups (drag to reorder)" : "Shown on each item (drag to reorder)";
+  shownLabel.textContent = "Shown on each item (drag to reorder)";
   shownWrap.appendChild(shownLabel);
   ds.dims.forEach((key, idx) => {
     const d = all.find(x => x.key === key); if (!d) return;
@@ -5463,7 +5523,7 @@ function openDisp() {
   document.getElementById("dispHint").textContent = grid
     ? "Choose which columns appear (saved with bookmarks and views). Sort lives in ⚲ Filter & sort, or click a column header."
     : planning
-      ? "Pick the dimensions that appear as rollup grids at the top of each year/week column. Lane rollup still toggles show/hide for that lane; other rollups click-filter."
+      ? "Top: dimensions that appear as rollup grids above each column. Below: dimensions shown as badges on each card. Lane rollup click-toggles that lane; other rollups click-filter."
       : "Applies to the current view only — Board, Calendar and List are independent. Saved in this browser.";
   renderDispSettings(); document.getElementById("dispOverlay").classList.add("show");
 }
