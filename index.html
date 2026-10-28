@@ -594,6 +594,8 @@
   .planning-card-lane { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .2px; color: #fff; padding: 1px 7px; border-radius: 999px; }
   .planning-card-meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
   .planning-card-meta.text { gap: 0; }
+  .disp-pin-wrap { margin: 10px 0 4px; }
+  .disp-pin-sel { width: 100%; padding: 6px 8px; font-size: 13px; }
   #calendar { display: none; flex: 1; flex-direction: column; padding: 14px 20px; overflow: hidden; }
   .cal-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
   .cal-label { font-weight: 700; font-size: 15px; margin-left: 6px; }
@@ -1332,8 +1334,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.42";
+const VERSION = "3.43";
 const CHANGELOG = [
+  "v3.43 — Planning rollups + card right-chip get two more controls. (1) Display → Planning now has a 'Pin to top-right of each card' picker — any dim (or None) can occupy the chip slot that used to be hardcoded to Lane. (2) Clicking a rollup value (e.g. the Walmart cell in Channel) no longer collapses that rollup to only the clicked value — it still filters the card list, but the rollup counts stay faceted so every channel's running count remains visible, matching how the Lane rollup already worked.",
   "v3.42 — Innovation Planning now spans every year from the start-year floor through the farthest card. The old 3-year window (center-1 / center / center+1) was swallowing any card scheduled further out — set a 2026 floor and a card for 2028 would silently disappear. Columns now extend forward automatically so every planned year gets its own column; the center-year nav still controls arrow labels.",
   "v3.41 — Planning cards: the lane/status chip pinned to the top-right now respects Display → Planning → Shown on each item. Add \"Lane / status\" to show it (default), remove it to hide it entirely. Same list controls the badge row below, so you can show status in both places or neither.",
   "v3.40 — Innovation workspace: new global \"Start year\" setting in Settings (⋯) → Innovation workspace. Enter 2026 and the Planning view will hide the 2025 column entirely so empty historical years don't eat screen space. Floor is shared across users via a sentinel row (same pattern as brand colors), so one person's edit applies to the whole team. Also: stacked Planning rollups now render in their own labeled, bordered blocks so Lane / Owner / Brand / etc read as distinct groups instead of blurring into one giant grid.",
@@ -2237,12 +2240,13 @@ function loadDisplay() {
     return {
       dims: Array.isArray(d && d.cardDims) && d.cardDims.length ? d.cardDims.slice() : (legacyRollups ? ["status", "brand", "channel", "owners"] : (Array.isArray(d && d.dims) && d.dims.length ? d.dims.slice() : ["status", "brand", "channel", "owners"])),
       rollups: Array.isArray(d && d.rollups) && d.rollups.length ? d.rollups.slice() : (legacyRollups || ["status", "owners"]),
+      rightDim: typeof (d && d.rightDim) === "string" ? d.rightDim : "status",
       badge: d && d.badge !== false,
       sort: { key: (d && d.sort && d.sort.key) || "", dir: (d && d.sort && d.sort.dir === -1) ? -1 : 1 },
       eventSize: "compact",
     };
   };
-  const planningDefault = { dims: ["status", "brand", "channel", "owners"], rollups: ["status", "owners"], badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
+  const planningDefault = { dims: ["status", "brand", "channel", "owners"], rollups: ["status", "owners"], rightDim: "status", badge: true, sort: { key: "", dir: 1 }, eventSize: "compact" };
   if (raw && raw.board && raw.calendar) return { board: norm(raw.board), calendar: norm(raw.calendar), list: norm(raw.list || LIST_DISP_DEFAULT), gallery: norm(raw.gallery || galleryDefault), planning: normPlanning(raw.planning || planningDefault) };
   if (raw && raw.dims) return { board: norm(raw), calendar: norm(raw), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault), planning: normPlanning(planningDefault) };   // migrate old single setting
   return { board: norm(DISP_DEFAULT), calendar: norm(DISP_DEFAULT), list: norm(LIST_DISP_DEFAULT), gallery: norm(galleryDefault), planning: normPlanning(planningDefault) };
@@ -3534,8 +3538,8 @@ function activeSprintFilterWeeks() {
   });
   return out;
 }
-function passesFilters(c) {
-  if (filters.sprint && filters.sprint.size) {
+function passesFilters(c, excludeKey) {
+  if (filters.sprint && filters.sprint.size && excludeKey !== "sprint") {
     // A card matches a sprint filter if ANY of its sprints is picked (so a planning sprint counts) — or if it has none and "" (No sprint) is picked.
     const cs = cardSprints(c);
     const any = cs.length ? cs.some(s => filters.sprint.has(s)) : filters.sprint.has("");
@@ -3550,7 +3554,10 @@ function passesFilters(c) {
     if (completeLane && c.status === completeLane) return false;
   }
   // Quick-filter rows: each active dimension filter (brand/channel/promotion/priority/status) must match the card.
+  // `excludeKey` opts a specific key out — used by the Planning rollups so a dim's own filter doesn't collapse
+  // its own facet counts to a single value.
   for (const d of qfDims()) {
+    if (d.key === excludeKey) continue;
     const set = filters[d.key]; if (!set || !set.size) continue;
     const vs = d.valsOf(c);   // array (may be empty for unset; multi-select fields yield multiple)
     if (!vs.length) { if (!set.has("")) return false; }   // treat empty as literal ""
@@ -3712,7 +3719,7 @@ function activePlanningLanes() {
 function savePlanningLanes() { if (planningLanes) localStorage.setItem(wsKey("planner-planning-lanes"), JSON.stringify([...planningLanes])); else localStorage.removeItem(wsKey("planner-planning-lanes")); }
 // Build one rollup grid (title + cells for every discovered value) for a given dimension over a card list.
 // Status reuses the existing planningLanes show/hide semantics; other dimensions click-toggle the quick filter.
-function buildPlanningRollup(dimKey, list, enabledLanes) {
+function buildPlanningRollup(dimKey, list, enabledLanes, sprintPredicate, bl) {
   // Wrap each rollup in a labeled block so stacked rollups don't visually blur into one giant grid.
   const block = document.createElement("div"); block.className = "planning-rollup";
   const head = document.createElement("div"); head.className = "planning-rollup-head";
@@ -3720,14 +3727,19 @@ function buildPlanningRollup(dimKey, list, enabledLanes) {
   block.appendChild(head);
   const wrap = document.createElement("div"); wrap.className = "planning-stats planning-stats-" + esc(dimKey.replace(":", "-"));
   block.appendChild(wrap);
-  // Count values. For "status" we want to show EVERY lane (even zero-count) so hidden lanes stay toggleable;
-  // for other dims we only show values that have at least one card in this list.
+  // Facet-count semantics: when a dimension itself has a quick filter active, count the OTHER values of that
+  // dim as if the filter weren't there — otherwise clicking "Walmart" collapses the Channel rollup to only
+  // Walmart (the user's bug). Lane keeps its original "show every lane with a 0 fallback" behavior.
+  const filterKey = dimKey === "status" ? "status" : (dimKey === "owners" ? "owner" : dimKey);
+  const q = (typeof searchText === "string" ? searchText.trim().toLowerCase() : "");
+  const rollupList = (sprintPredicate && filterKey && filters[filterKey] instanceof Set && filters[filterKey].size)
+    ? cards.filter(c => passesFilters(c, filterKey) && (!q || cardSearchText(c).includes(q)) && c.status !== bl && (dimKey === "status" || !enabledLanes || (new Set(enabledLanes)).has(c.status)) && sprintPredicate(c))
+    : list;
   const counts = new Map();
   if (dimKey === "status") statusList.forEach(s => counts.set(s.name, 0));
-  list.forEach(c => cardDimValues(c, dimKey).forEach(v => counts.set(v, (counts.get(v) || 0) + 1)));
+  rollupList.forEach(c => cardDimValues(c, dimKey).forEach(v => counts.set(v, (counts.get(v) || 0) + 1)));
   if (dimKey === "owners") {
-    // Keep "(unassigned)" visible for owners when a card has no owner.
-    list.forEach(c => { if (!cardDimValues(c, "owners").length) counts.set("(unassigned)", (counts.get("(unassigned)") || 0) + 1); });
+    rollupList.forEach(c => { if (!cardDimValues(c, "owners").length) counts.set("(unassigned)", (counts.get("(unassigned)") || 0) + 1); });
   }
   const entries = [...counts.entries()];
   // Sort: status by lane order; owners by count desc; everything else by count desc then alpha.
@@ -3836,7 +3848,10 @@ function renderSprintPlanning() {
       // regular quick filters do.
       const dsp = displaySettings.planning || { rollups: ["status", "owners"] };
       const rollupDims = (dsp.rollups && dsp.rollups.length) ? dsp.rollups : ["status", "owners"];
-      rollupDims.forEach(dimKey => s.appendChild(buildPlanningRollup(dimKey, list, lanes)));
+      // Sprint predicate for this section so rollups can re-derive counts (excluding each dim's own filter)
+      // against the full card set rather than the already-filtered `list` — gives faceted counts.
+      const sprintPred = (dropKind === "week" && dropWk) ? (c => cardCurrentSprints(c).includes(dropWk)) : null;
+      rollupDims.forEach(dimKey => s.appendChild(buildPlanningRollup(dimKey, list, lanes, sprintPred, bl)));
     }
     // Cards
     const cardsBox = document.createElement("div"); cardsBox.className = "planning-cards";
@@ -3846,13 +3861,14 @@ function renderSprintPlanning() {
       item.style.borderLeftColor = colorFor(c);
       item.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; item.classList.add("dragging"); });
       item.addEventListener("dragend", () => { item.classList.remove("dragging"); document.querySelectorAll(".planning-sec.drop-over").forEach(el => el.classList.remove("drop-over")); });
-      // Card dim row driven by Display → Planning "Shown on each item". Lane/status, when included in that list,
-      // renders as the special colored chip pinned to the top-right (its historical slot); other dims render in
-      // the badge/text row below. Remove "status" from the Shown list to hide the lane chip entirely.
+      // Card dim row driven by Display → Planning "Shown on each item" + "Pin to top-right". The pinned dim
+      // (defaults to Lane/status) renders as the special colored chip at top-right of each card; everything
+      // else in the Shown list goes into the badge/text row below. Setting the pin to "None" hides the chip.
       const dsp = curDisp();
-      const showStatus = dsp.dims.includes("status");
-      const badges = dimBadges(c, ["status"]);
-      const badge = showStatus ? `<span class="planning-card-lane" style="background:${statusColor(c.status)}">${esc(c.status || "")}</span>` : "";
+      const pinKey = dsp.rightDim || "";
+      const pinInfo = pinKey ? dimInfo(c, pinKey) : null;
+      const badges = dimBadges(c, pinKey ? [pinKey] : []);
+      const badge = (pinInfo && pinInfo.text) ? `<span class="planning-card-lane" style="background:${pinInfo.color || "var(--panel)"}">${esc(pinInfo.text)}</span>` : "";
       const done = doneBadge(c);
       item.innerHTML = `<div class="planning-card-top">${done}${schedBadge(c) + reviewBadge(c)}<span class="planning-card-title">${esc(c.title)}</span>${badge}</div>` +
         (badges ? `<div class="planning-card-meta${dsp.badge ? "" : " text"}">${badges}</div>` : "");
@@ -5511,6 +5527,20 @@ function renderDispSettings() {
     availWrap.appendChild(chip);
   });
   box.appendChild(availWrap);
+  // Planning: picker for which dim renders as the pinned top-right chip on each card. "None" removes the chip
+  // entirely so you can use just the badge row.
+  if (view === "planning") {
+    const pinWrap = document.createElement("div"); pinWrap.className = "disp-pin-wrap";
+    const pinLab = document.createElement("div"); pinLab.className = "disp-sub-label"; pinLab.textContent = "Pin to top-right of each card";
+    pinWrap.appendChild(pinLab);
+    const sel = document.createElement("select"); sel.className = "disp-pin-sel";
+    const none = document.createElement("option"); none.value = ""; none.textContent = "— None —"; sel.appendChild(none);
+    all.forEach(d => { const o = document.createElement("option"); o.value = d.key; o.textContent = d.label; sel.appendChild(o); });
+    sel.value = ds.rightDim || "";
+    sel.onchange = () => { ds.rightDim = sel.value; saveDisplay(); render(); };
+    pinWrap.appendChild(sel);
+    box.appendChild(pinWrap);
+  }
   document.querySelectorAll("#dispStyle button").forEach(b => b.classList.toggle("active", (b.dataset.s === "badge") === ds.badge));
   // Calendar item size — Calendar only.
   const calSizeField = document.getElementById("dispCalSizeField");
