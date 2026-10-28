@@ -3746,8 +3746,8 @@ function buildPlanningRollup(dimKey, list, enabledLanes, sprintPredicate, bl) {
   if (dimKey === "status") entries.sort((a, b) => statusList.findIndex(s => s.name === a[0]) - statusList.findIndex(s => s.name === b[0]));
   else entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const laneSetVis = new Set(enabledLanes || []);
-  const filterKey = dimKey === "status" ? null : (dimKey === "owners" ? "owner" : dimKey);
-  const activeSet = filterKey && filters[filterKey] instanceof Set ? filters[filterKey] : null;
+  const clickFilterKey = dimKey === "status" ? null : filterKey;
+  const activeSet = clickFilterKey && filters[clickFilterKey] instanceof Set ? filters[clickFilterKey] : null;
   entries.forEach(([val, n]) => {
     const on = dimKey === "status" ? laneSetVis.has(val) : (activeSet ? activeSet.has(val) : true);
     const cell = document.createElement("button"); cell.type = "button"; cell.className = "planning-stat-cell" + (on ? "" : " off");
