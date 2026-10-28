@@ -447,9 +447,16 @@
   .fg-del:hover { border-color: var(--danger); }
   .fg-picker-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin: 10px 0 6px; }
   .fg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .fg-chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  .fg-chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
   .fg-chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .fg-chip.taken { opacity: .45; text-decoration: line-through; }
+  .fg-chip.on { cursor: grab; }
+  .fg-chip.on.dragging { opacity: .4; cursor: grabbing; }
+  .fg-chip.on.drag-over-left { box-shadow: -3px 0 0 0 var(--accent); }
+  .fg-chip.on.drag-over-right { box-shadow: 3px 0 0 0 var(--accent); }
+  .fg-chip.taken { opacity: .45; text-decoration: line-through; cursor: pointer; }
+  .fg-card.dragging { opacity: .4; }
+  .fg-card.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
+  .fg-card.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
   .field-group-header { font-size: 11px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--muted); font-weight: 700; margin: 14px 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .fe-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 5px 4px 12px; font-size: 13px; }
   .fe-chip button { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 3px; font-size: 13px; line-height: 1; }
@@ -1296,8 +1303,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.35";
+const VERSION = "3.36";
 const CHANGELOG = [
+  "v3.36 — Drag to reorder field groups and the fields inside each group. Each group card has a ⋮⋮ grip on the left — grab it to drop the group above or below another; the modal section headers follow that order. Within a group, the \"on\" chips (the ones already assigned) are draggable: grab one and drop it left/right of a sibling to change the order fields render under that section header. OFF chips still click-to-add; ON chips still click-to-remove.",
   "v3.35 — Field groups. In Manage → Custom fields, scroll to the new Groups section and define named groups (e.g. \"Product configuration\", \"Cost & price\"), then tap any custom-field chip to add it to that group. On the card modal those fields render under their group's section header instead of in the default flat list. A field can live in only one group at a time (adding it elsewhere moves it); ungrouped fields keep their existing Display-order slot. Per workspace: Planner and Innovation each have their own groups. Persists to the sentinel row __field_groups__.",
   "v3.34 — New sort option: Last image added. In Filter & Sort → Sort by, pick \"Last image added\" to order cards by the newest-dated image in their gallery (newest first by default; cards with no dated images sink to the end). On the Gallery view it also re-orders the individual tiles by each image's own addedAt, so the newest uploads from any card lead the grid.",
   "v3.33 — Highlighting now works inside the card modal too. Note rows and expanded email bodies are rich-text editable (contenteditable), so selecting text in the editor shows the floating ✨ Highlight pill just like on the Notes feed. Modal highlights sync into modalNoteEntries / modalEmails on apply and persist with Save (no DB write mid-edit, so Cancel still discards). Replaces the v3.32 textareas that only showed <mark> tags as literal text.",
@@ -2862,6 +2870,23 @@ async function saveFieldGroups() {
 function addFieldGroup(name) { const n = (name || "").trim(); if (!n) return; fieldGroups.push({ id: fieldGroupId(), name: n, fields: [] }); saveFieldGroups(); renderFieldsEditor(); }
 function renameFieldGroup(id, name) { const g = fieldGroups.find(x => x.id === id); if (!g) return; const n = (name || "").trim(); if (!n || n === g.name) return; g.name = n; saveFieldGroups(); }
 function removeFieldGroup(id) { fieldGroups = fieldGroups.filter(x => x.id !== id); saveFieldGroups(); renderFieldsEditor(); }
+// Reorder groups by moving index fromIdx to toIdx; dropping on the top half of a card inserts above, bottom half below.
+function reorderFieldGroup(fromIdx, toIdx) {
+  if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= fieldGroups.length) return;
+  const [moved] = fieldGroups.splice(fromIdx, 1);
+  if (fromIdx < toIdx) toIdx--;
+  fieldGroups.splice(toIdx, 0, moved);
+  saveFieldGroups(); renderFieldGroupsEditor();
+}
+// Reorder a field WITHIN its group so the modal renders fields in that order under the section header.
+function reorderFieldInGroup(groupId, fromIdx, toIdx) {
+  const g = fieldGroups.find(x => x.id === groupId); if (!g) return;
+  if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= g.fields.length) return;
+  const [moved] = g.fields.splice(fromIdx, 1);
+  if (fromIdx < toIdx) toIdx--;
+  g.fields.splice(toIdx, 0, moved);
+  saveFieldGroups(); renderFieldGroupsEditor();
+}
 // Add or remove a field from a group. A field can belong to one group at a time — adding to group B removes
 // it from group A so the modal doesn't render it twice.
 function setFieldInGroup(groupId, fieldName, on) {
@@ -6585,23 +6610,62 @@ function renderFieldGroupsEditor() {
   box.innerHTML = "";
   if (!fieldGroups.length) { const e = document.createElement("div"); e.className = "fe-none"; e.textContent = "No groups yet. Add one below to bundle fields."; box.appendChild(e); return; }
   const takenByOther = (gid, name) => fieldGroups.some(g => g.id !== gid && g.fields.includes(name));
-  fieldGroups.forEach(g => {
-    const card = document.createElement("div"); card.className = "fg-card";
+  fieldGroups.forEach((g, idx) => {
+    const card = document.createElement("div"); card.className = "fg-card"; card.dataset.idx = String(idx);
+    // Drag-to-reorder: grab the ⋮⋮ handle to flip the card into draggable mode. Mirrors fieldEditorCard so
+    // behavior is consistent between the fields list and the groups list.
     const top = document.createElement("div"); top.className = "fg-top";
+    const grip = document.createElement("span"); grip.className = "fe-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
+    grip.addEventListener("mousedown", () => { card.draggable = true; });
+    grip.addEventListener("mouseup", () => { card.draggable = false; });
+    card.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
+    card.addEventListener("dragend", () => { card.classList.remove("dragging"); card.draggable = false; document.querySelectorAll(".fg-card.drag-over-top,.fg-card.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+    card.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = card.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; card.classList.toggle("drag-over-top", above); card.classList.toggle("drag-over-bot", !above); });
+    card.addEventListener("dragleave", () => card.classList.remove("drag-over-top", "drag-over-bot"));
+    card.addEventListener("drop", e => { e.preventDefault(); const from = +e.dataTransfer.getData("text/plain"); const r = card.getBoundingClientRect(); const to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1); card.classList.remove("drag-over-top", "drag-over-bot"); if (!isNaN(from)) reorderFieldGroup(from, to); });
     const nm = document.createElement("input"); nm.className = "fg-name"; nm.value = g.name; nm.title = "Group name";
     nm.onchange = () => { renameFieldGroup(g.id, nm.value); };
     const del = document.createElement("button"); del.className = "fg-del"; del.type = "button"; del.textContent = "Remove"; del.onclick = () => { if (confirm('Remove group "' + g.name + '"? Its fields stay as custom fields, just ungrouped.')) removeFieldGroup(g.id); };
-    top.appendChild(nm); top.appendChild(del); card.appendChild(top);
+    top.appendChild(grip); top.appendChild(nm); top.appendChild(del); card.appendChild(top);
     const lab = document.createElement("div"); lab.className = "fg-picker-lab"; lab.textContent = "Fields in this group";
     card.appendChild(lab);
     const chips = document.createElement("div"); chips.className = "fg-chips";
     if (!fieldsList.length) { const e = document.createElement("span"); e.className = "fe-none"; e.textContent = "No custom fields exist yet."; chips.appendChild(e); }
+    // Render ON chips first (in g.fields order) with drag-to-reorder; OFF/other-group chips come after and
+    // only respond to click. Drag within the ON row updates g.fields; dragging an ON chip over an OFF chip
+    // is a no-op (ignored by dragover).
+    g.fields.forEach((name, chipIdx) => {
+      const f = fieldsList.find(x => x.name === name); if (!f) return;
+      const chip = document.createElement("div"); chip.className = "fg-chip on"; chip.textContent = f.name; chip.title = "Drag to reorder, click to remove";
+      chip.draggable = true; chip.dataset.chipIdx = String(chipIdx);
+      chip.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", "chip:" + g.id + ":" + chipIdx); e.dataTransfer.effectAllowed = "move"; chip.classList.add("dragging"); });
+      chip.addEventListener("dragend", () => { chip.classList.remove("dragging"); document.querySelectorAll(".fg-chip.on.drag-over-left,.fg-chip.on.drag-over-right").forEach(c => c.classList.remove("drag-over-left", "drag-over-right")); });
+      chip.addEventListener("dragover", e => {
+        const raw = e.dataTransfer && e.dataTransfer.types.includes("text/plain"); if (!raw) return;
+        // Only accept drops from the same group's ON row — the DataTransfer payload encodes the source group id.
+        e.preventDefault(); e.dataTransfer.dropEffect = "move";
+        const r = chip.getBoundingClientRect(); const left = e.clientX < r.left + r.width / 2;
+        chip.classList.toggle("drag-over-left", left); chip.classList.toggle("drag-over-right", !left);
+      });
+      chip.addEventListener("dragleave", () => chip.classList.remove("drag-over-left", "drag-over-right"));
+      chip.addEventListener("drop", e => {
+        e.preventDefault(); const payload = e.dataTransfer.getData("text/plain") || "";
+        chip.classList.remove("drag-over-left", "drag-over-right");
+        if (!payload.startsWith("chip:")) return;
+        const [, srcGid, srcIdxStr] = payload.split(":"); if (srcGid !== g.id) return;
+        const r = chip.getBoundingClientRect(); const to = chipIdx + (e.clientX < r.left + r.width / 2 ? 0 : 1);
+        reorderFieldInGroup(g.id, +srcIdxStr, to);
+      });
+      // Click to remove — matches the toggle semantics of the OFF chips below.
+      chip.addEventListener("click", () => setFieldInGroup(g.id, f.name, false));
+      chips.appendChild(chip);
+    });
     fieldsList.forEach(f => {
-      const on = g.fields.includes(f.name);
-      const taken = !on && takenByOther(g.id, f.name);
-      const chip = document.createElement("button"); chip.type = "button"; chip.className = "fg-chip" + (on ? " on" : "") + (taken ? " taken" : "");
-      chip.textContent = f.name; chip.title = taken ? "Already in another group — click to move it here" : "";
-      chip.onclick = () => setFieldInGroup(g.id, f.name, !on);
+      if (g.fields.includes(f.name)) return;
+      const taken = takenByOther(g.id, f.name);
+      const chip = document.createElement("button"); chip.type = "button"; chip.className = "fg-chip" + (taken ? " taken" : "");
+      chip.textContent = f.name; chip.title = taken ? "Already in another group — click to move it here" : "Click to add to this group";
+      chip.onclick = () => setFieldInGroup(g.id, f.name, true);
       chips.appendChild(chip);
     });
     card.appendChild(chips);
