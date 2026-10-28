@@ -447,16 +447,35 @@
   .fg-del:hover { border-color: var(--danger); }
   .fg-picker-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin: 10px 0 6px; }
   .fg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .fg-chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
-  .fg-chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .fg-chip.on { cursor: grab; }
-  .fg-chip.on.dragging { opacity: .4; cursor: grabbing; }
-  .fg-chip.on.drag-over-left { box-shadow: -3px 0 0 0 var(--accent); }
-  .fg-chip.on.drag-over-right { box-shadow: 3px 0 0 0 var(--accent); }
+  .fg-chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .fg-chip.on { background: var(--accent); color: #fff; border-color: var(--accent); padding: 2px 4px 2px 2px; cursor: default; }
+  .fg-chip-name { padding: 0 6px; cursor: pointer; }
+  .fg-chip-name:hover { text-decoration: line-through; opacity: .85; }
+  .fg-chip-arrow { background: rgba(255,255,255,.18); color: #fff; border: 0; border-radius: 999px; width: 18px; height: 18px; padding: 0; font-size: 10px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .fg-chip-arrow:disabled { opacity: .25; cursor: default; }
+  .fg-chip-arrow:not(:disabled):hover { background: rgba(255,255,255,.32); }
+  .fg-width { display: inline-flex; gap: 2px; margin-left: 4px; background: rgba(0,0,0,.18); border-radius: 999px; padding: 2px; }
+  .fg-width-b { background: transparent; color: #fff; border: 0; border-radius: 999px; width: 20px; height: 18px; padding: 0; font-size: 10px; line-height: 1; cursor: pointer; }
+  .fg-width-b.on { background: #fff; color: var(--accent); font-weight: 700; }
   .fg-chip.taken { opacity: .45; text-decoration: line-through; cursor: pointer; }
+  .fg-color-wrap { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; background: var(--panel); }
+  .fg-color { width: 28px; height: 22px; border: 0; padding: 0; background: transparent; cursor: pointer; }
+  .fg-color-reset { background: transparent; color: var(--muted); border: 0; border-radius: 4px; padding: 0 4px; cursor: pointer; font-size: 11px; }
+  .fg-color-reset:hover { color: var(--danger); }
   .fg-card.dragging { opacity: .4; }
   .fg-card.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
   .fg-card.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
+  /* Modal section — a card-like block with the group's accent color on the left rail and header text. */
+  .field-group-section { --group-color: var(--muted); margin: 18px 0; padding: 12px 14px 4px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--group-color) 6%, var(--panel-2)); border-left: 4px solid var(--group-color); }
+  .field-group-section .field-group-header { font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--group-color); font-weight: 700; margin: 0 0 10px; padding: 0; border: 0; }
+  .field-group-fields { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px 14px; }
+  .field-group-fields > .field { grid-column: span 12; margin-bottom: 10px; }
+  .field-group-fields > .field.w-half { grid-column: span 6; }
+  .field-group-fields > .field.w-third { grid-column: span 4; }
+  @media (max-width: 640px) {
+    .field-group-fields > .field.w-half, .field-group-fields > .field.w-third { grid-column: span 12; }
+  }
+  /* Ungrouped section header (legacy class, kept for safety when a group header lands outside a section). */
   .field-group-header { font-size: 11px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--muted); font-weight: 700; margin: 14px 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .fe-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 5px 4px 12px; font-size: 13px; }
   .fe-chip button { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 3px; font-size: 13px; line-height: 1; }
@@ -1303,8 +1322,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.36";
+const VERSION = "3.37";
 const CHANGELOG = [
+  "v3.37 — Field groups: sections now render as colored cards in the card modal, and each field can be sized ⅓, ½ or full width inside its section. In Manage → Custom fields → Groups, each group card has a color swatch (click to pick, ✕ to reset to muted default) that sets the modal section's left-rail + header color; each ON chip gets ◀ ▶ arrows (reorder) + ⅓/½/1 toggles (width). Fields render in a 12-column grid under their section header so three ⅓ fields fit on one row. Replaces the v3.36 chip drag — the drag was clashing with the group-card drag and swallowing group reorders; arrows don't ambiguate.",
   "v3.36 — Drag to reorder field groups and the fields inside each group. Each group card has a ⋮⋮ grip on the left — grab it to drop the group above or below another; the modal section headers follow that order. Within a group, the \"on\" chips (the ones already assigned) are draggable: grab one and drop it left/right of a sibling to change the order fields render under that section header. OFF chips still click-to-add; ON chips still click-to-remove.",
   "v3.35 — Field groups. In Manage → Custom fields, scroll to the new Groups section and define named groups (e.g. \"Product configuration\", \"Cost & price\"), then tap any custom-field chip to add it to that group. On the card modal those fields render under their group's section header instead of in the default flat list. A field can live in only one group at a time (adding it elsewhere moves it); ungrouped fields keep their existing Display-order slot. Per workspace: Planner and Innovation each have their own groups. Persists to the sentinel row __field_groups__.",
   "v3.34 — New sort option: Last image added. In Filter & Sort → Sort by, pick \"Last image added\" to order cards by the newest-dated image in their gallery (newest first by default; cards with no dated images sink to the end). On the Gallery view it also re-orders the individual tiles by each image's own addedAt, so the newest uploads from any card lead the grid.",
@@ -2690,7 +2710,14 @@ async function loadLists() {
         fieldGroups = m.groups.map(g => ({
           id: (g && g.id) || fieldGroupId(),
           name: String((g && g.name) || "").trim(),
-          fields: Array.isArray(g && g.fields) ? g.fields.filter(x => typeof x === "string") : [],
+          color: /^#[0-9a-f]{3,8}$/i.test(g && g.color) ? g.color : "",
+          // Fields in a group used to be a flat [string] list; v3.37 upgraded to [{name, width}] so each
+          // field can declare its render width inside the section ("full" | "half" | "third"). Tolerate the
+          // old shape — read it as full-width.
+          fields: Array.isArray(g && g.fields) ? g.fields.map(x => {
+            if (typeof x === "string") return { name: x, width: "full" };
+            const w = x && x.width; return { name: String((x && x.name) || ""), width: ["full", "half", "third"].includes(w) ? w : "full" };
+          }).filter(x => x.name) : [],
         })).filter(g => g.name);
       }
     } catch (e) {}
@@ -2867,7 +2894,14 @@ async function saveFieldGroups() {
   afterListsChanged();
 }
 // Add a new empty group with the given name.
-function addFieldGroup(name) { const n = (name || "").trim(); if (!n) return; fieldGroups.push({ id: fieldGroupId(), name: n, fields: [] }); saveFieldGroups(); renderFieldsEditor(); }
+function addFieldGroup(name) { const n = (name || "").trim(); if (!n) return; fieldGroups.push({ id: fieldGroupId(), name: n, color: "", fields: [] }); saveFieldGroups(); renderFieldsEditor(); }
+function setFieldGroupColor(id, color) { const g = fieldGroups.find(x => x.id === id); if (!g) return; g.color = /^#[0-9a-f]{3,8}$/i.test(color) ? color : ""; saveFieldGroups(); renderFieldGroupsEditor(); }
+function setFieldWidthInGroup(groupId, fieldName, width) {
+  const g = fieldGroups.find(x => x.id === groupId); if (!g) return;
+  const entry = g.fields.find(f => f.name === fieldName); if (!entry) return;
+  entry.width = ["full", "half", "third"].includes(width) ? width : "full";
+  saveFieldGroups(); renderFieldGroupsEditor();
+}
 function renameFieldGroup(id, name) { const g = fieldGroups.find(x => x.id === id); if (!g) return; const n = (name || "").trim(); if (!n || n === g.name) return; g.name = n; saveFieldGroups(); }
 function removeFieldGroup(id) { fieldGroups = fieldGroups.filter(x => x.id !== id); saveFieldGroups(); renderFieldsEditor(); }
 // Reorder groups by moving index fromIdx to toIdx; dropping on the top half of a card inserts above, bottom half below.
@@ -2888,20 +2922,21 @@ function reorderFieldInGroup(groupId, fromIdx, toIdx) {
   saveFieldGroups(); renderFieldGroupsEditor();
 }
 // Add or remove a field from a group. A field can belong to one group at a time — adding to group B removes
-// it from group A so the modal doesn't render it twice.
+// it from group A so the modal doesn't render it twice. New additions default to full width; the group
+// editor exposes ⅓ ½ 1 toggles to change that.
 function setFieldInGroup(groupId, fieldName, on) {
   const g = fieldGroups.find(x => x.id === groupId); if (!g) return;
   if (on) {
-    fieldGroups.forEach(x => { if (x.id !== groupId) x.fields = x.fields.filter(n => n !== fieldName); });
-    if (!g.fields.includes(fieldName)) g.fields.push(fieldName);
+    fieldGroups.forEach(x => { if (x.id !== groupId) x.fields = x.fields.filter(f => f.name !== fieldName); });
+    if (!g.fields.some(f => f.name === fieldName)) g.fields.push({ name: fieldName, width: "full" });
   } else {
-    g.fields = g.fields.filter(n => n !== fieldName);
+    g.fields = g.fields.filter(f => f.name !== fieldName);
   }
   saveFieldGroups(); renderFieldsEditor();
 }
 // All field names currently assigned to any group — modal uses this to know which fields render inside their
 // group block vs. in the ungrouped section.
-function groupedFieldNames() { const s = new Set(); fieldGroups.forEach(g => g.fields.forEach(n => s.add(n))); return s; }
+function groupedFieldNames() { const s = new Set(); fieldGroups.forEach(g => g.fields.forEach(f => s.add(f.name))); return s; }
 // Global brand-color writes — localStorage-only, workspace-agnostic. Both Planner and Innovation reflect
 // the change on next render.
 // Persist the current global brand-color map to Supabase (the __brand_colors_db__ sentinel row). Chatty saves are
@@ -3091,7 +3126,7 @@ async function removeList(kind, item) {
   if (kind === "field") {
     // Pull the deleted field out of any field group so the modal doesn't try to render a ghost section item.
     let touched = false;
-    fieldGroups.forEach(g => { const before = g.fields.length; g.fields = g.fields.filter(n => n !== item.name); if (g.fields.length !== before) touched = true; });
+    fieldGroups.forEach(g => { const before = g.fields.length; g.fields = g.fields.filter(f => f.name !== item.name); if (g.fields.length !== before) touched = true; });
     if (touched) await saveFieldGroups();
     await refetch();
   }
@@ -3126,7 +3161,7 @@ function cascadeRenameLocal(kind, old, neu) {
   if (kind === "field") {
     // Keep group memberships pointing at the new name so renaming a grouped field doesn't drop it from its section.
     let touched = false;
-    fieldGroups.forEach(g => { const i = g.fields.indexOf(old); if (i >= 0) { g.fields[i] = neu; touched = true; } });
+    fieldGroups.forEach(g => { const entry = g.fields.find(f => f.name === old); if (entry) { entry.name = neu; touched = true; } });
     if (touched) saveFieldGroups();
   }
   if (kind === "brand") {
@@ -6122,11 +6157,21 @@ function renderFieldInputs(values) {
   //    reorderCustomFieldsInModal (which skips grouped wrappers so they stay anchored to their header).
   const grouped = groupedFieldNames();
   fieldGroups.forEach(g => {
-    const groupFields = g.fields.map(n => fieldsList.find(f => f.name === n)).filter(Boolean);
-    if (!groupFields.length) return;
-    const header = document.createElement("div"); header.className = "field-group-header"; header.textContent = g.name; header.dataset.groupId = g.id;
-    box.appendChild(header);
-    groupFields.forEach(f => box.appendChild(_renderOneFieldWrapper(f, (values && values[f.name]) || "")));
+    // Each entry is {name, width}; dereference to the field definition and skip entries whose field no longer exists.
+    const resolved = g.fields.map(e => ({ f: fieldsList.find(x => x.name === e.name), width: e.width || "full" })).filter(x => x.f);
+    if (!resolved.length) return;
+    const section = document.createElement("div"); section.className = "field-group-section"; section.dataset.groupId = g.id;
+    if (g.color) section.style.setProperty("--group-color", g.color);
+    const header = document.createElement("div"); header.className = "field-group-header"; header.textContent = g.name;
+    section.appendChild(header);
+    const inner = document.createElement("div"); inner.className = "field-group-fields";
+    resolved.forEach(({ f, width }) => {
+      const w = _renderOneFieldWrapper(f, (values && values[f.name]) || "");
+      w.classList.add(width === "half" ? "w-half" : width === "third" ? "w-third" : "w-full");
+      inner.appendChild(w);
+    });
+    section.appendChild(inner);
+    box.appendChild(section);
   });
   fieldsList.forEach(f => {
     if (grouped.has(f.name)) return;
@@ -6609,59 +6654,66 @@ function renderFieldGroupsEditor() {
   const box = document.getElementById("fieldGroupsEditor"); if (!box) return;
   box.innerHTML = "";
   if (!fieldGroups.length) { const e = document.createElement("div"); e.className = "fe-none"; e.textContent = "No groups yet. Add one below to bundle fields."; box.appendChild(e); return; }
-  const takenByOther = (gid, name) => fieldGroups.some(g => g.id !== gid && g.fields.includes(name));
+  const takenByOther = (gid, name) => fieldGroups.some(g => g.id !== gid && g.fields.some(f => f.name === name));
   fieldGroups.forEach((g, idx) => {
     const card = document.createElement("div"); card.className = "fg-card"; card.dataset.idx = String(idx);
+    if (g.color) card.style.setProperty("--group-color", g.color);
     // Drag-to-reorder: grab the ⋮⋮ handle to flip the card into draggable mode. Mirrors fieldEditorCard so
     // behavior is consistent between the fields list and the groups list.
     const top = document.createElement("div"); top.className = "fg-top";
     const grip = document.createElement("span"); grip.className = "fe-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
     grip.addEventListener("mousedown", () => { card.draggable = true; });
     grip.addEventListener("mouseup", () => { card.draggable = false; });
-    card.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
+    card.addEventListener("dragstart", e => { const payload = e.dataTransfer.getData("text/plain"); if (payload) return; e.dataTransfer.setData("text/plain", "group:" + idx); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
     card.addEventListener("dragend", () => { card.classList.remove("dragging"); card.draggable = false; document.querySelectorAll(".fg-card.drag-over-top,.fg-card.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
-    card.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = card.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; card.classList.toggle("drag-over-top", above); card.classList.toggle("drag-over-bot", !above); });
+    card.addEventListener("dragover", e => { const types = e.dataTransfer && e.dataTransfer.types; if (!types || !types.includes("text/plain")) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = card.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; card.classList.toggle("drag-over-top", above); card.classList.toggle("drag-over-bot", !above); });
     card.addEventListener("dragleave", () => card.classList.remove("drag-over-top", "drag-over-bot"));
-    card.addEventListener("drop", e => { e.preventDefault(); const from = +e.dataTransfer.getData("text/plain"); const r = card.getBoundingClientRect(); const to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1); card.classList.remove("drag-over-top", "drag-over-bot"); if (!isNaN(from)) reorderFieldGroup(from, to); });
+    card.addEventListener("drop", e => { const payload = e.dataTransfer.getData("text/plain") || ""; card.classList.remove("drag-over-top", "drag-over-bot"); if (!payload.startsWith("group:")) return; e.preventDefault(); const from = +payload.slice(6); const r = card.getBoundingClientRect(); const to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1); if (!isNaN(from)) reorderFieldGroup(from, to); });
     const nm = document.createElement("input"); nm.className = "fg-name"; nm.value = g.name; nm.title = "Group name";
     nm.onchange = () => { renameFieldGroup(g.id, nm.value); };
+    // Color picker — sets the group's accent color used by the modal section header. A tiny Reset ✕ clears
+    // it back to the default muted tone.
+    const colorWrap = document.createElement("label"); colorWrap.className = "fg-color-wrap"; colorWrap.title = "Section accent color";
+    const colorInp = document.createElement("input"); colorInp.type = "color"; colorInp.className = "fg-color"; colorInp.value = g.color || "#7aa2ff";
+    colorInp.onchange = () => setFieldGroupColor(g.id, colorInp.value);
+    colorWrap.appendChild(colorInp);
+    if (g.color) {
+      const reset = document.createElement("button"); reset.type = "button"; reset.className = "fg-color-reset"; reset.textContent = "✕"; reset.title = "Clear color";
+      reset.onclick = (e) => { e.preventDefault(); setFieldGroupColor(g.id, ""); };
+      colorWrap.appendChild(reset);
+    }
     const del = document.createElement("button"); del.className = "fg-del"; del.type = "button"; del.textContent = "Remove"; del.onclick = () => { if (confirm('Remove group "' + g.name + '"? Its fields stay as custom fields, just ungrouped.')) removeFieldGroup(g.id); };
-    top.appendChild(grip); top.appendChild(nm); top.appendChild(del); card.appendChild(top);
+    top.appendChild(grip); top.appendChild(nm); top.appendChild(colorWrap); top.appendChild(del); card.appendChild(top);
     const lab = document.createElement("div"); lab.className = "fg-picker-lab"; lab.textContent = "Fields in this group";
     card.appendChild(lab);
     const chips = document.createElement("div"); chips.className = "fg-chips";
     if (!fieldsList.length) { const e = document.createElement("span"); e.className = "fe-none"; e.textContent = "No custom fields exist yet."; chips.appendChild(e); }
-    // Render ON chips first (in g.fields order) with drag-to-reorder; OFF/other-group chips come after and
-    // only respond to click. Drag within the ON row updates g.fields; dragging an ON chip over an OFF chip
-    // is a no-op (ignored by dragover).
-    g.fields.forEach((name, chipIdx) => {
-      const f = fieldsList.find(x => x.name === name); if (!f) return;
-      const chip = document.createElement("div"); chip.className = "fg-chip on"; chip.textContent = f.name; chip.title = "Drag to reorder, click to remove";
-      chip.draggable = true; chip.dataset.chipIdx = String(chipIdx);
-      chip.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", "chip:" + g.id + ":" + chipIdx); e.dataTransfer.effectAllowed = "move"; chip.classList.add("dragging"); });
-      chip.addEventListener("dragend", () => { chip.classList.remove("dragging"); document.querySelectorAll(".fg-chip.on.drag-over-left,.fg-chip.on.drag-over-right").forEach(c => c.classList.remove("drag-over-left", "drag-over-right")); });
-      chip.addEventListener("dragover", e => {
-        const raw = e.dataTransfer && e.dataTransfer.types.includes("text/plain"); if (!raw) return;
-        // Only accept drops from the same group's ON row — the DataTransfer payload encodes the source group id.
-        e.preventDefault(); e.dataTransfer.dropEffect = "move";
-        const r = chip.getBoundingClientRect(); const left = e.clientX < r.left + r.width / 2;
-        chip.classList.toggle("drag-over-left", left); chip.classList.toggle("drag-over-right", !left);
+    // Render ON chips first (in g.fields order) with drag-to-reorder + width toggle (⅓ ½ 1); OFF/other-group
+    // chips come after and only respond to click. Drag within the ON row updates g.fields; dragging an ON
+    // chip over an OFF chip is a no-op (payload sentinel + srcGid check guard against it).
+    // ON chips: a left-arrow + name + right-arrow + width toggle (⅓ ½ 1). The arrows do the reordering so the
+    // whole chip is NOT draggable (dragging it was fighting the group-card drag). The chip stays clickable on
+    // the name span to remove it from the group.
+    g.fields.forEach((entry, chipIdx) => {
+      const f = fieldsList.find(x => x.name === entry.name); if (!f) return;
+      const chip = document.createElement("div"); chip.className = "fg-chip on"; chip.title = "Click name to remove, arrows to reorder, ⅓ ½ 1 to set width";
+      const left = document.createElement("button"); left.type = "button"; left.className = "fg-chip-arrow"; left.textContent = "◀"; left.title = "Move left"; left.disabled = chipIdx === 0;
+      left.addEventListener("click", e => { e.stopPropagation(); reorderFieldInGroup(g.id, chipIdx, chipIdx - 1); });
+      const nameSpan = document.createElement("span"); nameSpan.className = "fg-chip-name"; nameSpan.textContent = f.name;
+      nameSpan.addEventListener("click", () => setFieldInGroup(g.id, f.name, false));
+      const right = document.createElement("button"); right.type = "button"; right.className = "fg-chip-arrow"; right.textContent = "▶"; right.title = "Move right"; right.disabled = chipIdx === g.fields.length - 1;
+      right.addEventListener("click", e => { e.stopPropagation(); reorderFieldInGroup(g.id, chipIdx, chipIdx + 2); });
+      const wrap = document.createElement("span"); wrap.className = "fg-width";
+      [["third", "⅓"], ["half", "½"], ["full", "1"]].forEach(([w, lbl]) => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "fg-width-b" + (entry.width === w ? " on" : ""); b.textContent = lbl; b.title = w === "full" ? "Full width" : w === "half" ? "Half width" : "Third width";
+        b.addEventListener("click", e => { e.stopPropagation(); setFieldWidthInGroup(g.id, f.name, w); });
+        wrap.appendChild(b);
       });
-      chip.addEventListener("dragleave", () => chip.classList.remove("drag-over-left", "drag-over-right"));
-      chip.addEventListener("drop", e => {
-        e.preventDefault(); const payload = e.dataTransfer.getData("text/plain") || "";
-        chip.classList.remove("drag-over-left", "drag-over-right");
-        if (!payload.startsWith("chip:")) return;
-        const [, srcGid, srcIdxStr] = payload.split(":"); if (srcGid !== g.id) return;
-        const r = chip.getBoundingClientRect(); const to = chipIdx + (e.clientX < r.left + r.width / 2 ? 0 : 1);
-        reorderFieldInGroup(g.id, +srcIdxStr, to);
-      });
-      // Click to remove — matches the toggle semantics of the OFF chips below.
-      chip.addEventListener("click", () => setFieldInGroup(g.id, f.name, false));
+      chip.appendChild(left); chip.appendChild(nameSpan); chip.appendChild(right); chip.appendChild(wrap);
       chips.appendChild(chip);
     });
     fieldsList.forEach(f => {
-      if (g.fields.includes(f.name)) return;
+      if (g.fields.some(x => x.name === f.name)) return;
       const taken = takenByOther(g.id, f.name);
       const chip = document.createElement("button"); chip.type = "button"; chip.className = "fg-chip" + (taken ? " taken" : "");
       chip.textContent = f.name; chip.title = taken ? "Already in another group — click to move it here" : "Click to add to this group";
