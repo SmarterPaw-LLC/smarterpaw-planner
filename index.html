@@ -438,6 +438,19 @@
   .fe-opts { margin-top: 11px; border-top: 1px solid var(--line); padding-top: 10px; }
   .fe-opts-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-bottom: 7px; }
   .fe-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+  .fe-groups-title { font-size: 15px; margin: 18px 0 4px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .fields-groups { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 12px; }
+  .fg-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel-2); }
+  .fg-top { display: flex; gap: 8px; align-items: center; }
+  .fg-name { flex: 1; font-size: 14px; font-weight: 600; padding: 6px 8px; }
+  .fg-del { background: transparent; color: var(--danger); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+  .fg-del:hover { border-color: var(--danger); }
+  .fg-picker-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin: 10px 0 6px; }
+  .fg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fg-chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  .fg-chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .fg-chip.taken { opacity: .45; text-decoration: line-through; }
+  .field-group-header { font-size: 11px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--muted); font-weight: 700; margin: 14px 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .fe-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 5px 4px 12px; font-size: 13px; }
   .fe-chip button { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 3px; font-size: 13px; line-height: 1; }
   .fe-chip button:hover { color: var(--danger); }
@@ -1135,13 +1148,17 @@
 
 <!-- Custom fields editor -->
 <div class="overlay" id="fieldsOverlay">
-  <div class="modal" style="width:560px">
+  <div class="modal" style="width:620px">
     <button class="modal-x" id="fieldsX" title="Close">✕</button>
     <h2>Custom fields</h2>
     <div class="hint">Fields show on every deliverable and as a column in Grid/List. <b>Dropdown</b> picks one option; <b>Multi-select</b> picks several.</div>
     <div class="fields-sort-row"><button type="button" id="fSortAZ" class="ghost" title="Sort fields A-Z and persist">⇅ Sort A–Z</button></div>
     <div id="fieldsEditor" class="fields-editor"></div>
     <div class="add-row"><input id="fAddField" placeholder="New field name (e.g. Priority, Budget)…" autocomplete="off" /><button class="primary" id="fAddFieldBtn">Add field</button></div>
+    <h3 class="fe-groups-title">Groups</h3>
+    <div class="hint">Bundle related fields under a labeled section header in the card modal. A field can belong to one group at a time; ungrouped fields render alone at the bottom.</div>
+    <div id="fieldGroupsEditor" class="fields-groups"></div>
+    <div class="add-row"><input id="fAddGroup" placeholder="New group name (e.g. Product configuration)…" autocomplete="off" /><button class="primary" id="fAddGroupBtn">Add group</button></div>
     <div class="modal-actions"><div class="spacer"></div><button id="fieldsDone">Done</button></div>
   </div>
 </div>
@@ -1279,8 +1296,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.34";
+const VERSION = "3.35";
 const CHANGELOG = [
+  "v3.35 — Field groups. In Manage → Custom fields, scroll to the new Groups section and define named groups (e.g. \"Product configuration\", \"Cost & price\"), then tap any custom-field chip to add it to that group. On the card modal those fields render under their group's section header instead of in the default flat list. A field can live in only one group at a time (adding it elsewhere moves it); ungrouped fields keep their existing Display-order slot. Per workspace: Planner and Innovation each have their own groups. Persists to the sentinel row __field_groups__.",
   "v3.34 — New sort option: Last image added. In Filter & Sort → Sort by, pick \"Last image added\" to order cards by the newest-dated image in their gallery (newest first by default; cards with no dated images sink to the end). On the Gallery view it also re-orders the individual tiles by each image's own addedAt, so the newest uploads from any card lead the grid.",
   "v3.33 — Highlighting now works inside the card modal too. Note rows and expanded email bodies are rich-text editable (contenteditable), so selecting text in the editor shows the floating ✨ Highlight pill just like on the Notes feed. Modal highlights sync into modalNoteEntries / modalEmails on apply and persist with Save (no DB write mid-edit, so Cancel still discards). Replaces the v3.32 textareas that only showed <mark> tags as literal text.",
   "v3.32 — Highlight text in notes and emails. Select text in an email body or dated note row (anywhere in the Notes view), click the floating ✨ Highlight pill, and the selection gets wrapped in a yellow <mark>. Legible in both light and dark themes. Persists per-email or per-note on the card. Modal textarea editing shows the mark tags verbatim so you can remove or move them manually.",
@@ -1538,6 +1556,14 @@ const BRAND_COLORS_DB_KEY = "__brand_colors_db__";
 let _brandColorsDbRowId = null;
 // Legacy sentinel key — still filtered out of fieldsList so existing rows don't pollute the fields editor.
 const BRAND_DARK_COLORS_KEY = "__brand_dark_colors__";
+// Field groups — a workspace-scoped sentinel row (`kind=field`, name=FIELD_GROUPS_KEY) holding
+// `{groups: [{id, name, fields: [name,...]}]}`. Groups let the user bundle related custom fields (e.g.
+// "Product configuration", "Cost & price") under a labeled section header in the card modal. Loaded as
+// `fieldGroups` and persisted through saveFieldGroups().
+const FIELD_GROUPS_KEY = "__field_groups__";
+let fieldGroups = [];
+let _fieldGroupsRowId = null;
+function fieldGroupId() { return "fg" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function getBrandColorsGlobal() {
   try { const raw = localStorage.getItem(BRAND_COLORS_LS_KEY); return raw ? (JSON.parse(raw) || {}) : {}; } catch (e) { return {}; }
 }
@@ -2586,16 +2612,16 @@ function sampleData() {
 
 /* ---------- channels & people lists ---------- */
 function defaultBrands() { return BRANDS.map(b => ({ name: b.name, color: DEFAULT_BRAND_HEX[b.name] })); }
-function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList, statuses: statusList, brands: brandsList, fields: fieldsList, completeLane: completeLane })); }
+function saveListsLocal() { localStorage.setItem(LIST_KEY, JSON.stringify({ channels: channelsList, people: peopleList, statuses: statusList, brands: brandsList, fields: fieldsList, fieldGroups: fieldGroups, completeLane: completeLane })); }
 async function loadLists() {
   if (!ONLINE) {
     const raw = JSON.parse(localStorage.getItem(LIST_KEY) || "null");
     if (raw && raw.channels) {
       channelsList = raw.channels; peopleList = raw.people || []; statusList = raw.statuses || DEFAULT_STATUSES.map(n => ({ name: n }));
-      brandsList = raw.brands || defaultBrands(); fieldsList = raw.fields || []; completeLane = raw.completeLane || "";
+      brandsList = raw.brands || defaultBrands(); fieldsList = raw.fields || []; fieldGroups = Array.isArray(raw.fieldGroups) ? raw.fieldGroups : []; completeLane = raw.completeLane || "";
     } else {
       channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
-      statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = []; saveListsLocal();
+      statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = []; fieldGroups = []; saveListsLocal();
     }
     return;
   }
@@ -2615,7 +2641,7 @@ async function loadLists() {
       return;
     }
     channelsList = DEFAULT_CHANNELS.map(n => ({ name: n })); peopleList = DEFAULT_PEOPLE.map(n => ({ name: n }));
-    statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = [];
+    statusList = DEFAULT_STATUSES.map(n => ({ name: n })); brandsList = defaultBrands(); fieldsList = []; fieldGroups = [];
     if (!_listsWarned) { _listsWarned = true; toast("Lists not saved yet — run the lists SQL (0002–0004) in Supabase."); }
     return;
   }
@@ -2643,7 +2669,24 @@ async function loadLists() {
   data.filter(r => r.kind === "promotion").forEach(r => { if (r.color) promoOverrides[r.name] = { id: r.id, color: r.color }; });
   // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
   // The sentinel name PROMO_COLORS_KEY holds a JSON {promoName: hexColor} map — pulled into promoOverrides, not fieldsList.
-  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY && r.name !== FIELD_GROUPS_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  // Field groups (per-workspace). Shape: {groups: [{id, name, fields: [fieldName,...]}]}. Groups whose field
+  // list is empty are kept so the user can see / edit / remove them in the Groups editor.
+  const fgRow = data.find(r => r.kind === "field" && r.name === FIELD_GROUPS_KEY);
+  _fieldGroupsRowId = fgRow ? fgRow.id : null;
+  fieldGroups = [];
+  if (fgRow && fgRow.color) {
+    try {
+      const m = JSON.parse(fgRow.color);
+      if (m && Array.isArray(m.groups)) {
+        fieldGroups = m.groups.map(g => ({
+          id: (g && g.id) || fieldGroupId(),
+          name: String((g && g.name) || "").trim(),
+          fields: Array.isArray(g && g.fields) ? g.fields.filter(x => typeof x === "string") : [],
+        })).filter(g => g.name);
+      }
+    } catch (e) {}
+  }
   // Server-side brand-colors mirror — authoritative over whatever's in localStorage, since it survives
   // incognito / fresh browsers / team members. Load last so it wins over the legacy BRAND_DARK_COLORS_KEY migration.
   // Brand colors are GLOBAL — the sentinel row may live under any workspace's name. Query it unscoped so a row
@@ -2800,6 +2843,40 @@ async function savePromoOverrides() {
 }
 async function setPromoColor(name, color) { promoOverrides[name] = color; await savePromoOverrides(); }
 async function resetPromoColor(name) { if (!(name in promoOverrides)) return; delete promoOverrides[name]; await savePromoOverrides(); }
+// Persist the current fieldGroups to the sentinel row. Insert on first write, delete when empty.
+async function saveFieldGroups() {
+  if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
+  const empty = !fieldGroups.length;
+  const payload = JSON.stringify({ groups: fieldGroups });
+  if (_fieldGroupsRowId) {
+    if (empty) { const { error } = await db.from("lists").delete().eq("id", _fieldGroupsRowId); if (error) { toast("Save failed: " + error.message); return; } _fieldGroupsRowId = null; }
+    else { const { error } = await db.from("lists").update({ color: payload }).eq("id", _fieldGroupsRowId); if (error) { toast("Save failed: " + error.message); return; } }
+  } else if (!empty) {
+    const { data, error } = await db.from("lists").insert(wsStamp({ kind: "field", name: FIELD_GROUPS_KEY, color: payload, position: 99998 })).select("id").single();
+    if (error) { toast("Save failed: " + error.message); return; }
+    _fieldGroupsRowId = data.id;
+  }
+  afterListsChanged();
+}
+// Add a new empty group with the given name.
+function addFieldGroup(name) { const n = (name || "").trim(); if (!n) return; fieldGroups.push({ id: fieldGroupId(), name: n, fields: [] }); saveFieldGroups(); renderFieldsEditor(); }
+function renameFieldGroup(id, name) { const g = fieldGroups.find(x => x.id === id); if (!g) return; const n = (name || "").trim(); if (!n || n === g.name) return; g.name = n; saveFieldGroups(); }
+function removeFieldGroup(id) { fieldGroups = fieldGroups.filter(x => x.id !== id); saveFieldGroups(); renderFieldsEditor(); }
+// Add or remove a field from a group. A field can belong to one group at a time — adding to group B removes
+// it from group A so the modal doesn't render it twice.
+function setFieldInGroup(groupId, fieldName, on) {
+  const g = fieldGroups.find(x => x.id === groupId); if (!g) return;
+  if (on) {
+    fieldGroups.forEach(x => { if (x.id !== groupId) x.fields = x.fields.filter(n => n !== fieldName); });
+    if (!g.fields.includes(fieldName)) g.fields.push(fieldName);
+  } else {
+    g.fields = g.fields.filter(n => n !== fieldName);
+  }
+  saveFieldGroups(); renderFieldsEditor();
+}
+// All field names currently assigned to any group — modal uses this to know which fields render inside their
+// group block vs. in the ungrouped section.
+function groupedFieldNames() { const s = new Set(); fieldGroups.forEach(g => g.fields.forEach(n => s.add(n))); return s; }
 // Global brand-color writes — localStorage-only, workspace-agnostic. Both Planner and Innovation reflect
 // the change on next render.
 // Persist the current global brand-color map to Supabase (the __brand_colors_db__ sentinel row). Chatty saves are
@@ -2986,7 +3063,13 @@ async function removeList(kind, item) {
   const { error } = await db.from("lists").delete().eq("id", item.id);
   if (error) { toast("Remove failed: " + error.message); return; }
   if (kind === "brand") { clearBrandColorGlobal(item.name, null); syncBrandColorsToDB(); }   // drop both light + dark overrides from the global toolkit
-  if (kind === "field") await refetch();
+  if (kind === "field") {
+    // Pull the deleted field out of any field group so the modal doesn't try to render a ghost section item.
+    let touched = false;
+    fieldGroups.forEach(g => { const before = g.fields.length; g.fields = g.fields.filter(n => n !== item.name); if (g.fields.length !== before) touched = true; });
+    if (touched) await saveFieldGroups();
+    await refetch();
+  }
   reloadListsAndUI();
 }
 async function moveStatus(item, dir) {
@@ -3015,6 +3098,12 @@ function cascadeRenameLocal(kind, old, neu) {
     else if (kind === "person") { const o = splitOwners(c.owner); if (o.includes(old)) c.owner = o.map(x => x === old ? neu : x).join(", "); }
     else if (kind === "field" && c.fields && (old in c.fields)) { c.fields[neu] = c.fields[old]; delete c.fields[old]; }
   });
+  if (kind === "field") {
+    // Keep group memberships pointing at the new name so renaming a grouped field doesn't drop it from its section.
+    let touched = false;
+    fieldGroups.forEach(g => { const i = g.fields.indexOf(old); if (i >= 0) { g.fields[i] = neu; touched = true; } });
+    if (touched) saveFieldGroups();
+  }
   if (kind === "brand") {
     const g = getBrandColorsGlobal();
     if (g[old]) { g[neu] = g[old]; delete g[old]; saveBrandColorsGlobal(g); syncBrandColorsToDB(); }
@@ -5967,8 +6056,11 @@ function addModalSubs(lines) {
 // field precedes it in ds.dims (or right after the previous custom field if that came first).
 function reorderCustomFieldsInModal() {
   const ds = curDisp && curDisp(); if (!ds || !ds.dims) return;
+  // Fields that live inside a group stay anchored to their section header in #f_fields — reflowing them to a
+  // Display-dims slot would separate them from their group. Only ungrouped wrappers participate.
+  const grouped = groupedFieldNames();
   const wrappers = {};
-  document.querySelectorAll("#f_fields > .field").forEach(w => { const n = w.dataset.fieldName; if (n) wrappers[n] = w; });
+  document.querySelectorAll("#f_fields > .field").forEach(w => { const n = w.dataset.fieldName; if (n && !grouped.has(n)) wrappers[n] = w; });
   const anchorFor = (key) => {
     if (key === "brand" || key === "channel") return document.querySelector("#overlay .modal .row2");
     const id = { owners: "f_owners", dates: "f_due", sprint: "f_sprint", status: "f_status", priority: "f_priority", promotion: "f_promo" }[key];
@@ -5995,11 +6087,32 @@ function renderFieldInputs(values) {
   // is reused (hidden, not destroyed), so those moved wrappers stick around across opens. Clear ALL of them
   // wherever they landed — otherwise every open adds a fresh wrapper and duplicates stack up.
   document.querySelectorAll("#overlay .modal .field[data-field-name]").forEach(w => w.remove());
+  // Also strip any group-header rows left from a previous open (same lifecycle as the wrappers above).
+  document.querySelectorAll("#overlay .modal .field-group-header").forEach(h => h.remove());
   const box = document.getElementById("f_fields"); box.innerHTML = "";
+  // Render in two passes so field groups appear as a cohesive section in the modal:
+  // 1) Each group — a header followed by its fields in the configured order. Groups whose fields don't exist
+  //    (renamed/removed) stay harmless; empty groups don't paint a header.
+  // 2) Ungrouped fields in fieldsList order — these still participate in the Display-order reflow via
+  //    reorderCustomFieldsInModal (which skips grouped wrappers so they stay anchored to their header).
+  const grouped = groupedFieldNames();
+  fieldGroups.forEach(g => {
+    const groupFields = g.fields.map(n => fieldsList.find(f => f.name === n)).filter(Boolean);
+    if (!groupFields.length) return;
+    const header = document.createElement("div"); header.className = "field-group-header"; header.textContent = g.name; header.dataset.groupId = g.id;
+    box.appendChild(header);
+    groupFields.forEach(f => box.appendChild(_renderOneFieldWrapper(f, (values && values[f.name]) || "")));
+  });
   fieldsList.forEach(f => {
+    if (grouped.has(f.name)) return;
+    box.appendChild(_renderOneFieldWrapper(f, (values && values[f.name]) || ""));
+  });
+}
+// Build the DOM wrapper for a single custom field. Extracted so renderFieldInputs can emit the same markup
+// for grouped fields (under their section header) and ungrouped fields (in default position).
+function _renderOneFieldWrapper(f, cur) {
     const wrap = document.createElement("div"); wrap.className = "field"; wrap.dataset.fieldName = f.name;   // used by reorderCustomFieldsInModal to move this wrapper into Display-order position
     const lab = document.createElement("label"); lab.textContent = f.name;
-    const cur = (values && values[f.name]) || "";
     wrap.appendChild(lab);
     if (f.type === "select") {
       const inp = document.createElement("select"); inp.dataset.field = f.name;
@@ -6048,8 +6161,7 @@ function renderFieldInputs(values) {
         wrap.appendChild(inp);
       }
     }
-    box.appendChild(wrap);
-  });
+    return wrap;
 }
 
 /* ---------- modal ---------- */
@@ -6464,8 +6576,37 @@ function openFields() { renderFieldsEditor(); document.getElementById("fieldsOve
 function closeFields() { document.getElementById("fieldsOverlay").classList.remove("show"); }
 function renderFieldsEditor() {
   const box = document.getElementById("fieldsEditor"); box.innerHTML = "";
-  if (!fieldsList.length) { const e = document.createElement("div"); e.className = "fe-none"; e.textContent = "No custom fields yet. Add one below."; box.appendChild(e); return; }
-  fieldsList.forEach((f, i) => box.appendChild(fieldEditorCard(f, i)));
+  if (!fieldsList.length) { const e = document.createElement("div"); e.className = "fe-none"; e.textContent = "No custom fields yet. Add one below."; box.appendChild(e); }
+  else fieldsList.forEach((f, i) => box.appendChild(fieldEditorCard(f, i)));
+  renderFieldGroupsEditor();
+}
+function renderFieldGroupsEditor() {
+  const box = document.getElementById("fieldGroupsEditor"); if (!box) return;
+  box.innerHTML = "";
+  if (!fieldGroups.length) { const e = document.createElement("div"); e.className = "fe-none"; e.textContent = "No groups yet. Add one below to bundle fields."; box.appendChild(e); return; }
+  const takenByOther = (gid, name) => fieldGroups.some(g => g.id !== gid && g.fields.includes(name));
+  fieldGroups.forEach(g => {
+    const card = document.createElement("div"); card.className = "fg-card";
+    const top = document.createElement("div"); top.className = "fg-top";
+    const nm = document.createElement("input"); nm.className = "fg-name"; nm.value = g.name; nm.title = "Group name";
+    nm.onchange = () => { renameFieldGroup(g.id, nm.value); };
+    const del = document.createElement("button"); del.className = "fg-del"; del.type = "button"; del.textContent = "Remove"; del.onclick = () => { if (confirm('Remove group "' + g.name + '"? Its fields stay as custom fields, just ungrouped.')) removeFieldGroup(g.id); };
+    top.appendChild(nm); top.appendChild(del); card.appendChild(top);
+    const lab = document.createElement("div"); lab.className = "fg-picker-lab"; lab.textContent = "Fields in this group";
+    card.appendChild(lab);
+    const chips = document.createElement("div"); chips.className = "fg-chips";
+    if (!fieldsList.length) { const e = document.createElement("span"); e.className = "fe-none"; e.textContent = "No custom fields exist yet."; chips.appendChild(e); }
+    fieldsList.forEach(f => {
+      const on = g.fields.includes(f.name);
+      const taken = !on && takenByOther(g.id, f.name);
+      const chip = document.createElement("button"); chip.type = "button"; chip.className = "fg-chip" + (on ? " on" : "") + (taken ? " taken" : "");
+      chip.textContent = f.name; chip.title = taken ? "Already in another group — click to move it here" : "";
+      chip.onclick = () => setFieldInGroup(g.id, f.name, !on);
+      chips.appendChild(chip);
+    });
+    card.appendChild(chips);
+    box.appendChild(card);
+  });
 }
 // Reorder custom fields in place (drag-and-drop). Persists via lists.position so the order sticks everywhere the field appears.
 // Reorder fieldsList so custom fields follow the order of "field:*" entries in the given dims array.
@@ -7479,6 +7620,9 @@ async function init() {
   document.getElementById("fieldsOverlay").onclick = e => { if (e.target.id === "fieldsOverlay") closeFields(); };
   document.getElementById("fAddFieldBtn").onclick = addFl;
   document.getElementById("fAddField").addEventListener("keydown", e => { if (e.key === "Enter") addFl(); });
+  const addGrp = () => { const i = document.getElementById("fAddGroup"); const n = (i.value || "").trim(); if (!n) return; addFieldGroup(n); i.value = ""; i.focus(); };
+  const addGrpBtn = document.getElementById("fAddGroupBtn"); if (addGrpBtn) addGrpBtn.onclick = addGrp;
+  const addGrpInp = document.getElementById("fAddGroup"); if (addGrpInp) addGrpInp.addEventListener("keydown", e => { if (e.key === "Enter") addGrp(); });
 
   const menu = document.getElementById("menuOverlay");
   document.getElementById("menuBtn").onclick = () => { renderSettingsBrands(); menu.classList.add("show"); };
