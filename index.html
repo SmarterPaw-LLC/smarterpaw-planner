@@ -719,6 +719,21 @@
   .notes-alerts-row:hover { border-color: #ef4444; }
   .notes-alerts-title { flex: 1; font-weight: 600; }
   .notes-alerts-meta { font-size: 11px; color: var(--muted); }
+  .notes-alerts-note { flex: 1; min-width: 0; font-size: 12px; color: var(--text); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; }
+  .notes-alerts-owner { font-size: 11px; color: #ef4444; font-weight: 700; }
+  /* Modal alert banner — rendered at the top of the body when the card is flagged. */
+  .alert-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin: 0 0 14px; background: color-mix(in srgb, #ef4444 12%, var(--panel-2)); border: 1px solid #ef4444; border-left-width: 4px; border-radius: 8px; }
+  .alert-banner-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  .alert-banner-icon { font-size: 18px; }
+  .alert-banner-text { flex: 1; min-width: 0; }
+  .alert-banner-note { font-size: 13.5px; color: var(--text); font-weight: 600; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .alert-banner-owner { font-size: 11px; color: #ef4444; margin-top: 2px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+  .alert-banner-edit { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+  .alert-banner-edit:hover { border-color: #ef4444; color: #ef4444; }
+  /* Notes-feed per-entry alert chip — pinned to the right side of the bar. */
+  .notes-entry-alert { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; margin-left: auto; background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; max-width: 60%; }
+  .notes-entry-alert .nea-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; font-weight: 500; }
+  .notes-entry-alert .nea-owner { opacity: .85; font-size: 10px; }
   .af-push { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 4px 13px; background: transparent; }
   .af-push:hover { background: var(--accent); color: #fff; }
   #userOverlayChoices button { display: block; width: 100%; padding: 12px 14px; text-align: left; font-size: 14px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; color: var(--text); }
@@ -1069,6 +1084,18 @@
     <button class="modal-x" id="modalX" title="Close">✕</button>
     <button class="modal-alert" id="f_alert" type="button" title="Red-alert flag — pin this card to the top of every view in a red state for the whole team">🚨</button>
     <h2 id="modalTitle">New deliverable</h2>
+    <!-- Alert banner — rendered inside the modal body when the flag is on. Shows the note + owner the alerter
+         set, clickable to edit. Hidden when no alert is active. -->
+    <div id="f_alertBanner" class="alert-banner" style="display:none">
+      <div class="alert-banner-main">
+        <span class="alert-banner-icon">🚨</span>
+        <div class="alert-banner-text">
+          <div id="f_alertBannerNote" class="alert-banner-note"></div>
+          <div id="f_alertBannerOwner" class="alert-banner-owner"></div>
+        </div>
+      </div>
+      <button type="button" id="f_alertBannerEdit" class="alert-banner-edit" title="Edit alert note">Edit</button>
+    </div>
     <input type="hidden" id="f_id" />
     <!-- Cover photo. Click to upload (resized client-side), paste a URL, or drag-and-drop an image file. -->
     <div class="field cover-field">
@@ -1222,6 +1249,23 @@
 </div>
 
 <!-- Export -->
+<!-- Alert note editor — opens when the user flips the 🚨 flag ON (or clicks Edit on the banner). Captures a
+     short note + the owner so the whole team sees who flagged it and why. -->
+<div class="overlay" id="alertNoteOverlay">
+  <div class="modal" style="width:460px">
+    <button class="modal-x" id="alertNoteX" title="Close">✕</button>
+    <h2>🚨 Set alert note</h2>
+    <div class="hint">A short note explaining what needs attention. Everyone on the team sees this at the top of the card and in the Notes feed.</div>
+    <div class="field"><label>Note</label>
+      <textarea id="alertNoteText" rows="3" placeholder="e.g. Vendor pricing missing — need Scott's sign-off"></textarea>
+    </div>
+    <div class="field"><label>Owner (who flagged it)</label>
+      <select id="alertNoteOwner"></select>
+    </div>
+    <div class="modal-actions"><button type="button" id="alertNoteCancel">Cancel</button><div class="spacer"></div><button type="button" class="primary" id="alertNoteSave">Set alert</button></div>
+  </div>
+</div>
+
 <div class="overlay" id="exportOverlay">
   <div class="modal" style="width:360px">
     <button class="modal-x" id="exportX" title="Close">✕</button>
@@ -1360,8 +1404,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.45";
+const VERSION = "3.46";
 const CHANGELOG = [
+  "v3.46 — Alert notes. Clicking 🚨 to flag a card now prompts for a short alert note + owner (who's flagging it) before turning the flag on. The note shows on the card modal in a red banner under the title (with an Edit button), on the right side of each Notes-feed bar for that card, and on the Notes-view Red Alerts section rows. Clearing the flag drops the note + owner. All three fields (__alert / __alert_note / __alert_owner) persist on the card for the whole team.",
   "v3.45 — Red-alert flag, team-wide. Open a card and hit the new 🚨 button next to ✕ Close to flag it. Flagged cards: (1) render with a red background and red left rail in every view (Board/Calendar/Grid/List/Gallery/Planning/Notes), (2) always sort to the top regardless of any other sort setting, (3) show up in a dedicated 'Red alerts' banner at the top of the Notes feed. The toolbar's old ⚠ Overdue button is replaced by 🚨 N alerts — it pulses when any card is flagged, and clicking it toggles a filter to show only alerted cards. Flag persists on the card itself (c.fields.__alert) so every viewer sees it.",
   "v3.44 — Planning rollup click behavior is now uniform across every dim. Lane/status used to click-to-hide (toggle planningLanes); every other rollup used click-to-filter. Both now click-to-filter: tap TO DO to scope to TO DO cards, tap IN PROGRESS to add IN PROGRESS alongside, tap again to drop it. The lane-visibility toggles above the view still exist for hiding entire lanes.",
   "v3.43 — Planning rollups + card right-chip get two more controls. (1) Display → Planning now has a 'Pin to top-right of each card' picker — any dim (or None) can occupy the chip slot that used to be hardcoded to Lane. (2) Clicking a rollup value (e.g. the Walmart cell in Channel) no longer collapses that rollup to only the clicked value — it still filters the card list, but the rollup counts stay faceted so every channel's running count remains visible, matching how the Lane rollup already worked.",
@@ -1677,11 +1722,14 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries", ALERT_KEY = "__alert";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries", ALERT_KEY = "__alert", ALERT_NOTE_KEY = "__alert_note", ALERT_OWNER_KEY = "__alert_owner";
 // Red-alert flag — a workspace-agnostic boolean stored on the card itself (c.fields.__alert). Alerted cards get
 // a red background in every view, always sort to the top regardless of other sort, and feed the toolbar's
-// Alerts counter + Notes-view alerts section.
+// Alerts counter + Notes-view alerts section. The companion __alert_note / __alert_owner fields hold the
+// short reason + who flagged it so the whole team sees context.
 function cardIsAlert(c) { return !!(c && c.fields && c.fields[ALERT_KEY]); }
+function cardAlertNote(c) { return (c && c.fields && c.fields[ALERT_NOTE_KEY]) || ""; }
+function cardAlertOwner(c) { return (c && c.fields && c.fields[ALERT_OWNER_KEY]) || ""; }
 function alertCount() { return cards.filter(cardIsAlert).length; }
 let filterAlertOnly = false;
 // Notes are stored as a structured array of {id, date, text} entries. c.notes stays on-row as a derived HTML
@@ -4557,8 +4605,10 @@ function renderNotesView() {
     alertCards.forEach(c => {
       const row = document.createElement("div"); row.className = "notes-alerts-row";
       const title = document.createElement("div"); title.className = "notes-alerts-title"; title.textContent = c.title || "(untitled)";
+      const note = document.createElement("div"); note.className = "notes-alerts-note"; note.textContent = cardAlertNote(c) || "(no note)";
+      const owner = document.createElement("div"); owner.className = "notes-alerts-owner"; owner.textContent = cardAlertOwner(c) || "";
       const meta = document.createElement("div"); meta.className = "notes-alerts-meta"; meta.textContent = [c.brand, c.channel, c.status].filter(Boolean).join(" · ");
-      row.appendChild(title); row.appendChild(meta);
+      row.appendChild(title); row.appendChild(note); if (cardAlertOwner(c)) row.appendChild(owner); row.appendChild(meta);
       row.onclick = () => openModal(c);
       list.appendChild(row);
     });
@@ -4610,6 +4660,15 @@ function renderNotesView() {
     if (item.kind === "email") { if (item.email.from) parts.push("from " + item.email.from); if (item.email.subject) parts.push("re: " + item.email.subject); }
     else if (c.owner) parts.push(c.owner);
     meta.textContent = parts.join(" · "); bar.appendChild(meta);
+    // Alert chip — rendered on the right side of the bar when the card is flagged. Shows the alert note +
+    // owner so you don't have to open the card to see why it's red.
+    if (cardIsAlert(c)) {
+      const alertChip = document.createElement("span"); alertChip.className = "notes-entry-alert"; alertChip.title = "Open card to edit alert";
+      const noteTxt = cardAlertNote(c); const noteOwner = cardAlertOwner(c);
+      alertChip.innerHTML = "🚨 " + (noteTxt ? `<span class="nea-text">${esc(noteTxt)}</span>` : `<span class="nea-text">(no note)</span>`) + (noteOwner ? `<span class="nea-owner">· ${esc(noteOwner)}</span>` : "");
+      alertChip.onclick = e => { e.stopPropagation(); openModal(c); };
+      bar.appendChild(alertChip);
+    }
     if (item.kind === "email") {
       const rm = document.createElement("button"); rm.type = "button"; rm.className = "notes-entry-rm"; rm.textContent = "✕"; rm.title = "Remove this email";
       rm.onclick = e => { e.stopPropagation(); if (confirm("Remove this email from " + (c.title || "the deliverable") + "?")) removeCardEmail(c.id, item.email.id); };
@@ -6699,24 +6758,79 @@ function resizeImageToDataUrl(file, maxWidth, quality) {
     img.src = url;
   });
 }
+// Sync the modal's visible alert banner (shown just under the title) from the alert button's dataset. Called
+// after every change — turn-on, turn-off, edit — so the banner reflects what will be saved.
+function syncAlertBannerFromBtn() {
+  const btn = document.getElementById("f_alert");
+  const banner = document.getElementById("f_alertBanner");
+  if (!btn || !banner) return;
+  const on = btn.dataset.on === "1";
+  btn.classList.toggle("on", on);
+  if (!on) { banner.style.display = "none"; return; }
+  banner.style.display = "";
+  const n = document.getElementById("f_alertBannerNote");
+  const o = document.getElementById("f_alertBannerOwner");
+  if (n) n.textContent = btn.dataset.note || "(no note)";
+  if (o) o.textContent = btn.dataset.owner ? ("Flagged by " + btn.dataset.owner) : "Flagged (no owner set)";
+}
+// Open the alert-note dialog. onConfirm is called with (note, owner) when the user hits Save; Cancel leaves
+// the caller's state untouched. Pre-fills from existing values when editing.
+function openAlertNoteDialog(curNote, curOwner, onConfirm) {
+  const ov = document.getElementById("alertNoteOverlay");
+  const txt = document.getElementById("alertNoteText");
+  const sel = document.getElementById("alertNoteOwner");
+  if (!ov || !txt || !sel) return;
+  txt.value = curNote || "";
+  // Owner dropdown: all people + currentUser as the sensible default when creating.
+  sel.innerHTML = "";
+  const names = [...peopleList.map(p => p.name)];
+  if (currentUser && !names.includes(currentUser)) names.unshift(currentUser);
+  names.forEach(n => { const op = document.createElement("option"); op.value = n; op.textContent = n; sel.appendChild(op); });
+  sel.value = curOwner || currentUser || names[0] || "";
+  ov.classList.add("show");
+  setTimeout(() => txt.focus(), 50);
+  const close = () => ov.classList.remove("show");
+  document.getElementById("alertNoteCancel").onclick = close;
+  document.getElementById("alertNoteX").onclick = close;
+  ov.onclick = e => { if (e.target.id === "alertNoteOverlay") close(); };
+  document.getElementById("alertNoteSave").onclick = () => {
+    const note = (txt.value || "").trim(); const owner = (sel.value || "").trim();
+    if (!note) { txt.focus(); return; }
+    close();
+    onConfirm && onConfirm(note, owner);
+  };
+}
 function openModal(card, prefill) {
   modalOpen = true;
   document.getElementById("modalTitle").textContent = (card ? "Edit " : "New ") + wsDef().nounLower;
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
   // Alert flag — working copy stored on the button's dataset so saveModal can read it without a separate global.
+  // Turning ON opens the alert-note dialog (note + owner required); turning OFF just clears everything.
   const alertBtn = document.getElementById("f_alert");
   if (alertBtn) {
     const on = cardIsAlert(card);
     alertBtn.dataset.on = on ? "1" : "";
-    alertBtn.classList.toggle("on", on);
+    alertBtn.dataset.note = on ? cardAlertNote(card) : "";
+    alertBtn.dataset.owner = on ? cardAlertOwner(card) : "";
+    syncAlertBannerFromBtn();
     alertBtn.title = on ? "Red-alert ON — click to clear" : "Red-alert OFF — click to flag this card for the team";
     alertBtn.onclick = () => {
-      const next = alertBtn.dataset.on !== "1";
-      alertBtn.dataset.on = next ? "1" : "";
-      alertBtn.classList.toggle("on", next);
-      alertBtn.title = next ? "Red-alert ON — click to clear" : "Red-alert OFF — click to flag this card for the team";
+      if (alertBtn.dataset.on === "1") {
+        alertBtn.dataset.on = ""; alertBtn.dataset.note = ""; alertBtn.dataset.owner = "";
+        syncAlertBannerFromBtn();
+      } else {
+        openAlertNoteDialog("", "", (note, owner) => {
+          alertBtn.dataset.on = "1"; alertBtn.dataset.note = note; alertBtn.dataset.owner = owner;
+          syncAlertBannerFromBtn();
+        });
+      }
     };
+    const edit = document.getElementById("f_alertBannerEdit");
+    if (edit) edit.onclick = () => openAlertNoteDialog(alertBtn.dataset.note || "", alertBtn.dataset.owner || "", (note, owner) => {
+      alertBtn.dataset.on = "1"; alertBtn.dataset.note = note; alertBtn.dataset.owner = owner;
+      syncAlertBannerFromBtn();
+    });
   }
   const _picker = document.getElementById("f_emojiPicker"); if (_picker) _picker.hidden = true;
   rebuildBrandSelect();   // ensure the <select> reflects the current brandsList before we set its value
@@ -6854,9 +6968,15 @@ function saveModal() {
   const coverVal = (document.getElementById("f_coverUrl").value || "").trim();
   if (coverVal) fields[COVER_KEY] = coverVal; else delete fields[COVER_KEY];
   if (modalGallery && modalGallery.length) fields[GALLERY_KEY] = modalGallery.map(g => ({ id: g.id || _galleryId(), url: g.url, addedAt: g.addedAt || "" })); else delete fields[GALLERY_KEY];
-  // Red-alert flag — persist boolean. Only write the key when true so no-alert cards stay clean.
+  // Red-alert flag — persist boolean + note + owner. Only write keys when true so no-alert cards stay clean.
   const _alertBtn = document.getElementById("f_alert");
-  if (_alertBtn && _alertBtn.dataset.on === "1") fields[ALERT_KEY] = true; else delete fields[ALERT_KEY];
+  if (_alertBtn && _alertBtn.dataset.on === "1") {
+    fields[ALERT_KEY] = true;
+    if (_alertBtn.dataset.note) fields[ALERT_NOTE_KEY] = _alertBtn.dataset.note; else delete fields[ALERT_NOTE_KEY];
+    if (_alertBtn.dataset.owner) fields[ALERT_OWNER_KEY] = _alertBtn.dataset.owner; else delete fields[ALERT_OWNER_KEY];
+  } else {
+    delete fields[ALERT_KEY]; delete fields[ALERT_NOTE_KEY]; delete fields[ALERT_OWNER_KEY];
+  }
   const d = { title, brand: document.getElementById("f_brand").value, channel: [...modalChannels].join(", "),
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: notes, fields };
