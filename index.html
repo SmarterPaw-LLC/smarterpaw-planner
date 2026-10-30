@@ -1405,8 +1405,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.48";
+const VERSION = "3.49";
 const CHANGELOG = [
+  "v3.49 — Fast open for shared card links. Opening ?card=<id> no longer waits on the full board load — the app fires a direct one-row fetch for the target card and pops the modal as soon as it comes back, in parallel with the normal workspace-wide load. The background refetch continues (so the board behind the modal fills in while you read), but the modal appears on first paint instead of after every deliverable is downloaded.",
   "v3.48 — Shareable card links. Opening any card now writes ?card=<id> onto the URL (and ?ws=<workspace> when it's not planner), so the browser's address bar is itself a direct link to the card. A new 🔗 Copy link button in the card modal copies that URL to your clipboard. Paste it in Slack, email, or a note; the recipient's browser opens the app, switches to the right workspace, loads cards, and pops the card modal automatically. Links built this way intentionally skip the current filters/view so they open cleanly on the other side.",
   "v3.47 — Alert note gets a date and lands in the regular Notes timeline. Setting (or editing) a 🚨 alert now (1) stamps the date on the flag, shown next to the owner on the modal banner, in the Notes-feed chip, and in the Red Alerts section rows; (2) auto-adds a dated note entry to the card ('🚨 <note>' authored by the alert owner) so the alert text joins the regular Notes feed alongside other updates. Clearing the flag no longer touches the note history — the alert note stays as a record of what happened.",
   "v3.46 — Alert notes. Clicking 🚨 to flag a card now prompts for a short alert note + owner (who's flagging it) before turning the flag on. The note shows on the card modal in a red banner under the title (with an Edit button), on the right side of each Notes-feed bar for that card, and on the Notes-view Red Alerts section rows. Clearing the flag drops the note + owner. All three fields (__alert / __alert_note / __alert_owner) persist on the card for the whole team.",
@@ -7756,20 +7757,37 @@ async function init() {
   document.getElementById("search").value = searchText;
   document.querySelectorAll("#calModeSeg button").forEach(b => b.classList.toggle("active", b.dataset.m === calMode));
   setSyncUI();
+  // Shared card link fast-path: fetch just the target row NOW and pop the modal, so the share recipient sees
+  // the card before `refetch()` finishes loading every deliverable in the workspace. The seeded single-row
+  // `cards` array keeps saveModal / deleteCard working against this one card until refetch overwrites it.
+  let openedEarly = false;
+  if (_pendingCardOpenId && ONLINE) {
+    try {
+      const { data: row } = await db.from("deliverables").select("*").eq("id", _pendingCardOpenId).maybeSingle();
+      if (row) {
+        const target = { id: row.id, title: row.title, brand: row.brand, channel: row.channel,
+          owner: row.owner || "", due: row.due || "", end: row.end_date || "", status: row.status,
+          notes: row.notes || "", fields: row.fields || {}, createdAt: row.created_at || "" };
+        cards = [target];
+        openModal(target);
+        openedEarly = true;
+      }
+    } catch (e) {}
+  }
   document.getElementById("verBtn").textContent = "v" + VERSION;
   renderChangelog();
   await refetch();
   await maybeMigrateInnovationYear2027();
   await maybeMigrateUrlFieldsToLink();
   setView(view);   // apply restored view (container visibility + active toggle)
-  // Shareable card link: if the URL carried ?card=<id>, auto-open that card now that `cards` is loaded.
-  // The link already carries ?ws=<ws> when needed, so by this point we're in the right workspace. If the
-  // card id can't be found (deleted, wrong workspace, bad link) we just toast and leave the view intact.
-  if (_pendingCardOpenId) {
+  // Shareable card link: if the fast-path above didn't already pop the modal (offline, or the single-row
+  // fetch missed), try again now that `cards` is fully loaded. If the id can't be found (deleted, wrong
+  // workspace, bad link) we toast and leave the view intact.
+  if (_pendingCardOpenId && !openedEarly) {
     const target = cards.find(c => c.id === _pendingCardOpenId);
-    _pendingCardOpenId = "";
     if (target) openModal(target); else toast("That shared card link didn't match any deliverable here.");
   }
+  _pendingCardOpenId = "";
   // If no current user is persisted, open the picker on first session load (people list is loaded by now).
   if (!currentUser && !sessionStorage.getItem("planner-user-asked")) {
     try { sessionStorage.setItem("planner-user-asked", "1"); } catch (e) {}
