@@ -694,6 +694,31 @@
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .field-link-open:hover { border-color: var(--accent); background: rgba(109,93,252,.06); }
   .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
+  /* Alerts toolbar button — much louder than the old Overdue button when there's anything to see. */
+  #alertsBtn { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+  #alertsBtn.has-alerts { background: #ef4444; color: #fff; border-color: #ef4444; animation: alertsPulse 2.4s ease-in-out infinite; box-shadow: 0 0 0 0 rgba(239,68,68,.55); }
+  #alertsBtn.has-alerts:hover { background: #dc2626; border-color: #dc2626; }
+  #alertsBtn.on { outline: 2px solid #fff; outline-offset: -4px; }
+  @keyframes alertsPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.55); } 50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } }
+  /* Red-alert flag on cards — subtle but unmistakable red tint + red left rail, applied to every view's card markup. */
+  .alert-on { background: color-mix(in srgb, #ef4444 14%, var(--panel-2)) !important; border-color: #ef4444 !important; box-shadow: inset 3px 0 0 0 #ef4444 !important; }
+  tr.alert-on td { background: color-mix(in srgb, #ef4444 14%, var(--panel-2)) !important; box-shadow: inset 0 1px 0 0 #ef4444, inset 0 -1px 0 0 #ef4444; }
+  tr.alert-on td:first-child { box-shadow: inset 3px 0 0 0 #ef4444, inset 0 1px 0 0 #ef4444, inset 0 -1px 0 0 #ef4444; }
+  html[data-theme="light"] .alert-on { background: color-mix(in srgb, #ef4444 10%, #fff) !important; }
+  html[data-theme="light"] tr.alert-on td { background: color-mix(in srgb, #ef4444 10%, #fff) !important; }
+  .alert-on .notes-entry-title, .alert-on h3, .alert-on .planning-card-title, .alert-on .gallery-tile-title { color: var(--text); }
+  /* Modal alert button — top-right, next to ✕ Close. Lights up red when toggled on. */
+  .modal-alert { position: absolute; top: 10px; right: 48px; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+  .modal-alert:hover { color: var(--text); border-color: var(--danger); }
+  .modal-alert.on { background: #ef4444; border-color: #ef4444; color: #fff; }
+  /* Notes-view alerts section — top of the Notes feed when any card is flagged. */
+  .notes-alerts-sec { margin-bottom: 14px; padding: 10px 12px; border: 1px solid #ef4444; border-left-width: 4px; border-radius: 8px; background: color-mix(in srgb, #ef4444 10%, var(--panel-2)); }
+  .notes-alerts-head { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; color: #ef4444; margin: 0 0 8px; display: flex; align-items: center; gap: 6px; }
+  .notes-alerts-list { display: flex; flex-direction: column; gap: 6px; }
+  .notes-alerts-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid #ef4444; border-radius: 6px; cursor: pointer; }
+  .notes-alerts-row:hover { border-color: #ef4444; }
+  .notes-alerts-title { flex: 1; font-weight: 600; }
+  .notes-alerts-meta { font-size: 11px; color: var(--muted); }
   .af-push { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 4px 13px; background: transparent; }
   .af-push:hover { background: var(--accent); color: #fff; }
   #userOverlayChoices button { display: block; width: 100%; padding: 12px 14px; text-align: left; font-size: 14px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; color: var(--text); }
@@ -930,7 +955,7 @@
   <button class="ver" id="verBtn" title="What's new"></button>
   <div class="status-dot" id="syncStatus"><span class="d"></span><span class="t">…</span></div>
   <button id="userBtn" class="user-btn" title="Filter to your work (click to change)">You: <b id="userBtnName">All</b> ▾</button>
-  <button id="overdueBtn" class="user-btn" title="Show unfinished cards from past sprints (relative to today; not a saved view)">⚠ Overdue</button>
+  <button id="alertsBtn" class="user-btn" title="Toggle filter to red-alert cards only. The number is how many are currently flagged.">🚨 <span id="alertsBtnCount">0 alerts</span></button>
   <div class="seg" id="viewToggle"><button data-v="board" class="active">Board</button><button data-v="calendar">Calendar</button><button data-v="grid">Grid</button><button data-v="list">List</button><button data-v="gallery">Gallery</button><button data-v="notes">Notes</button><button data-v="planning">📋 Planning</button></div>
   <button class="primary orange" id="addBtn">+ Deliverable</button>
   <div class="header-spacer"></div>
@@ -1042,6 +1067,7 @@
 <div class="overlay" id="overlay">
   <div class="modal" style="width:640px;max-width:94vw">
     <button class="modal-x" id="modalX" title="Close">✕</button>
+    <button class="modal-alert" id="f_alert" type="button" title="Red-alert flag — pin this card to the top of every view in a red state for the whole team">🚨</button>
     <h2 id="modalTitle">New deliverable</h2>
     <input type="hidden" id="f_id" />
     <!-- Cover photo. Click to upload (resized client-side), paste a URL, or drag-and-drop an image file. -->
@@ -1334,8 +1360,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.44";
+const VERSION = "3.45";
 const CHANGELOG = [
+  "v3.45 — Red-alert flag, team-wide. Open a card and hit the new 🚨 button next to ✕ Close to flag it. Flagged cards: (1) render with a red background and red left rail in every view (Board/Calendar/Grid/List/Gallery/Planning/Notes), (2) always sort to the top regardless of any other sort setting, (3) show up in a dedicated 'Red alerts' banner at the top of the Notes feed. The toolbar's old ⚠ Overdue button is replaced by 🚨 N alerts — it pulses when any card is flagged, and clicking it toggles a filter to show only alerted cards. Flag persists on the card itself (c.fields.__alert) so every viewer sees it.",
   "v3.44 — Planning rollup click behavior is now uniform across every dim. Lane/status used to click-to-hide (toggle planningLanes); every other rollup used click-to-filter. Both now click-to-filter: tap TO DO to scope to TO DO cards, tap IN PROGRESS to add IN PROGRESS alongside, tap again to drop it. The lane-visibility toggles above the view still exist for hiding entire lanes.",
   "v3.43 — Planning rollups + card right-chip get two more controls. (1) Display → Planning now has a 'Pin to top-right of each card' picker — any dim (or None) can occupy the chip slot that used to be hardcoded to Lane. (2) Clicking a rollup value (e.g. the Walmart cell in Channel) no longer collapses that rollup to only the clicked value — it still filters the card list, but the rollup counts stay faceted so every channel's running count remains visible, matching how the Lane rollup already worked.",
   "v3.42 — Innovation Planning now spans every year from the start-year floor through the farthest card. The old 3-year window (center-1 / center / center+1) was swallowing any card scheduled further out — set a 2026 floor and a card for 2028 would silently disappear. Columns now extend forward automatically so every planned year gets its own column; the center-year nav still controls arrow labels.",
@@ -1650,7 +1677,13 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries", ALERT_KEY = "__alert";
+// Red-alert flag — a workspace-agnostic boolean stored on the card itself (c.fields.__alert). Alerted cards get
+// a red background in every view, always sort to the top regardless of other sort, and feed the toolbar's
+// Alerts counter + Notes-view alerts section.
+function cardIsAlert(c) { return !!(c && c.fields && c.fields[ALERT_KEY]); }
+function alertCount() { return cards.filter(cardIsAlert).length; }
+let filterAlertOnly = false;
 // Notes are stored as a structured array of {id, date, text} entries. c.notes stays on-row as a derived HTML
 // snapshot (so card previews and legacy cards without entries still render), but entries are the source of truth.
 let _noteIdc = 0;
@@ -2283,8 +2316,12 @@ function cardSortKey(c, key) {
   return String(c[key] || "").toLowerCase();                                   // title, brand, channel, owner
 }
 function sortCards(arr, sort) {
-  if (!sort || !sort.key) return arr;
-  return arr.slice().sort((a, b) => { const va = cardSortKey(a, sort.key), vb = cardSortKey(b, sort.key); return (va < vb ? -1 : va > vb ? 1 : 0) * sort.dir; });
+  const sorted = (!sort || !sort.key) ? arr : arr.slice().sort((a, b) => { const va = cardSortKey(a, sort.key), vb = cardSortKey(b, sort.key); return (va < vb ? -1 : va > vb ? 1 : 0) * sort.dir; });
+  // Alerts always sort to the top regardless of the user's sort choice — the whole point of a red-alert flag.
+  // Preserve the within-group order (both the alert and non-alert partitions stay stable w.r.t. sorted).
+  if (!sorted.some(cardIsAlert)) return sorted;
+  const alerts = sorted.filter(cardIsAlert); const rest = sorted.filter(c => !cardIsAlert(c));
+  return alerts.concat(rest);
 }
 let searchText = "";
 let modalOpen = false, manageOpen = false, _listsWarned = false;
@@ -3540,6 +3577,7 @@ function activeSprintFilterWeeks() {
   return out;
 }
 function passesFilters(c, excludeKey) {
+  if (filterAlertOnly && !cardIsAlert(c)) return false;
   if (filters.sprint && filters.sprint.size && excludeKey !== "sprint") {
     // A card matches a sprint filter if ANY of its sprints is picked (so a planning sprint counts) — or if it has none and "" (No sprint) is picked.
     const cs = cardSprints(c);
@@ -3656,7 +3694,14 @@ function filterKeyLabel(key) {
 }
 function renderActiveFilters() {
   const bar = document.getElementById("activeFilters"); if (!bar) return;
-  const overdueBtn = document.getElementById("overdueBtn"); if (overdueBtn) overdueBtn.classList.toggle("on", filterOverdue);
+  // Alerts button — label with running count; red + pulsing when anything is flagged; outlined when the filter is on.
+  const alertsBtn = document.getElementById("alertsBtn");
+  if (alertsBtn) {
+    const n = alertCount();
+    const label = document.getElementById("alertsBtnCount"); if (label) label.textContent = n === 1 ? "1 alert" : (n + " alerts");
+    alertsBtn.classList.toggle("has-alerts", n > 0);
+    alertsBtn.classList.toggle("on", filterAlertOnly);
+  }
   // Sprint quick-toggle active-state — mark whichever button matches the sole sprint filter (if any).
   // On Innovation this maps to years instead of ISO weeks (centered on innovationYear).
   const now = new Date();
@@ -3852,7 +3897,7 @@ function renderSprintPlanning() {
     const cardsBox = document.createElement("div"); cardsBox.className = "planning-cards";
     if (!list.length) { const e = document.createElement("div"); e.className = "planning-empty"; e.textContent = "Nothing here."; cardsBox.appendChild(e); }
     else list.forEach(c => {
-      const item = document.createElement("div"); item.className = "planning-card"; item.draggable = true;
+      const item = document.createElement("div"); item.className = "planning-card" + (cardIsAlert(c) ? " alert-on" : ""); item.draggable = true;
       item.style.borderLeftColor = colorFor(c);
       item.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; item.classList.add("dragging"); });
       item.addEventListener("dragend", () => { item.classList.remove("dragging"); document.querySelectorAll(".planning-sec.drop-over").forEach(el => el.classList.remove("drop-over")); });
@@ -4501,11 +4546,29 @@ function renderNotesView() {
   const exportBtn = document.createElement("button"); exportBtn.type = "button"; exportBtn.className = "notes-btn"; exportBtn.textContent = "📋 Copy updates"; exportBtn.title = "Copy a plain-text summary of the filtered entries for pasting into an email";
   exportBtn.onclick = () => openNotesExport(feed, cardsIn);
   head.appendChild(count); head.appendChild(expAll); head.appendChild(colAll); head.appendChild(exportBtn); root.appendChild(head);
+  // Red-alert banner — top of the feed so flagged cards get seen first thing. Scope matches the current notes
+  // filter (quick-filters + search), not the global cards list, so switching workspaces/filters keeps the view
+  // consistent.
+  const alertCards = cardsIn.filter(cardIsAlert);
+  if (alertCards.length) {
+    const sec = document.createElement("div"); sec.className = "notes-alerts-sec";
+    const h = document.createElement("div"); h.className = "notes-alerts-head"; h.textContent = "🚨 Red alerts (" + alertCards.length + ")"; sec.appendChild(h);
+    const list = document.createElement("div"); list.className = "notes-alerts-list";
+    alertCards.forEach(c => {
+      const row = document.createElement("div"); row.className = "notes-alerts-row";
+      const title = document.createElement("div"); title.className = "notes-alerts-title"; title.textContent = c.title || "(untitled)";
+      const meta = document.createElement("div"); meta.className = "notes-alerts-meta"; meta.textContent = [c.brand, c.channel, c.status].filter(Boolean).join(" · ");
+      row.appendChild(title); row.appendChild(meta);
+      row.onclick = () => openModal(c);
+      list.appendChild(row);
+    });
+    sec.appendChild(list); root.appendChild(sec);
+  }
   if (!feed.length) { const empty = document.createElement("div"); empty.className = "empty list-empty"; empty.textContent = "No entries here. Adjust the search or filters."; root.appendChild(empty); return; }
   feed.forEach(item => {
     const c = item.card;
     const collapsed = notesAllCollapsed ? !notesCollapsed.has("__open:" + item.key) : notesCollapsed.has(item.key);
-    const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "");
+    const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "") + (cardIsAlert(item.card) ? " alert-on" : "");
     entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
     // Header — clicking anywhere on the bar toggles collapse; children with their own handlers (title opens the
     // modal, ✕ removes the email, done checkbox toggles status) stopPropagation so those clicks don't also toggle.
@@ -4783,7 +4846,7 @@ function renderGalleryView() {
   // Mosaic uses JS-managed columns so sparse content actually spreads side-by-side instead of CSS column
   // balancing stacking everything in column 1. Tile keeps the simpler CSS grid.
   const buildTile = ({ card: c, url, idx, all }) => {
-    const tile = document.createElement("div"); tile.className = "gallery-tile";
+    const tile = document.createElement("div"); tile.className = "gallery-tile" + (cardIsAlert(c) ? " alert-on" : "");
     tile.style.borderLeftColor = colorFor(c); applyPromo(tile, c);
     const isDone = !!(completeLane && c.status === completeLane);
     if (isDone) tile.classList.add("done");
@@ -4905,7 +4968,7 @@ function renderList() {
 }
 function listTaskEl(c) {
   const subs = cardSubtasks(c); const prog = subProgress(c); const exp = listExpanded.has(c.id);
-  const wrap = document.createElement("div"); wrap.className = "list-task";
+  const wrap = document.createElement("div"); wrap.className = "list-task" + (cardIsAlert(c) ? " alert-on" : "");
   wrap.style.borderLeftColor = colorFor(c);   // respects the Color: brand/channel/status setting
   applyPromo(wrap, c);                          // promotion top stripe (same as calendar)
   if (listSplit) {   // in split mode, drag a task to another column to change that dimension's value
@@ -5025,7 +5088,7 @@ function fmtRange(due, end) {
   return fmtDue(due || end);
 }
 function cardEl(c) {
-  const el = document.createElement("div"); el.className = "card";
+  const el = document.createElement("div"); el.className = "card" + (cardIsAlert(c) ? " alert-on" : "");
   el.style.borderLeftColor = colorFor(c); el.draggable = true; applyPromo(el, c);
   const badges = dimBadges(c);
   const done = doneBadge(c);
@@ -5212,7 +5275,7 @@ function renderGrid() {
   thead.appendChild(trh); table.appendChild(thead);
   const tbody = document.createElement("tbody");
   const buildRow = c => {
-    const tr = document.createElement("tr"); if (gridSelected.has(c.id)) tr.classList.add("grid-sel");
+    const tr = document.createElement("tr"); if (gridSelected.has(c.id)) tr.classList.add("grid-sel"); if (cardIsAlert(c)) tr.classList.add("alert-on");
     // Leading select cell — click doesn't open the modal.
     const tdSel = document.createElement("td"); tdSel.className = "grid-sel-cell";
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = gridSelected.has(c.id);
@@ -5678,7 +5741,7 @@ function evTitle(c) { const p = cardPromo(c); return c.title + " — " + c.brand
 function applyPromo(el, c) { const p = cardPromo(c); if (p) { el.style.setProperty("--promo", promoColor(p)); el.classList.add("has-promo"); }
   if (cardPriority(c) === "High") el.classList.add("prio-high"); }
 function evEl(c) {
-  const e = document.createElement("div"); e.className = "ev"; e.style.background = colorFor(c);
+  const e = document.createElement("div"); e.className = "ev" + (cardIsAlert(c) ? " alert-on" : ""); e.style.background = colorFor(c);
   e.innerHTML = evContent(c); e.title = evTitle(c); e.draggable = true; applyPromo(e, c);
   e.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); setTimeout(() => document.body.classList.add("cal-dragging"), 0); });
   e.addEventListener("dragend", () => document.body.classList.remove("cal-dragging"));
@@ -5686,7 +5749,7 @@ function evEl(c) {
   return e;
 }
 function barEl(c) {
-  const el = document.createElement("div"); el.className = "ev-bar"; el.style.background = colorFor(c);
+  const el = document.createElement("div"); el.className = "ev-bar" + (cardIsAlert(c) ? " alert-on" : ""); el.style.background = colorFor(c);
   el.innerHTML = evContent(c); el.title = evTitle(c); el.draggable = true; applyPromo(el, c);
   el.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); setTimeout(() => document.body.classList.add("cal-dragging"), 0); });
   el.addEventListener("dragend", () => document.body.classList.remove("cal-dragging"));
@@ -6641,6 +6704,20 @@ function openModal(card, prefill) {
   document.getElementById("modalTitle").textContent = (card ? "Edit " : "New ") + wsDef().nounLower;
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
+  // Alert flag — working copy stored on the button's dataset so saveModal can read it without a separate global.
+  const alertBtn = document.getElementById("f_alert");
+  if (alertBtn) {
+    const on = cardIsAlert(card);
+    alertBtn.dataset.on = on ? "1" : "";
+    alertBtn.classList.toggle("on", on);
+    alertBtn.title = on ? "Red-alert ON — click to clear" : "Red-alert OFF — click to flag this card for the team";
+    alertBtn.onclick = () => {
+      const next = alertBtn.dataset.on !== "1";
+      alertBtn.dataset.on = next ? "1" : "";
+      alertBtn.classList.toggle("on", next);
+      alertBtn.title = next ? "Red-alert ON — click to clear" : "Red-alert OFF — click to flag this card for the team";
+    };
+  }
   const _picker = document.getElementById("f_emojiPicker"); if (_picker) _picker.hidden = true;
   rebuildBrandSelect();   // ensure the <select> reflects the current brandsList before we set its value
   const brandSel = document.getElementById("f_brand");
@@ -6777,6 +6854,9 @@ function saveModal() {
   const coverVal = (document.getElementById("f_coverUrl").value || "").trim();
   if (coverVal) fields[COVER_KEY] = coverVal; else delete fields[COVER_KEY];
   if (modalGallery && modalGallery.length) fields[GALLERY_KEY] = modalGallery.map(g => ({ id: g.id || _galleryId(), url: g.url, addedAt: g.addedAt || "" })); else delete fields[GALLERY_KEY];
+  // Red-alert flag — persist boolean. Only write the key when true so no-alert cards stay clean.
+  const _alertBtn = document.getElementById("f_alert");
+  if (_alertBtn && _alertBtn.dataset.on === "1") fields[ALERT_KEY] = true; else delete fields[ALERT_KEY];
   const d = { title, brand: document.getElementById("f_brand").value, channel: [...modalChannels].join(", "),
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: notes, fields };
@@ -7806,7 +7886,7 @@ async function init() {
     statsCb.addEventListener("change", () => { localStorage.setItem("planner-notes-export-stats", statsCb.checked ? "1" : "0"); buildNotesExportText(); });
   }
   document.getElementById("workspaceSelect").onchange = e => switchWorkspace(e.target.value);
-  document.getElementById("overdueBtn").onclick = () => { filterOverdue = !filterOverdue; render(); };
+  document.getElementById("alertsBtn").onclick = () => { filterAlertOnly = !filterAlertOnly; render(); };
   document.getElementById("userOverlayX").onclick = () => document.getElementById("userOverlay").classList.remove("show");
   document.getElementById("userOverlay").onclick = e => { if (e.target.id === "userOverlay") e.currentTarget.classList.remove("show"); };
   document.getElementById("verBtn").onclick = () => document.getElementById("verOverlay").classList.add("show");
