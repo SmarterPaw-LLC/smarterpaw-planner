@@ -1184,6 +1184,7 @@
     <div class="modal-actions">
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
       <button class="ghost" id="duplicateBtn">⧉ Duplicate</button>
+      <button class="ghost" id="copyLinkBtn" title="Copy a shareable link that opens this card">🔗 Copy link</button>
       <div class="spacer"></div>
       <button id="cancelBtn">Cancel</button>
       <button class="primary" id="saveBtn">Save</button>
@@ -1404,8 +1405,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.47";
+const VERSION = "3.48";
 const CHANGELOG = [
+  "v3.48 — Shareable card links. Opening any card now writes ?card=<id> onto the URL (and ?ws=<workspace> when it's not planner), so the browser's address bar is itself a direct link to the card. A new 🔗 Copy link button in the card modal copies that URL to your clipboard. Paste it in Slack, email, or a note; the recipient's browser opens the app, switches to the right workspace, loads cards, and pops the card modal automatically. Links built this way intentionally skip the current filters/view so they open cleanly on the other side.",
   "v3.47 — Alert note gets a date and lands in the regular Notes timeline. Setting (or editing) a 🚨 alert now (1) stamps the date on the flag, shown next to the owner on the modal banner, in the Notes-feed chip, and in the Red Alerts section rows; (2) auto-adds a dated note entry to the card ('🚨 <note>' authored by the alert owner) so the alert text joins the regular Notes feed alongside other updates. Clearing the flag no longer touches the note history — the alert note stays as a record of what happened.",
   "v3.46 — Alert notes. Clicking 🚨 to flag a card now prompts for a short alert note + owner (who's flagging it) before turning the flag on. The note shows on the card modal in a red banner under the title (with an Edit button), on the right side of each Notes-feed bar for that card, and on the Notes-view Red Alerts section rows. Clearing the flag drops the note + owner. All three fields (__alert / __alert_note / __alert_owner) persist on the card for the whole team.",
   "v3.45 — Red-alert flag, team-wide. Open a card and hit the new 🚨 button next to ✕ Close to flag it. Flagged cards: (1) render with a red background and red left rail in every view (Board/Calendar/Grid/List/Gallery/Planning/Notes), (2) always sort to the top regardless of any other sort setting, (3) show up in a dedicated 'Red alerts' banner at the top of the Notes feed. The toolbar's old ⚠ Overdue button is replaced by 🚨 N alerts — it pulses when any card is flagged, and clicking it toggles a filter to show only alerted cards. Flag persists on the card itself (c.fields.__alert) so every viewer sees it.",
@@ -6810,6 +6812,10 @@ function openAlertNoteDialog(curNote, curOwner, onConfirm) {
 }
 function openModal(card, prefill) {
   modalOpen = true;
+  // Shareable URL: an existing card gets its id written to the URL as ?card=<id> so the current address bar
+  // is itself a direct link to this card. New cards (no id yet) stay out of the URL until saved.
+  _modalCardId = (card && card.id) ? card.id : "";
+  writeUrl();
   document.getElementById("modalTitle").textContent = (card ? "Edit " : "New ") + wsDef().nounLower;
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
@@ -6924,11 +6930,12 @@ function openModal(card, prefill) {
   if (nuStamp) nu.title = new Date(nuStamp).toLocaleString(); else nu.removeAttribute("title");
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
   document.getElementById("duplicateBtn").style.display = card ? "" : "none";   // only existing cards can be duplicated
+  document.getElementById("copyLinkBtn").style.display = card ? "" : "none";   // same: no stable link until the card has an id
   document.getElementById("overlay").classList.add("show");
   requestAnimationFrame(autoResizeTitle);   // only measurable once the modal is visible; before that, scrollHeight is 0 and would collapse the field
   if (!card) document.getElementById("f_title").focus();   // only auto-focus when creating; editing just opens the card
 }
-function closeModal() { modalOpen = false; document.getElementById("overlay").classList.remove("show"); }
+function closeModal() { modalOpen = false; document.getElementById("overlay").classList.remove("show"); if (_modalCardId) { _modalCardId = ""; writeUrl(); } }
 // Grow the title textarea to fit its contents (so long titles wrap and remain fully visible, esp. on mobile).
 function autoResizeTitle() {
   const t = document.getElementById("f_title"); if (!t) return;
@@ -7026,6 +7033,18 @@ async function syncReciprocalLinks(selfId, added, removed) {
   const err = res.find(r => r && r.error); if (err) toast("Link sync warning: " + err.error.message);
 }
 function deleteCard() { const id = document.getElementById("f_id").value; if (id && confirm("Delete this deliverable?")) { removeCard(id); closeModal(); } }
+// Shareable card link: builds a minimal URL (ws + card id only; current filters/view intentionally omitted
+// so the shared link opens cleanly on the recipient's side) and copies it to clipboard. Falls back to a
+// prompt-style select-and-copy if the Clipboard API is unavailable (older browsers / insecure contexts).
+async function copyCardLink() {
+  const id = document.getElementById("f_id").value; if (!id) return;
+  const p = new URLSearchParams();
+  if (currentWorkspace !== "planner") p.set("ws", currentWorkspace);   // keep bare URLs for the default workspace
+  p.set("card", id);
+  const url = location.origin + location.pathname + "?" + p.toString();
+  try { await navigator.clipboard.writeText(url); toast("Link copied — share it to open this card directly."); }
+  catch (e) { window.prompt("Copy this link:", url); }
+}
 // Duplicate the open deliverable as a new card (title gets " (copy)"; subtasks get fresh ids).
 function duplicateCard() {
   const id = document.getElementById("f_id").value;
@@ -7599,8 +7618,13 @@ function currentParams() {
   if (view === "grid" && gridGroup.length) p.set("ggroup", gridGroup.join(","));
   if (sortKey) p.set("sort", sortKey + ":" + (sortDir < 0 ? "d" : "a"));
   if (filterOverdue) p.set("overdue", "1");
+  if (_modalCardId) p.set("card", _modalCardId);
   return p.toString();
 }
+// Open-card routing: `_modalCardId` is in-URL only while a card modal is open on an existing card. Set in
+// openModal / cleared in closeModal; writeUrl() picks it up via currentParams. `_pendingCardOpenId` is parsed
+// out of the URL on load and consumed once cards are fetched (init auto-opens that card).
+let _modalCardId = "", _pendingCardOpenId = "";
 function writeUrl() { const qs = currentParams(); try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); } catch (e) {} }
 // ── Saved views (personal → localStorage; app-wide → Supabase 'views' table) ──
 let sharedViews = [], _viewsTableMissing = false;
@@ -7695,6 +7719,7 @@ function readUrl() {
   const gg = p.get("ggroup"); if (gg) gridGroup = gg.split(",").filter(Boolean);
   const so = p.get("sort"); if (so) { const i = so.lastIndexOf(":"); const k = i > 0 ? so.slice(0, i) : so; const d = so.slice(i + 1); if (k) { sortKey = k; sortDir = d === "d" ? -1 : 1; } }
   if (p.get("overdue") === "1") filterOverdue = true;
+  const cardId = p.get("card"); if (cardId) _pendingCardOpenId = cardId;
 }
 async function init() {
   fillStaticSelects();
@@ -7737,6 +7762,14 @@ async function init() {
   await maybeMigrateInnovationYear2027();
   await maybeMigrateUrlFieldsToLink();
   setView(view);   // apply restored view (container visibility + active toggle)
+  // Shareable card link: if the URL carried ?card=<id>, auto-open that card now that `cards` is loaded.
+  // The link already carries ?ws=<ws> when needed, so by this point we're in the right workspace. If the
+  // card id can't be found (deleted, wrong workspace, bad link) we just toast and leave the view intact.
+  if (_pendingCardOpenId) {
+    const target = cards.find(c => c.id === _pendingCardOpenId);
+    _pendingCardOpenId = "";
+    if (target) openModal(target); else toast("That shared card link didn't match any deliverable here.");
+  }
   // If no current user is persisted, open the picker on first session load (people list is loaded by now).
   if (!currentUser && !sessionStorage.getItem("planner-user-asked")) {
     try { sessionStorage.setItem("planner-user-asked", "1"); } catch (e) {}
@@ -7777,6 +7810,7 @@ async function init() {
   document.getElementById("cancelBtn").onclick = closeModal;
   document.getElementById("deleteBtn").onclick = deleteCard;
   document.getElementById("duplicateBtn").onclick = duplicateCard;
+  document.getElementById("copyLinkBtn").onclick = copyCardLink;
   // Title textarea: auto-resize on input, and treat Enter as save (not newline) so it behaves like the old <input>.
   const titleEl = document.getElementById("f_title");
   titleEl.addEventListener("input", autoResizeTitle);
