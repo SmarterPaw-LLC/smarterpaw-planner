@@ -735,6 +735,20 @@
       transparent 16px 22px
     );
   }
+  /* Panel cards (board, planning, list, gallery, notes feed) get a solid inset backdrop so the stripes read as
+     a decorative frame around the content instead of competing with the title/chips. Calendar bars (.ev/.ev-bar)
+     are too narrow for a frame, so they keep the full-fill stripes under white text. */
+  .card.theme-channel::before, .planning-card.theme-channel::before,
+  .list-task.theme-channel::before, .gallery-tile.theme-channel::before,
+  .notes-entry.theme-channel::before {
+    content: ""; position: absolute; inset: 6px; z-index: 0; pointer-events: none;
+    background: var(--panel-2); border-radius: 6px;
+  }
+  /* Make the content sit above the inset backdrop. The DOM is already in flow but ::before (z-index 0) would
+     paint over static children in the same stacking context — explicit z-index on direct children fixes it. */
+  .card.theme-channel > *, .planning-card.theme-channel > *,
+  .list-task.theme-channel > *, .gallery-tile.theme-channel > *,
+  .notes-entry.theme-channel > * { position: relative; z-index: 1; }
   tr.theme-channel td { position: relative; isolation: isolate; }
   tr.theme-channel td::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; z-index: -1;
@@ -1444,8 +1458,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.55";
+const VERSION = "3.56";
 const CHANGELOG = [
+  "v3.56 — Theme stripes now frame the card instead of flooding it. Panel-colored cards (board, planning, list, gallery, notes feed) get a solid panel backdrop inset 6px, so the stripes read as a decorative border and the title/chips sit on a clean background. Calendar bars still fill with stripes since they're too narrow for a frame.",
   "v3.55 — Theme stripes are now month-appropriate. The stripe palette is chosen from the card's due date (fallback: end date, then today's month): Jan icy blue, Feb Valentine pink, Mar St. Patrick's green+gold, Apr Easter pastels, May spring bloom, Jun/Jul patriotic red+blue, Aug late summer, Sep early fall, Oct Halloween orange+purple, Nov Thanksgiving, Dec Christmas red+green. Also replaced the single hashed hue with a two-color stripe (color + white hairline + 2nd color + gap) for a proper candy-cane look.",
   "v3.54 — Theme-channel stripes now render BEHIND the card's title/icons/chips instead of covering them. Added `isolation: isolate` on each Theme card so the overlay's negative z-index stays scoped to that card.",
   "v3.53 — Theme-channel candy stripes are now per-card and much more visible. Each Theme card gets a stable hue seeded from its card id (same color every render, every user, every view), the stripes have a thin white hairline between color bands for a classic candy-cane feel, and the blend-mode is gone so the pattern reads on dark panel backgrounds the way it already did on bright calendar bars.",
