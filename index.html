@@ -1413,8 +1413,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.50";
+const VERSION = "3.51";
 const CHANGELOG = [
+  "v3.51 — Planning rollups no longer blank out when a sprint/year filter is active alongside another facet click. The rollup facet re-derivation was running under the restored filters.sprint, so clicking (Unassigned) with a Year chip set emptied every rollup instead of toggling the owner filter. The Planning view already handles sprint scope via its own per-section predicate, so the rollup now temporarily drops filters.sprint while counting.",
   "v3.50 — Planning view: (1) Owners rollup '(Unassigned)' chip now filters the view to cards with no owner (same click-to-toggle semantics as every other rollup chip); (2) each planning card gets a ✓ Mark-done button next to the → Push arrow, which moves the card to whichever lane holds the 'Complete' role. The ✓ button appears on every section (Backlog, Last/This/Next week), slides into the push slot when no push arrow is present, and is hidden on cards already on the Complete lane.",
   "v3.49 — Fast open for shared card links. Opening ?card=<id> no longer waits on the full board load — the app fires a direct one-row fetch for the target card and pops the modal as soon as it comes back, in parallel with the normal workspace-wide load. The background refetch continues (so the board behind the modal fills in while you read), but the modal appears on first paint instead of after every deliverable is downloaded.",
   "v3.48 — Shareable card links. Opening any card now writes ?card=<id> onto the URL (and ?ws=<workspace> when it's not planner), so the browser's address bar is itself a direct link to the card. A new 🔗 Copy link button in the card modal copies that URL to your clipboard. Paste it in Slack, email, or a note; the recipient's browser opens the app, switches to the right workspace, loads cards, and pops the card modal automatically. Links built this way intentionally skip the current filters/view so they open cleanly on the other side.",
@@ -3840,9 +3841,16 @@ function buildPlanningRollup(dimKey, list, enabledLanes, sprintPredicate, bl) {
   // Walmart (the user's bug). Lane keeps its original "show every lane with a 0 fallback" behavior.
   const filterKey = dimKey === "status" ? "status" : (dimKey === "owners" ? "owner" : dimKey);
   const q = (typeof searchText === "string" ? searchText.trim().toLowerCase() : "");
+  // The sprint filter must be temporarily removed too: the Planning view uses its own `sprintPredicate` to
+  // scope each section's year/week, and passesFilters still enforces filters.sprint by default — which would
+  // double-filter and empty the rollup whenever a sprint quick-filter was also set (e.g., clicking the year
+  // header pill). Without this, clicking a facet chip in a section whose year ≠ the sprint filter blanks
+  // the rollup. Restored before returning.
+  const _savedSprint = filters.sprint; delete filters.sprint;
   const rollupList = (sprintPredicate && filterKey && filters[filterKey] instanceof Set && filters[filterKey].size)
     ? cards.filter(c => passesFilters(c, filterKey) && (!q || cardSearchText(c).includes(q)) && c.status !== bl && (dimKey === "status" || !enabledLanes || (new Set(enabledLanes)).has(c.status)) && sprintPredicate(c))
     : list;
+  filters.sprint = _savedSprint;
   const counts = new Map();
   if (dimKey === "status") statusList.forEach(s => counts.set(s.name, 0));
   rollupList.forEach(c => cardDimValues(c, dimKey).forEach(v => counts.set(v, (counts.get(v) || 0) + 1)));
