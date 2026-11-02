@@ -721,10 +721,11 @@
      no blend-mode, so stripes stay crisp on dark panels too. The subtle white hairline between stripes gives
      the pattern a classic candy-cane look at any hue. */
   .card.theme-channel, .list-task.theme-channel, .gallery-tile.theme-channel,
-  .planning-card.theme-channel, .notes-entry.theme-channel { position: relative; overflow: hidden; }
-  .ev.theme-channel, .ev-bar.theme-channel { overflow: hidden; }
+  .planning-card.theme-channel, .notes-entry.theme-channel { position: relative; overflow: hidden; isolation: isolate; }
+  .ev.theme-channel, .ev-bar.theme-channel { overflow: hidden; isolation: isolate; }
   .theme-channel::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    z-index: -1;   /* stripes render BEHIND title/icons; `isolation: isolate` scopes the negative z-index so it doesn't fall through the whole page */
     background-image: repeating-linear-gradient(
       45deg,
       hsla(var(--theme-hue, 20), 90%, 55%, 0.60) 0 6px,
@@ -732,9 +733,9 @@
       transparent 8px 16px
     );
   }
-  tr.theme-channel td { position: relative; }
+  tr.theme-channel td { position: relative; isolation: isolate; }
   tr.theme-channel td::after {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: -1;
     background-image: repeating-linear-gradient(
       45deg,
       hsla(var(--theme-hue, 20), 90%, 55%, 0.28) 0 4px,
@@ -1439,8 +1440,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.53";
+const VERSION = "3.54";
 const CHANGELOG = [
+  "v3.54 — Theme-channel stripes now render BEHIND the card's title/icons/chips instead of covering them. Added `isolation: isolate` on each Theme card so the overlay's negative z-index stays scoped to that card.",
   "v3.53 — Theme-channel candy stripes are now per-card and much more visible. Each Theme card gets a stable hue seeded from its card id (same color every render, every user, every view), the stripes have a thin white hairline between color bands for a classic candy-cane feel, and the blend-mode is gone so the pattern reads on dark panel backgrounds the way it already did on bright calendar bars.",
   "v3.52 — Theme-channel decoration. Any card whose channels include 'Theme' now gets a diagonal candy-stripe overlay in every view (board, calendar bars, grid rows, list, gallery, planning cards, notes feed). Soft-light blend keeps it readable on both panel-colored and brand-colored backgrounds, and the overlay respects rounded corners / alert tint when both are active.",
   "v3.51 — Planning rollups no longer blank out when a sprint/year filter is active alongside another facet click. The rollup facet re-derivation was running under the restored filters.sprint, so clicking (Unassigned) with a Year chip set emptied every rollup instead of toggling the owner filter. The Planning view already handles sprint scope via its own per-section predicate, so the rollup now temporarily drops filters.sprint while counting.",
