@@ -721,7 +721,7 @@
      no blend-mode, so stripes stay crisp on dark panels too. The subtle white hairline between stripes gives
      the pattern a classic candy-cane look at any hue. */
   .card.theme-channel, .list-task.theme-channel, .gallery-tile.theme-channel,
-  .planning-card.theme-channel, .notes-entry.theme-channel { position: relative; overflow: hidden; isolation: isolate; }
+  .planning-card.theme-channel { position: relative; overflow: hidden; isolation: isolate; }
   .ev.theme-channel, .ev-bar.theme-channel { overflow: hidden; isolation: isolate; }
   .theme-channel::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
@@ -744,22 +744,15 @@
     content: ""; position: absolute; inset: 6px; z-index: 0; pointer-events: none;
     background: var(--panel-2); border-radius: 6px;
   }
-  /* notes-entry is a thin horizontal bar — a 6px inset would eat the row height. Use the same slim inset as
-     calendar bars so the stripes frame the bar instead of swallowing the content. */
-  .notes-entry.theme-channel::before {
-    content: ""; position: absolute; inset: 2px 4px; z-index: 0; pointer-events: none;
-    background: var(--panel-2); border-radius: 4px;
-  }
-  .ev.theme-channel::before, .ev-bar.theme-channel::before {
-    content: ""; position: absolute; inset: 2px 4px; z-index: 0; pointer-events: none;
-    background: var(--theme-bg, var(--panel-2)); border-radius: 4px;
+  /* Calendar bars: no inset backdrop (would hide most of the stripes). Instead give the text a strong
+     text-shadow halo so the title/chips pop over the striped background without blocking the pattern. */
+  .ev.theme-channel, .ev-bar.theme-channel {
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.95), 0 0 4px rgba(0, 0, 0, 0.65);
   }
   /* Make the content sit above the inset backdrop. The DOM is already in flow but ::before (z-index 0) would
      paint over static children in the same stacking context — explicit z-index on direct children fixes it. */
   .card.theme-channel > *, .planning-card.theme-channel > *,
-  .list-task.theme-channel > *, .gallery-tile.theme-channel > *,
-  .notes-entry.theme-channel > *,
-  .ev.theme-channel > *, .ev-bar.theme-channel > * { position: relative; z-index: 1; }
+  .list-task.theme-channel > *, .gallery-tile.theme-channel > * { position: relative; z-index: 1; }
   /* Modal alert button — top-right, next to ✕ Close. Lights up red when toggled on. */
   .modal-alert { position: absolute; top: 10px; right: 48px; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
   .modal-alert:hover { color: var(--text); border-color: var(--danger); }
@@ -1458,8 +1451,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.57";
+const VERSION = "3.58";
 const CHANGELOG = [
+  "v3.58 — Theme stripes: calendar bars now show the full pattern (no inset backdrop) with a strong black text-shadow halo on the title/chips so they stay readable without hiding the stripes. Theming removed from the Notes feed entirely (bars were too thin to carry both the pattern and the content legibly).",
   "v3.57 — Theme stripe frame extended to calendar bars + notes feed. Calendar bars inset the backdrop 2×4px using the bar's own brand color (so the frame still reads as the Meowi orange / Doggi green bar), notes-entry uses the same slim inset to avoid eating the thin row height, and the grid view no longer paints the pattern at all.",
   "v3.56 — Theme stripes now frame the card instead of flooding it. Panel-colored cards (board, planning, list, gallery, notes feed) get a solid panel backdrop inset 6px, so the stripes read as a decorative border and the title/chips sit on a clean background. Calendar bars still fill with stripes since they're too narrow for a frame.",
   "v3.55 — Theme stripes are now month-appropriate. The stripe palette is chosen from the card's due date (fallback: end date, then today's month): Jan icy blue, Feb Valentine pink, Mar St. Patrick's green+gold, Apr Easter pastels, May spring bloom, Jun/Jul patriotic red+blue, Aug late summer, Sep early fall, Oct Halloween orange+purple, Nov Thanksgiving, Dec Christmas red+green. Also replaced the single hashed hue with a two-color stripe (color + white hairline + 2nd color + gap) for a proper candy-cane look.",
@@ -4744,7 +4738,7 @@ function renderNotesView() {
   feed.forEach(item => {
     const c = item.card;
     const collapsed = notesAllCollapsed ? !notesCollapsed.has("__open:" + item.key) : notesCollapsed.has(item.key);
-    const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "") + (cardIsAlert(item.card) ? " alert-on" : ""); decorateTheme(entry, item.card);
+    const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "") + (cardIsAlert(item.card) ? " alert-on" : "");
     entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
     // Header — clicking anywhere on the bar toggles collapse; children with their own handlers (title opens the
     // modal, ✕ removes the email, done checkbox toggles status) stopPropagation so those clicks don't also toggle.
