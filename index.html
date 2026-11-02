@@ -726,20 +726,24 @@
   .theme-channel::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
     z-index: -1;   /* stripes render BEHIND title/icons; `isolation: isolate` scopes the negative z-index so it doesn't fall through the whole page */
+    opacity: 0.75;
     background-image: repeating-linear-gradient(
       45deg,
-      hsla(var(--theme-hue, 20), 90%, 55%, 0.60) 0 6px,
-      hsla(0, 0%, 100%, 0.55) 6px 8px,
-      transparent 8px 16px
+      var(--theme-c1, #f57c00) 0 7px,
+      hsla(0, 0%, 100%, 0.95) 7px 9px,
+      var(--theme-c2, #4a148c) 9px 16px,
+      transparent 16px 22px
     );
   }
   tr.theme-channel td { position: relative; isolation: isolate; }
   tr.theme-channel td::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; z-index: -1;
+    opacity: 0.45;
     background-image: repeating-linear-gradient(
       45deg,
-      hsla(var(--theme-hue, 20), 90%, 55%, 0.28) 0 4px,
-      transparent 4px 12px
+      var(--theme-c1, #f57c00) 0 4px,
+      var(--theme-c2, #4a148c) 4px 8px,
+      transparent 8px 14px
     );
   }
   /* Modal alert button — top-right, next to ✕ Close. Lights up red when toggled on. */
@@ -1440,8 +1444,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.54";
+const VERSION = "3.55";
 const CHANGELOG = [
+  "v3.55 — Theme stripes are now month-appropriate. The stripe palette is chosen from the card's due date (fallback: end date, then today's month): Jan icy blue, Feb Valentine pink, Mar St. Patrick's green+gold, Apr Easter pastels, May spring bloom, Jun/Jul patriotic red+blue, Aug late summer, Sep early fall, Oct Halloween orange+purple, Nov Thanksgiving, Dec Christmas red+green. Also replaced the single hashed hue with a two-color stripe (color + white hairline + 2nd color + gap) for a proper candy-cane look.",
   "v3.54 — Theme-channel stripes now render BEHIND the card's title/icons/chips instead of covering them. Added `isolation: isolate` on each Theme card so the overlay's negative z-index stays scoped to that card.",
   "v3.53 — Theme-channel candy stripes are now per-card and much more visible. Each Theme card gets a stable hue seeded from its card id (same color every render, every user, every view), the stripes have a thin white hairline between color bands for a classic candy-cane feel, and the blend-mode is gone so the pattern reads on dark panel backgrounds the way it already did on bright calendar bars.",
   "v3.52 — Theme-channel decoration. Any card whose channels include 'Theme' now gets a diagonal candy-stripe overlay in every view (board, calendar bars, grid rows, list, gallery, planning cards, notes feed). Soft-light blend keeps it readable on both panel-colored and brand-colored backgrounds, and the overlay respects rounded corners / alert tint when both are active.",
@@ -1777,15 +1782,36 @@ function cardIsAlert(c) { return !!(c && c.fields && c.fields[ALERT_KEY]); }
 // paints a unique color per card across every view. Hue derived from the card id so the color is stable
 // across renders / across users.
 function cardHasThemeChannel(c) { return !!(c && splitChannels(c.channel).some(ch => ch.toLowerCase() === "theme")); }
-function themeHue(c) {
-  const id = (c && c.id) || ""; let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return h % 360;
+// Month-appropriate stripe palette — pair per month that reads as the season/holiday without being heavy-handed.
+// Jan: icy winter · Feb: Valentine's · Mar: St Patrick's · Apr: Easter pastels · May: spring bloom ·
+// Jun/Jul: patriotic red/blue · Aug: late summer · Sep: back-to-school / early fall · Oct: Halloween ·
+// Nov: Thanksgiving · Dec: Christmas.
+const THEME_MONTH_COLORS = [
+  ["#2e86de", "#dff6ff"],  // 0 Jan
+  ["#e84a7f", "#f8c8d8"],  // 1 Feb
+  ["#1aa260", "#f9d94a"],  // 2 Mar
+  ["#f8a5c2", "#a3d9a5"],  // 3 Apr
+  ["#f06292", "#8bc34a"],  // 4 May
+  ["#e53935", "#1e88e5"],  // 5 Jun
+  ["#c62828", "#1565c0"],  // 6 Jul
+  ["#f9a825", "#ff7043"],  // 7 Aug
+  ["#d84315", "#8d6e63"],  // 8 Sep
+  ["#f57c00", "#4a148c"],  // 9 Oct — orange + purple (Halloween)
+  ["#bf360c", "#ffb74d"],  // 10 Nov
+  ["#c62828", "#2e7d32"]   // 11 Dec — red + green (Christmas)
+];
+function themeMonth(c) {
+  // Prefer the card's due date (that's when the themed asset will run). Fall back to end date, then today.
+  const d = (c && (c.due || c.end)) || "";
+  const m = /^\d{4}-(\d{2})/.exec(d);
+  return m ? Math.max(0, Math.min(11, parseInt(m[1], 10) - 1)) : new Date().getMonth();
 }
 function decorateTheme(el, c) {
   if (!cardHasThemeChannel(c)) return;
   el.classList.add("theme-channel");
-  el.style.setProperty("--theme-hue", themeHue(c));
+  const [c1, c2] = THEME_MONTH_COLORS[themeMonth(c)];
+  el.style.setProperty("--theme-c1", c1);
+  el.style.setProperty("--theme-c2", c2);
 }
 function cardAlertNote(c) { return (c && c.fields && c.fields[ALERT_NOTE_KEY]) || ""; }
 function cardAlertOwner(c) { return (c && c.fields && c.fields[ALERT_OWNER_KEY]) || ""; }
