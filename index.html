@@ -584,6 +584,14 @@
   .planning-card-push { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; padding: 0; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; line-height: 1; opacity: 0; transition: opacity .12s; }
   .planning-card:hover .planning-card-push { opacity: 1; }
   .planning-card-push:hover { color: #fff; background: var(--accent); border-color: var(--accent); }
+  /* Mark-done button sits immediately left of the push arrow and shares its hover-to-reveal behavior. When
+     no push arrow is present (backlog section, Next week section) the .alone modifier shifts it to the push
+     slot so the card has a single top-right control instead of a hole. Palette is green to match doneBadge
+     semantics (card is being marked complete, not just pushed to another week). */
+  .planning-card-done { position: absolute; top: 6px; right: 32px; width: 22px; height: 22px; padding: 0; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; line-height: 1; opacity: 0; transition: opacity .12s; }
+  .planning-card-done.alone { right: 6px; }
+  .planning-card:hover .planning-card-done { opacity: 1; }
+  .planning-card-done:hover { color: #fff; background: var(--ok, #16a34a); border-color: var(--ok, #16a34a); }
   .planning-empty { color: var(--muted); font-style: italic; font-size: 12px; padding: 12px 4px; text-align: center; }
   .planning-card { padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 6px; cursor: pointer; }
   .planning-card:hover { border-color: var(--accent); }
@@ -1405,8 +1413,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.49";
+const VERSION = "3.50";
 const CHANGELOG = [
+  "v3.50 — Planning view: (1) Owners rollup '(Unassigned)' chip now filters the view to cards with no owner (same click-to-toggle semantics as every other rollup chip); (2) each planning card gets a ✓ Mark-done button next to the → Push arrow, which moves the card to whichever lane holds the 'Complete' role. The ✓ button appears on every section (Backlog, Last/This/Next week), slides into the push slot when no push arrow is present, and is hidden on cards already on the Complete lane.",
   "v3.49 — Fast open for shared card links. Opening ?card=<id> no longer waits on the full board load — the app fires a direct one-row fetch for the target card and pops the modal as soon as it comes back, in parallel with the normal workspace-wide load. The background refetch continues (so the board behind the modal fills in while you read), but the modal appears on first paint instead of after every deliverable is downloaded.",
   "v3.48 — Shareable card links. Opening any card now writes ?card=<id> onto the URL (and ?ws=<workspace> when it's not planner), so the browser's address bar is itself a direct link to the card. A new 🔗 Copy link button in the card modal copies that URL to your clipboard. Paste it in Slack, email, or a note; the recipient's browser opens the app, switches to the right workspace, loads cards, and pops the card modal automatically. Links built this way intentionally skip the current filters/view so they open cleanly on the other side.",
   "v3.47 — Alert note gets a date and lands in the regular Notes timeline. Setting (or editing) a 🚨 alert now (1) stamps the date on the flag, shown next to the owner on the modal banner, in the Notes-feed chip, and in the Red Alerts section rows; (2) auto-adds a dated note entry to the card ('🚨 <note>' authored by the alert owner) so the alert text joins the regular Notes feed alongside other updates. Clearing the flag no longer touches the note history — the alert note stays as a record of what happened.",
@@ -3850,22 +3859,22 @@ function buildPlanningRollup(dimKey, list, enabledLanes, sprintPredicate, bl) {
   // independently for hiding entire lanes from the display.
   const activeSet = filterKey && filters[filterKey] instanceof Set ? filters[filterKey] : null;
   entries.forEach(([val, n]) => {
-    const on = activeSet ? activeSet.has(val) : true;
+    // "(unassigned)" is a display-only alias for the empty-string value that passesFilters already treats as
+    // literal "" (see the `set.has("")` branch). Normalize to that here so clicking the chip adds "" to the
+    // filter set and the chip's on/off state reflects the stored filter.
+    const fval = (val === "(unassigned)") ? "" : val;
+    const on = activeSet ? activeSet.has(fval) : true;
     const cell = document.createElement("button"); cell.type = "button"; cell.className = "planning-stat-cell" + (on ? "" : " off");
     const color = dimValueColor(dimKey, val); if (color) cell.style.borderLeft = "3px solid " + color;
     cell.innerHTML = `<span class="planning-stat-label">${esc(val)}</span><span class="planning-stat-val">${n}</span>`;
-    if (val === "(unassigned)") {
-      cell.disabled = true; cell.title = "Cards with no " + dimKey + " set"; cell.style.cursor = "default";
-    } else {
-      cell.title = (activeSet && activeSet.has(val)) ? "Remove " + val + " from the " + dimKey + " filter" : "Filter to " + val;
-      cell.onclick = e => {
-        e.stopPropagation();
-        if (!(filters[filterKey] instanceof Set)) filters[filterKey] = new Set();
-        if (filters[filterKey].has(val)) { filters[filterKey].delete(val); if (!filters[filterKey].size) delete filters[filterKey]; }
-        else filters[filterKey].add(val);
-        updateFilterBtn && updateFilterBtn(); render();
-      };
-    }
+    cell.title = (activeSet && activeSet.has(fval)) ? "Remove " + val + " from the " + dimKey + " filter" : "Filter to " + val;
+    cell.onclick = e => {
+      e.stopPropagation();
+      if (!(filters[filterKey] instanceof Set)) filters[filterKey] = new Set();
+      if (filters[filterKey].has(fval)) { filters[filterKey].delete(fval); if (!filters[filterKey].size) delete filters[filterKey]; }
+      else filters[filterKey].add(fval);
+      updateFilterBtn && updateFilterBtn(); render();
+    };
     wrap.appendChild(cell);
   });
   return block;
@@ -3968,12 +3977,24 @@ function renderSprintPlanning() {
       item.onclick = () => openModal(c);
       // Per-card push forward — one week at a time. Only on Last week and This week (Next week has no visible
       // "further" section to land in). Deliberate button, no bulk sweep, so mistakes are one card at a time.
-      if (dropKind === "week" && dropWk && dropWk !== nextWk) {
+      const showPush = dropKind === "week" && dropWk && dropWk !== nextWk;
+      if (showPush) {
         const targetWk = innov ? String(parseInt(dropWk, 10) + 1) : isoWeek(ymdUTC(new Date(isoWeekStart(dropWk).getTime() + 7 * 86400000)));
         const pb = document.createElement("button"); pb.type = "button"; pb.className = "planning-card-push";
         pb.textContent = "→"; pb.title = "Push to " + (innov ? targetWk : fmtSprintFull(targetWk));
         pb.onclick = e => { e.stopPropagation(); moveCardToSprint(c.id, targetWk); };
         item.appendChild(pb);
+      }
+      // Mark-done — moves the card to whichever status has the "complete" role. Hidden when there's no
+      // complete lane configured, or when the card is already on it. Icon follows ROLE_ICONS.complete so it
+      // reads the same as the done-badge used everywhere else (one concept, one icon app-wide).
+      if (completeLane && c.status !== completeLane) {
+        const db2 = document.createElement("button"); db2.type = "button";
+        db2.className = "planning-card-done" + (showPush ? "" : " alone");
+        db2.textContent = (ROLE_ICONS.complete || "✓");
+        db2.title = "Mark done — move to “" + completeLane + "”";
+        db2.onclick = e => { e.stopPropagation(); patchStatus(c.id, completeLane); };
+        item.appendChild(db2);
       }
       cardsBox.appendChild(item);
     });
