@@ -715,22 +715,31 @@
   html[data-theme="light"] .alert-on { background: color-mix(in srgb, #ef4444 10%, #fff) !important; }
   html[data-theme="light"] tr.alert-on td { background: color-mix(in srgb, #ef4444 10%, #fff) !important; }
   .alert-on .notes-entry-title, .alert-on h3, .alert-on .planning-card-title, .alert-on .gallery-tile-title { color: var(--text); }
-  /* Theme-channel decoration — any card whose channels include "Theme" gets a diagonal candy-stripe overlay
-     painted via ::after. Overlay works regardless of whether the base background is a panel color (board,
-     list, gallery, planning, notes) or an inline color (calendar bars via colorFor()). Soft-light blend keeps
-     it readable on both bright and dark backgrounds. */
+  /* Theme-channel decoration — cards whose channels include "Theme" get a diagonal candy-stripe overlay in a
+     per-card hue (seeded from the card id via --theme-hue, so each card has a distinct stable color). Works
+     on panel-colored cards (board/list/gallery/planning/notes) and on inline-colored calendar bars alike;
+     no blend-mode, so stripes stay crisp on dark panels too. The subtle white hairline between stripes gives
+     the pattern a classic candy-cane look at any hue. */
   .card.theme-channel, .list-task.theme-channel, .gallery-tile.theme-channel,
   .planning-card.theme-channel, .notes-entry.theme-channel { position: relative; overflow: hidden; }
   .ev.theme-channel, .ev-bar.theme-channel { overflow: hidden; }
   .theme-channel::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
-    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.32) 0 5px, transparent 5px 14px);
-    mix-blend-mode: soft-light;
+    background-image: repeating-linear-gradient(
+      45deg,
+      hsla(var(--theme-hue, 20), 90%, 55%, 0.60) 0 6px,
+      hsla(0, 0%, 100%, 0.55) 6px 8px,
+      transparent 8px 16px
+    );
   }
   tr.theme-channel td { position: relative; }
   tr.theme-channel td::after {
     content: ""; position: absolute; inset: 0; pointer-events: none;
-    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.14) 0 3px, transparent 3px 10px);
+    background-image: repeating-linear-gradient(
+      45deg,
+      hsla(var(--theme-hue, 20), 90%, 55%, 0.28) 0 4px,
+      transparent 4px 12px
+    );
   }
   /* Modal alert button — top-right, next to ✕ Close. Lights up red when toggled on. */
   .modal-alert { position: absolute; top: 10px; right: 48px; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
@@ -1430,8 +1439,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.52";
+const VERSION = "3.53";
 const CHANGELOG = [
+  "v3.53 — Theme-channel candy stripes are now per-card and much more visible. Each Theme card gets a stable hue seeded from its card id (same color every render, every user, every view), the stripes have a thin white hairline between color bands for a classic candy-cane feel, and the blend-mode is gone so the pattern reads on dark panel backgrounds the way it already did on bright calendar bars.",
   "v3.52 — Theme-channel decoration. Any card whose channels include 'Theme' now gets a diagonal candy-stripe overlay in every view (board, calendar bars, grid rows, list, gallery, planning cards, notes feed). Soft-light blend keeps it readable on both panel-colored and brand-colored backgrounds, and the overlay respects rounded corners / alert tint when both are active.",
   "v3.51 — Planning rollups no longer blank out when a sprint/year filter is active alongside another facet click. The rollup facet re-derivation was running under the restored filters.sprint, so clicking (Unassigned) with a Year chip set emptied every rollup instead of toggling the owner filter. The Planning view already handles sprint scope via its own per-section predicate, so the rollup now temporarily drops filters.sprint while counting.",
   "v3.50 — Planning view: (1) Owners rollup '(Unassigned)' chip now filters the view to cards with no owner (same click-to-toggle semantics as every other rollup chip); (2) each planning card gets a ✓ Mark-done button next to the → Push arrow, which moves the card to whichever lane holds the 'Complete' role. The ✓ button appears on every section (Backlog, Last/This/Next week), slides into the push slot when no push arrow is present, and is hidden on cards already on the Complete lane.",
@@ -1761,9 +1771,20 @@ const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__
 // short reason + who flagged it so the whole team sees context.
 function cardIsAlert(c) { return !!(c && c.fields && c.fields[ALERT_KEY]); }
 // Decorator: whenever a card has "Theme" among its channels, every renderer tags the DOM element with
-// `.theme-channel` so the shared ::after overlay (diagonal stripe pattern) paints across every view.
+// `.theme-channel` AND stamps a per-card hue onto `--theme-hue`, so the shared ::after candy-stripe overlay
+// paints a unique color per card across every view. Hue derived from the card id so the color is stable
+// across renders / across users.
 function cardHasThemeChannel(c) { return !!(c && splitChannels(c.channel).some(ch => ch.toLowerCase() === "theme")); }
-function themeCls(c) { return cardHasThemeChannel(c) ? " theme-channel" : ""; }
+function themeHue(c) {
+  const id = (c && c.id) || ""; let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+function decorateTheme(el, c) {
+  if (!cardHasThemeChannel(c)) return;
+  el.classList.add("theme-channel");
+  el.style.setProperty("--theme-hue", themeHue(c));
+}
 function cardAlertNote(c) { return (c && c.fields && c.fields[ALERT_NOTE_KEY]) || ""; }
 function cardAlertOwner(c) { return (c && c.fields && c.fields[ALERT_OWNER_KEY]) || ""; }
 function cardAlertDate(c) { return (c && c.fields && c.fields[ALERT_DATE_KEY]) || ""; }
@@ -3989,7 +4010,7 @@ function renderSprintPlanning() {
     const cardsBox = document.createElement("div"); cardsBox.className = "planning-cards";
     if (!list.length) { const e = document.createElement("div"); e.className = "planning-empty"; e.textContent = "Nothing here."; cardsBox.appendChild(e); }
     else list.forEach(c => {
-      const item = document.createElement("div"); item.className = "planning-card" + (cardIsAlert(c) ? " alert-on" : "") + themeCls(c); item.draggable = true;
+      const item = document.createElement("div"); item.className = "planning-card" + (cardIsAlert(c) ? " alert-on" : ""); item.draggable = true; decorateTheme(item, c);
       item.style.borderLeftColor = colorFor(c);
       item.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; item.classList.add("dragging"); });
       item.addEventListener("dragend", () => { item.classList.remove("dragging"); document.querySelectorAll(".planning-sec.drop-over").forEach(el => el.classList.remove("drop-over")); });
@@ -4676,7 +4697,7 @@ function renderNotesView() {
   feed.forEach(item => {
     const c = item.card;
     const collapsed = notesAllCollapsed ? !notesCollapsed.has("__open:" + item.key) : notesCollapsed.has(item.key);
-    const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "") + (cardIsAlert(item.card) ? " alert-on" : "") + themeCls(item.card);
+    const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "") + (cardIsAlert(item.card) ? " alert-on" : ""); decorateTheme(entry, item.card);
     entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c);
     // Header — clicking anywhere on the bar toggles collapse; children with their own handlers (title opens the
     // modal, ✕ removes the email, done checkbox toggles status) stopPropagation so those clicks don't also toggle.
@@ -4963,7 +4984,7 @@ function renderGalleryView() {
   // Mosaic uses JS-managed columns so sparse content actually spreads side-by-side instead of CSS column
   // balancing stacking everything in column 1. Tile keeps the simpler CSS grid.
   const buildTile = ({ card: c, url, idx, all }) => {
-    const tile = document.createElement("div"); tile.className = "gallery-tile" + (cardIsAlert(c) ? " alert-on" : "") + themeCls(c);
+    const tile = document.createElement("div"); tile.className = "gallery-tile" + (cardIsAlert(c) ? " alert-on" : ""); decorateTheme(tile, c);
     tile.style.borderLeftColor = colorFor(c); applyPromo(tile, c);
     const isDone = !!(completeLane && c.status === completeLane);
     if (isDone) tile.classList.add("done");
@@ -5085,7 +5106,7 @@ function renderList() {
 }
 function listTaskEl(c) {
   const subs = cardSubtasks(c); const prog = subProgress(c); const exp = listExpanded.has(c.id);
-  const wrap = document.createElement("div"); wrap.className = "list-task" + (cardIsAlert(c) ? " alert-on" : "") + themeCls(c);
+  const wrap = document.createElement("div"); wrap.className = "list-task" + (cardIsAlert(c) ? " alert-on" : ""); decorateTheme(wrap, c);
   wrap.style.borderLeftColor = colorFor(c);   // respects the Color: brand/channel/status setting
   applyPromo(wrap, c);                          // promotion top stripe (same as calendar)
   if (listSplit) {   // in split mode, drag a task to another column to change that dimension's value
@@ -5205,7 +5226,7 @@ function fmtRange(due, end) {
   return fmtDue(due || end);
 }
 function cardEl(c) {
-  const el = document.createElement("div"); el.className = "card" + (cardIsAlert(c) ? " alert-on" : "") + themeCls(c);
+  const el = document.createElement("div"); el.className = "card" + (cardIsAlert(c) ? " alert-on" : ""); decorateTheme(el, c);
   el.style.borderLeftColor = colorFor(c); el.draggable = true; applyPromo(el, c);
   const badges = dimBadges(c);
   const done = doneBadge(c);
@@ -5392,7 +5413,7 @@ function renderGrid() {
   thead.appendChild(trh); table.appendChild(thead);
   const tbody = document.createElement("tbody");
   const buildRow = c => {
-    const tr = document.createElement("tr"); if (gridSelected.has(c.id)) tr.classList.add("grid-sel"); if (cardIsAlert(c)) tr.classList.add("alert-on"); if (cardHasThemeChannel(c)) tr.classList.add("theme-channel");
+    const tr = document.createElement("tr"); if (gridSelected.has(c.id)) tr.classList.add("grid-sel"); if (cardIsAlert(c)) tr.classList.add("alert-on"); decorateTheme(tr, c);
     // Leading select cell — click doesn't open the modal.
     const tdSel = document.createElement("td"); tdSel.className = "grid-sel-cell";
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = gridSelected.has(c.id);
@@ -5858,7 +5879,7 @@ function evTitle(c) { const p = cardPromo(c); return c.title + " — " + c.brand
 function applyPromo(el, c) { const p = cardPromo(c); if (p) { el.style.setProperty("--promo", promoColor(p)); el.classList.add("has-promo"); }
   if (cardPriority(c) === "High") el.classList.add("prio-high"); }
 function evEl(c) {
-  const e = document.createElement("div"); e.className = "ev" + (cardIsAlert(c) ? " alert-on" : "") + themeCls(c); e.style.background = colorFor(c);
+  const e = document.createElement("div"); e.className = "ev" + (cardIsAlert(c) ? " alert-on" : ""); e.style.background = colorFor(c); decorateTheme(e, c);
   e.innerHTML = evContent(c); e.title = evTitle(c); e.draggable = true; applyPromo(e, c);
   e.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); setTimeout(() => document.body.classList.add("cal-dragging"), 0); });
   e.addEventListener("dragend", () => document.body.classList.remove("cal-dragging"));
@@ -5866,7 +5887,7 @@ function evEl(c) {
   return e;
 }
 function barEl(c) {
-  const el = document.createElement("div"); el.className = "ev-bar" + (cardIsAlert(c) ? " alert-on" : "") + themeCls(c); el.style.background = colorFor(c);
+  const el = document.createElement("div"); el.className = "ev-bar" + (cardIsAlert(c) ? " alert-on" : ""); el.style.background = colorFor(c); decorateTheme(el, c);
   el.innerHTML = evContent(c); el.title = evTitle(c); el.draggable = true; applyPromo(el, c);
   el.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/plain", c.id); ev.stopPropagation(); setTimeout(() => document.body.classList.add("cal-dragging"), 0); });
   el.addEventListener("dragend", () => document.body.classList.remove("cal-dragging"));
