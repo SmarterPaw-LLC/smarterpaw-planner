@@ -136,6 +136,9 @@
   .cf-sort-dragging { opacity: .55; }
   .cf-sortable.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent) inset; border-top: 2px solid var(--accent); margin-top: -2px; }
   .cf-sortable.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent) inset; border-bottom: 2px solid var(--accent); margin-bottom: -2px; }
+  /* The label of a sortable field also acts as a drag handle — grab cursor on hover makes that discoverable. */
+  .cf-sort-label-handle { cursor: grab; }
+  .cf-sort-label-handle:active { cursor: grabbing; }
   .field label, .seclabel { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
   .seclabel { text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
   .field input, .field select, .field textarea { width: 100%; }
@@ -1496,8 +1499,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.64";
+const VERSION = "3.65";
 const CHANGELOG = [
+  "v3.65 — Custom-field drag discoverability: the field's own `<label>` and the group-section header are now drag initiators too, with a grab cursor on hover. Programmatic drag end-to-end was already working in v3.64; the real problem was the top-right ⋮⋮ grip being easy to miss, so trying to drag the field body silently did nothing because draggable was never set. Now dragging anywhere on the label (or group header) reorders the field.",
   "v3.64 — Custom-field drag reorder now actually fires: dragover was gated on `dataTransfer.types` containing the custom MIME, which Chrome masks for custom types — the preventDefault never ran so drop silently no-op'd. Switched to a module-level drag-source stash set in dragstart; also now setData `text/plain` as a fallback. Grips are visible at .4 opacity by default (brighter on hover) so you can see where to grab.",
   "v3.63 — Rich-text toolbar fits on one row again: the paragraph dropdown was inheriting the modal's generic `.field select { width: 100% }` rule and stretching full width, pushing every other button onto its own row. Pinned the dropdown width (92–120px) and tightened button sizing so B/I/U/S • dropdown • • 1. 🔗 Tₓ all sit on one line.",
   "v3.62 — Modal customization pass: (1) Rich-text toolbar standardized — B/I/U/S inline-mark buttons that show active state (so a second click clears), paragraph-style dropdown with Normal / Heading 1 / Heading 2 / Heading 3 (picking Normal clears the heading), bulleted + numbered lists that toggle, Link, and Tₓ clear-formatting that resets block to Normal. (2) Custom fields and field-group sections are now drag-reorderable right from the card modal — grip appears on hover, drop above/below a peer, saves globally (ungrouped fields update their position in the lists table; grouped fields and group order persist through saveFieldGroups).",
@@ -6844,6 +6848,16 @@ function ensureCustomFieldReorderHandle(el) {
   grip.addEventListener("mousedown", e => { e.stopPropagation(); el.draggable = true; });
   grip.addEventListener("mouseup", () => { el.draggable = false; });
   el.appendChild(grip);
+  // Also let the field's own <label> initiate the drag — a lot of users will try to drag the label itself since
+  // that reads as the field's "title bar", and the top-right grip is easy to miss. Clicking in an input stays
+  // text-selection as normal; only the label triggers draggable=true.
+  const lab = el.querySelector(":scope > label");
+  if (lab) {
+    lab.classList.add("cf-sort-label-handle");
+    lab.title = "Drag to reorder this field";
+    lab.addEventListener("mousedown", e => { e.stopPropagation(); el.draggable = true; });
+    lab.addEventListener("mouseup", () => { el.draggable = false; });
+  }
   el.addEventListener("dragstart", e => {
     if (!el.draggable) { e.preventDefault(); return; }
     e.stopPropagation();
@@ -6883,6 +6897,14 @@ function ensureFieldGroupReorderHandle(sec) {
   grip.addEventListener("mousedown", e => { e.stopPropagation(); sec.draggable = true; });
   grip.addEventListener("mouseup", () => { sec.draggable = false; });
   sec.appendChild(grip);
+  // Group header is also a drag initiator so dragging anywhere on the colored section header reorders the group.
+  const hdr = sec.querySelector(":scope > .field-group-header");
+  if (hdr) {
+    hdr.classList.add("cf-sort-label-handle");
+    hdr.title = "Drag to reorder this group";
+    hdr.addEventListener("mousedown", e => { e.stopPropagation(); sec.draggable = true; });
+    hdr.addEventListener("mouseup", () => { sec.draggable = false; });
+  }
   sec.addEventListener("dragstart", e => {
     if (!sec.draggable) { e.preventDefault(); return; }
     e.stopPropagation();
