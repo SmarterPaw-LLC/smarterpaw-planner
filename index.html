@@ -128,9 +128,9 @@
   /* Custom-field reorder (ungrouped field wrappers + grouped field wrappers + whole field-group sections). Same
      visual language as the top-level section grip, but scoped to within #f_fields so the two don't collide. */
   .cf-sortable { position: relative; }
-  .cf-sort-grip { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: grab; color: var(--muted); background: transparent; border-radius: 4px; font-size: 12px; line-height: 1; opacity: 0; transition: opacity .12s; user-select: none; z-index: 4; }
-  .cf-sort-grip-group { top: 6px; right: 6px; }
-  .cf-sortable:hover > .cf-sort-grip { opacity: .55; }
+  .cf-sort-grip { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; cursor: grab; color: var(--muted); background: transparent; border-radius: 4px; font-size: 13px; line-height: 1; opacity: .4; transition: opacity .12s, background .12s; user-select: none; z-index: 4; letter-spacing: -1px; }
+  .cf-sort-grip-group { top: 4px; right: 6px; }
+  .cf-sortable:hover > .cf-sort-grip { opacity: .85; }
   .cf-sort-grip:hover { opacity: 1 !important; background: var(--panel-2); color: var(--text); }
   .cf-sort-grip:active { cursor: grabbing; }
   .cf-sort-dragging { opacity: .55; }
@@ -1496,8 +1496,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.63";
+const VERSION = "3.64";
 const CHANGELOG = [
+  "v3.64 — Custom-field drag reorder now actually fires: dragover was gated on `dataTransfer.types` containing the custom MIME, which Chrome masks for custom types — the preventDefault never ran so drop silently no-op'd. Switched to a module-level drag-source stash set in dragstart; also now setData `text/plain` as a fallback. Grips are visible at .4 opacity by default (brighter on hover) so you can see where to grab.",
   "v3.63 — Rich-text toolbar fits on one row again: the paragraph dropdown was inheriting the modal's generic `.field select { width: 100% }` rule and stretching full width, pushing every other button onto its own row. Pinned the dropdown width (92–120px) and tightened button sizing so B/I/U/S • dropdown • • 1. 🔗 Tₓ all sit on one line.",
   "v3.62 — Modal customization pass: (1) Rich-text toolbar standardized — B/I/U/S inline-mark buttons that show active state (so a second click clears), paragraph-style dropdown with Normal / Heading 1 / Heading 2 / Heading 3 (picking Normal clears the heading), bulleted + numbered lists that toggle, Link, and Tₓ clear-formatting that resets block to Normal. (2) Custom fields and field-group sections are now drag-reorderable right from the card modal — grip appears on hover, drop above/below a peer, saves globally (ungrouped fields update their position in the lists table; grouped fields and group order persist through saveFieldGroups).",
   "v3.61.1 — Hotfix for v3.61 syntax error (shadowed `html` parameter in sanitizeRichText) that halted all JS.",
@@ -6822,6 +6823,10 @@ function renderFieldInputs(values) {
   // in the lists table; grouped fields and group order go through saveFieldGroups.
   wireCustomFieldReorder();
 }
+// Module-level drag state. Browsers restrict reading dataTransfer during dragover (some even hide custom MIME
+// types in `.types`), so the dragstart handler stashes the source identity here and dragover/drop read it back.
+let _cfDragFromName = "";   // ungrouped-or-grouped field being dragged
+let _cfDragFromGroup = "";  // field-group section being dragged
 // Wire drag reorder for the custom-fields section of the modal. Called at the end of renderFieldInputs so every
 // wrapper + group section in the current DOM gets a handle. Idempotent — ensureCustomFieldReorderHandle guards.
 function wireCustomFieldReorder() {
@@ -6842,19 +6847,22 @@ function ensureCustomFieldReorderHandle(el) {
   el.addEventListener("dragstart", e => {
     if (!el.draggable) { e.preventDefault(); return; }
     e.stopPropagation();
-    e.dataTransfer.setData("application/x-cf-name", el.dataset.fieldName || "");
+    _cfDragFromName = el.dataset.fieldName || "";
+    try { e.dataTransfer.setData("application/x-cf-name", _cfDragFromName); e.dataTransfer.setData("text/plain", _cfDragFromName); } catch(err) {}
     e.dataTransfer.effectAllowed = "move"; el.classList.add("cf-sort-dragging");
   });
-  el.addEventListener("dragend", () => { el.classList.remove("cf-sort-dragging"); el.draggable = false; document.querySelectorAll(".cf-sortable.drag-over-top,.cf-sortable.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+  el.addEventListener("dragend", () => { _cfDragFromName = ""; el.classList.remove("cf-sort-dragging"); el.draggable = false; document.querySelectorAll(".cf-sortable.drag-over-top,.cf-sortable.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
   el.addEventListener("dragover", e => {
-    if (!(e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes("application/x-cf-name"))) return;
+    // Accept the drop unconditionally while a cf-field drag is active. Reading dataTransfer.types during dragover
+    // is spec-allowed but Chrome historically hid custom MIMEs — gating on it caused drops to silently no-op.
+    if (!_cfDragFromName) return;
     e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move";
     const r = el.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
     el.classList.toggle("drag-over-top", above); el.classList.toggle("drag-over-bot", !above);
   });
   el.addEventListener("dragleave", () => el.classList.remove("drag-over-top", "drag-over-bot"));
   el.addEventListener("drop", async e => {
-    const fromName = e.dataTransfer.getData("application/x-cf-name"); if (!fromName) return;
+    const fromName = _cfDragFromName || e.dataTransfer.getData("application/x-cf-name"); if (!fromName) return;
     e.preventDefault(); e.stopPropagation();
     const toName = el.dataset.fieldName;
     const r = el.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
@@ -6878,19 +6886,20 @@ function ensureFieldGroupReorderHandle(sec) {
   sec.addEventListener("dragstart", e => {
     if (!sec.draggable) { e.preventDefault(); return; }
     e.stopPropagation();
-    e.dataTransfer.setData("application/x-cf-group", sec.dataset.groupId || "");
+    _cfDragFromGroup = sec.dataset.groupId || "";
+    try { e.dataTransfer.setData("application/x-cf-group", _cfDragFromGroup); e.dataTransfer.setData("text/plain", "group:" + _cfDragFromGroup); } catch(err) {}
     e.dataTransfer.effectAllowed = "move"; sec.classList.add("cf-sort-dragging");
   });
-  sec.addEventListener("dragend", () => { sec.classList.remove("cf-sort-dragging"); sec.draggable = false; document.querySelectorAll(".cf-sortable.drag-over-top,.cf-sortable.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+  sec.addEventListener("dragend", () => { _cfDragFromGroup = ""; sec.classList.remove("cf-sort-dragging"); sec.draggable = false; document.querySelectorAll(".cf-sortable.drag-over-top,.cf-sortable.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
   sec.addEventListener("dragover", e => {
-    if (!(e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes("application/x-cf-group"))) return;
+    if (!_cfDragFromGroup) return;
     e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move";
     const r = sec.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
     sec.classList.toggle("drag-over-top", above); sec.classList.toggle("drag-over-bot", !above);
   });
   sec.addEventListener("dragleave", () => sec.classList.remove("drag-over-top", "drag-over-bot"));
   sec.addEventListener("drop", async e => {
-    const fromId = e.dataTransfer.getData("application/x-cf-group"); if (!fromId) return;
+    const fromId = _cfDragFromGroup || e.dataTransfer.getData("application/x-cf-group"); if (!fromId) return;
     e.preventDefault(); e.stopPropagation();
     const toId = sec.dataset.groupId;
     const r = sec.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
