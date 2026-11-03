@@ -723,15 +723,17 @@
   /* Rich-text (long-form) field. Toolbar follows the common web RTE layout: inline marks | paragraph-style
      dropdown | lists | link + clear. Buttons toggle visibly when the selection is already in that style. */
   .rte-box { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
-  .rte-tb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 6px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  .rte-tb-btn { min-width: 28px; height: 28px; padding: 0 8px; font-size: 13px; line-height: 1; background: transparent; color: var(--text); border: 1px solid transparent; border-radius: 5px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; }
+  .rte-tb { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; padding: 4px 6px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .rte-tb-btn { min-width: 26px; height: 26px; padding: 0 6px; font-size: 12px; line-height: 1; background: transparent; color: var(--text); border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; }
   .rte-tb-btn:hover { background: var(--panel-2); border-color: var(--line); }
   .rte-tb-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .rte-tb-btn.active:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.08); }
-  .rte-tb-btn b, .rte-tb-btn i, .rte-tb-btn u, .rte-tb-btn s { font-size: 13px; }
+  .rte-tb-btn b, .rte-tb-btn i, .rte-tb-btn u, .rte-tb-btn s { font-size: 12px; }
   .rte-tb-btn sub { font-size: 9px; margin-left: 1px; }
-  .rte-tb-sel { height: 28px; padding: 0 6px; margin: 0 2px; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
-  .rte-tb-sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+  /* Override the generic `.field select { width: 100% }` so the paragraph dropdown stays inline — otherwise it
+     stretches full width and shoves every other button onto its own row. */
+  .rte-tb .rte-tb-sel, .field .rte-tb .rte-tb-sel { width: auto; min-width: 92px; max-width: 120px; height: 26px; padding: 0 22px 0 6px; margin: 0 1px; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  .rte-tb-sep { width: 1px; height: 16px; background: var(--line); margin: 0 3px; flex: 0 0 auto; }
   .rte-editor { min-height: 110px; max-height: 420px; overflow-y: auto; padding: 10px 12px; font-size: 14px; line-height: 1.5; color: var(--text); background: var(--panel-2); outline: none; }
   .rte-editor:focus { background: var(--panel); box-shadow: inset 0 0 0 1px var(--accent); }
   .rte-editor p { margin: 0 0 8px; }
@@ -1494,8 +1496,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.62";
+const VERSION = "3.63";
 const CHANGELOG = [
+  "v3.63 — Rich-text toolbar fits on one row again: the paragraph dropdown was inheriting the modal's generic `.field select { width: 100% }` rule and stretching full width, pushing every other button onto its own row. Pinned the dropdown width (92–120px) and tightened button sizing so B/I/U/S • dropdown • • 1. 🔗 Tₓ all sit on one line.",
   "v3.62 — Modal customization pass: (1) Rich-text toolbar standardized — B/I/U/S inline-mark buttons that show active state (so a second click clears), paragraph-style dropdown with Normal / Heading 1 / Heading 2 / Heading 3 (picking Normal clears the heading), bulleted + numbered lists that toggle, Link, and Tₓ clear-formatting that resets block to Normal. (2) Custom fields and field-group sections are now drag-reorderable right from the card modal — grip appears on hover, drop above/below a peer, saves globally (ungrouped fields update their position in the lists table; grouped fields and group order persist through saveFieldGroups).",
   "v3.61.1 — Hotfix for v3.61 syntax error (shadowed `html` parameter in sanitizeRichText) that halted all JS.",
   "v3.61 — New custom-field type: Long text (rich). Picks up Bold / Italic / Underline / H3 / bullet + numbered lists / link / clear-format in a small toolbar, with sanitized paste from Word & Docs (strips scripts, inline styles, event handlers). Values are stored as HTML; outside the modal (grid cells, badges, exports) the field renders as plaintext so markup never leaks as literal tags. Also: filtered the v3.60 modal-order sentinel out of the fields editor — it was accidentally rendering as a text field because the filter list missed it.",
