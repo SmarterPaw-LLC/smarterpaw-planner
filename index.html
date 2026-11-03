@@ -118,13 +118,17 @@
   /* Modal section reorder — grip appears on hover at the top-right of each sortable block (title, brand/channel,
      owners, …). Dragging it reorders the block within the modal and saves the order for every teammate. */
   .modal-sortable { position: relative; }
-  .modal-sort-grip { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: grab; color: var(--muted); background: transparent; border-radius: 4px; font-size: 12px; line-height: 1; opacity: 0; transition: opacity .12s; user-select: none; z-index: 3; }
-  .modal-sortable:hover > .modal-sort-grip { opacity: .55; }
+  .modal-sort-grip { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; cursor: grab; color: var(--muted); background: transparent; border-radius: 4px; font-size: 13px; line-height: 1; opacity: .4; transition: opacity .12s, background .12s; user-select: none; z-index: 3; letter-spacing: -1px; }
+  .modal-sortable:hover > .modal-sort-grip { opacity: .85; }
   .modal-sort-grip:hover { opacity: 1 !important; background: var(--panel-2); color: var(--text); }
   .modal-sort-grip:active { cursor: grabbing; }
   .modal-sort-dragging { opacity: .55; }
-  .modal-sortable.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent) inset, 0 -2px 0 0 var(--accent); border-top: 2px solid var(--accent); margin-top: -2px; }
-  .modal-sortable.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent) inset, 0 2px 0 0 var(--accent); border-bottom: 2px solid var(--accent); margin-bottom: -2px; }
+  .modal-sort-label-handle { cursor: grab; }
+  .modal-sort-label-handle:active { cursor: grabbing; }
+  /* Drop indicators use pure box-shadow (no border, no margin) so the hovered sibling doesn't shift the layout
+     mid-drag. The shadow is drawn OUTSIDE the box so the full-color bar reads as "insert here". */
+  .modal-sortable.drag-over-top { box-shadow: 0 -3px 0 0 var(--accent); }
+  .modal-sortable.drag-over-bot { box-shadow: 0 3px 0 0 var(--accent); }
   /* Custom-field reorder (ungrouped field wrappers + grouped field wrappers + whole field-group sections). Same
      visual language as the top-level section grip, but scoped to within #f_fields so the two don't collide. */
   .cf-sortable { position: relative; }
@@ -134,8 +138,8 @@
   .cf-sort-grip:hover { opacity: 1 !important; background: var(--panel-2); color: var(--text); }
   .cf-sort-grip:active { cursor: grabbing; }
   .cf-sort-dragging { opacity: .55; }
-  .cf-sortable.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent) inset; border-top: 2px solid var(--accent); margin-top: -2px; }
-  .cf-sortable.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent) inset; border-bottom: 2px solid var(--accent); margin-bottom: -2px; }
+  .cf-sortable.drag-over-top { box-shadow: 0 -3px 0 0 var(--accent); }
+  .cf-sortable.drag-over-bot { box-shadow: 0 3px 0 0 var(--accent); }
   /* The label of a sortable field also acts as a drag handle — grab cursor on hover makes that discoverable. */
   .cf-sort-label-handle { cursor: grab; }
   .cf-sort-label-handle:active { cursor: grabbing; }
@@ -1263,7 +1267,7 @@
         <div id="f_linkResults" class="link-results"></div>
       </div>
     </div>
-    <div id="f_fields" data-sec="custom-fields"></div>
+    <div id="f_fields" style="display:none"></div>
     <div class="field" data-sec="notes"><label>Notes <span id="f_notesUpdated" class="opt"></span></label>
       <div class="notes-list-tools">
         <button type="button" class="rte-btn" id="f_notesAdd" title="Add a new note stamped with today's date">＋ Add note</button>
@@ -1499,8 +1503,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.65";
+const VERSION = "3.66";
 const CHANGELOG = [
+  "v3.66 — Modal reorder rewrite: custom fields and field groups are now TRUE top-level peers of every built-in section (Cover, Title, Owners, …), so you can drag Description to the very top of the card, or interleave custom fields anywhere. Also fixed the drag jitter — drop indicators now use pure box-shadow (no border/margin flip) so hovered siblings stay in place. Removed the Display-order custom-field reflow (unified reorder owns ordering now). Grips are visible at .4 opacity by default; the field's own label (or group header) is also a drag initiator with a grab cursor.",
   "v3.65 — Custom-field drag discoverability: the field's own `<label>` and the group-section header are now drag initiators too, with a grab cursor on hover. Programmatic drag end-to-end was already working in v3.64; the real problem was the top-right ⋮⋮ grip being easy to miss, so trying to drag the field body silently did nothing because draggable was never set. Now dragging anywhere on the label (or group header) reorders the field.",
   "v3.64 — Custom-field drag reorder now actually fires: dragover was gated on `dataTransfer.types` containing the custom MIME, which Chrome masks for custom types — the preventDefault never ran so drop silently no-op'd. Switched to a module-level drag-source stash set in dragstart; also now setData `text/plain` as a fallback. Grips are visible at .4 opacity by default (brighter on hover) so you can see where to grab.",
   "v3.63 — Rich-text toolbar fits on one row again: the paragraph dropdown was inheriting the modal's generic `.field select { width: 100% }` rule and stretching full width, pushing every other button onto its own row. Pinned the dropdown width (92–120px) and tightened button sizing so B/I/U/S • dropdown • • 1. 🔗 Tₓ all sit on one line.",
@@ -3309,28 +3314,34 @@ async function saveModalSectionOrder() {
     _modalSectionOrderRowId = data.id;
   }
 }
-// Resolve the effective modal section order: start with the saved list, then append any default sections it
-// doesn't name (so new sections added in future versions always render).
+// Resolve the effective modal section order. Starts with the saved list (filtered to known keys), appends any
+// default built-in sections it doesn't name, then appends any dynamic sections discovered in the live DOM
+// (custom fields as "field:Name" and field groups as "group:ID"). This way custom fields drop in at the end of
+// the modal by default but respect the saved position once the user drags them anywhere.
 function effectiveModalSectionOrder() {
-  const saved = (modalSectionOrder || []).filter(k => MODAL_SECTION_DEFAULT.includes(k));
-  const missing = MODAL_SECTION_DEFAULT.filter(k => !saved.includes(k));
+  const modal = document.querySelector("#overlay .modal");
+  const dynamic = modal ? [...modal.querySelectorAll('[data-sec^="field:"], [data-sec^="group:"]')].map(e => e.dataset.sec) : [];
+  const known = new Set([...MODAL_SECTION_DEFAULT, ...dynamic]);
+  const saved = (modalSectionOrder || []).filter(k => known.has(k));
+  const missing = [...MODAL_SECTION_DEFAULT, ...dynamic].filter(k => !saved.includes(k));
   return saved.concat(missing);
 }
-// Apply the current order to the modal DOM. Called every time the modal opens so a teammate's reorder shows up on
-// the next open without a page reload. Also wires drag handles.
+// Apply the current order to the modal DOM. Called every time the modal opens (and again after renderFieldInputs
+// so dynamic custom-field + group sections slot into their saved positions). Also wires drag handles.
 function applyModalSectionOrder() {
   const modal = document.querySelector("#overlay .modal"); if (!modal) return;
   const actions = modal.querySelector(".modal-actions");
   const order = effectiveModalSectionOrder();
   order.forEach(k => {
-    const el = modal.querySelector(`[data-sec="${k}"]`);
+    const el = modal.querySelector(`[data-sec="${CSS.escape(k)}"]`);
     if (!el) return;
     if (actions) modal.insertBefore(el, actions); else modal.appendChild(el);
     ensureModalSectionHandle(el, k);
   });
 }
-// Attach a drag grip to a section block (once). The grip hovers over the top-right corner and only sets the block
-// draggable on grip mousedown — so text selection inside the block still works normally.
+// Attach a drag grip to a section block (once). The grip sits at the top-right corner at .4 default opacity so
+// it's always discoverable. ADDITIONALLY, the section's label (`<label>` for built-in fields, `.field-group-header`
+// for groups) acts as a drag initiator with a grab cursor — the grip is a backup target.
 function ensureModalSectionHandle(el, sec) {
   if (!el || el.dataset.sortReady === "1") return; el.dataset.sortReady = "1";
   el.classList.add("modal-sortable");
@@ -3339,6 +3350,17 @@ function ensureModalSectionHandle(el, sec) {
   grip.addEventListener("mousedown", e => { e.stopPropagation(); el.draggable = true; });
   grip.addEventListener("mouseup", () => { el.draggable = false; });
   el.appendChild(grip);
+  // Label / group-header as drag initiator — common UX, matches what users expect from Notion/Linear/etc.
+  const handleCandidates = [":scope > label", ":scope > .field-group-header"];
+  handleCandidates.forEach(sel => {
+    el.querySelectorAll(sel).forEach(lab => {
+      if (lab.dataset.modalDragWired === "1") return; lab.dataset.modalDragWired = "1";
+      lab.classList.add("modal-sort-label-handle");
+      lab.title = "Drag to reorder this section";
+      lab.addEventListener("mousedown", e => { e.stopPropagation(); el.draggable = true; });
+      lab.addEventListener("mouseup", () => { el.draggable = false; });
+    });
+  });
   el.addEventListener("dragstart", e => {
     if (!el.draggable) { e.preventDefault(); return; }
     e.dataTransfer.setData("text/plain", sec); e.dataTransfer.effectAllowed = "move"; el.classList.add("modal-sort-dragging");
@@ -6754,12 +6776,12 @@ function addModalSubs(lines) {
   if (added) renderSubsEdit();
   return added;
 }
-// After the modal renders, move each custom-field wrapper to the position dictated by the current view's
-// Display order (ds.dims). "Position 3 in Display" therefore becomes the actual 3rd form slot in the modal.
-// Built-in fields (Brand/Channel share row1; Owners, Due, Sprint, Status, Priority, Promotion) stay in
-// their default slots but serve as anchors — a custom field gets inserted RIGHT AFTER whichever built-in
-// field precedes it in ds.dims (or right after the previous custom field if that came first).
-function reorderCustomFieldsInModal() {
+// Legacy no-op (v3.66): custom fields now participate directly in applyModalSectionOrder's unified reorder,
+// so Display-order-driven repositioning here would fight the saved section layout. Kept as a stub so existing
+// call sites don't need to be guarded.
+function reorderCustomFieldsInModal() { return; }
+// --- old Display-order placement logic preserved below for reference, unreachable ---
+function _legacyReorderCustomFieldsInModal() {
   const ds = curDisp && curDisp(); if (!ds || !ds.dims) return;
   // Fields that live inside a group stay anchored to their section header in #f_fields — reflowing them to a
   // Display-dims slot would separate them from their group. Only ungrouped wrappers participate.
@@ -6788,24 +6810,22 @@ function reorderCustomFieldsInModal() {
   });
 }
 function renderFieldInputs(values) {
-  // reorderCustomFieldsInModal moves custom-field wrappers OUT of #f_fields into the modal body; the modal itself
-  // is reused (hidden, not destroyed), so those moved wrappers stick around across opens. Clear ALL of them
-  // wherever they landed — otherwise every open adds a fresh wrapper and duplicates stack up.
+  // Clear every custom-field wrapper + group section wherever they landed from a previous open (they live at the
+  // modal-body level in the unified reorder model, so a stale copy wouldn't be inside #f_fields).
   document.querySelectorAll("#overlay .modal .field[data-field-name]").forEach(w => w.remove());
-  // Also strip any group-header rows left from a previous open (same lifecycle as the wrappers above).
+  document.querySelectorAll("#overlay .modal .field-group-section").forEach(s => s.remove());
   document.querySelectorAll("#overlay .modal .field-group-header").forEach(h => h.remove());
-  const box = document.getElementById("f_fields"); box.innerHTML = "";
-  // Render in two passes so field groups appear as a cohesive section in the modal:
-  // 1) Each group — a header followed by its fields in the configured order. Groups whose fields don't exist
-  //    (renamed/removed) stay harmless; empty groups don't paint a header.
-  // 2) Ungrouped fields in fieldsList order — these still participate in the Display-order reflow via
-  //    reorderCustomFieldsInModal (which skips grouped wrappers so they stay anchored to their header).
+  const modal = document.querySelector("#overlay .modal");
+  const actions = modal ? modal.querySelector(".modal-actions") : null;
+  const insert = (el) => { if (modal) { if (actions) modal.insertBefore(el, actions); else modal.appendChild(el); } };
+  // Groups first — each becomes a top-level section (data-sec="group:ID") that participates in the same drag-
+  // reorder system as every built-in section. Groups whose fields don't exist (renamed/removed) are skipped.
   const grouped = groupedFieldNames();
   fieldGroups.forEach(g => {
-    // Each entry is {name, width}; dereference to the field definition and skip entries whose field no longer exists.
     const resolved = g.fields.map(e => ({ f: fieldsList.find(x => x.name === e.name), width: e.width || "full" })).filter(x => x.f);
     if (!resolved.length) return;
     const section = document.createElement("div"); section.className = "field-group-section"; section.dataset.groupId = g.id;
+    section.dataset.sec = "group:" + g.id;
     if (g.color) section.style.setProperty("--group-color", g.color);
     const header = document.createElement("div"); header.className = "field-group-header"; header.textContent = g.name;
     section.appendChild(header);
@@ -6816,26 +6836,31 @@ function renderFieldInputs(values) {
       inner.appendChild(w);
     });
     section.appendChild(inner);
-    box.appendChild(section);
+    insert(section);
   });
+  // Ungrouped custom fields — each becomes its own top-level section (data-sec="field:Name") so it's a peer of
+  // Title, Owners, Due date, etc. and can be dragged anywhere in the modal.
   fieldsList.forEach(f => {
     if (grouped.has(f.name)) return;
-    box.appendChild(_renderOneFieldWrapper(f, (values && values[f.name]) || ""));
+    const wrap = _renderOneFieldWrapper(f, (values && values[f.name]) || "");
+    wrap.dataset.sec = "field:" + f.name;
+    insert(wrap);
   });
-  // Attach drag handles so each custom field (ungrouped or grouped) and each field-group section can be
-  // reordered right from the card modal. Drops persist globally — ungrouped fields update their `position`
-  // in the lists table; grouped fields and group order go through saveFieldGroups.
+  // Re-apply the saved section order now that the custom-field + group sections exist in the DOM.
+  applyModalSectionOrder();
+  // Within-group fields are reorderable among themselves (separate from the global section order).
   wireCustomFieldReorder();
 }
 // Module-level drag state. Browsers restrict reading dataTransfer during dragover (some even hide custom MIME
 // types in `.types`), so the dragstart handler stashes the source identity here and dragover/drop read it back.
 let _cfDragFromName = "";   // ungrouped-or-grouped field being dragged
 let _cfDragFromGroup = "";  // field-group section being dragged
-// Wire drag reorder for the custom-fields section of the modal. Called at the end of renderFieldInputs so every
-// wrapper + group section in the current DOM gets a handle. Idempotent — ensureCustomFieldReorderHandle guards.
+// Wire within-group field reorder. Ungrouped custom fields + whole group sections ride the unified modal-section
+// drag system (ensureModalSectionHandle via applyModalSectionOrder) — this helper only touches fields that live
+// INSIDE a group section, so dragging one shuffles the group's internal order without affecting the global
+// section layout.
 function wireCustomFieldReorder() {
-  document.querySelectorAll("#overlay .modal .field-group-section").forEach(sec => ensureFieldGroupReorderHandle(sec));
-  document.querySelectorAll("#overlay .modal .field[data-field-name]").forEach(w => ensureCustomFieldReorderHandle(w));
+  document.querySelectorAll("#overlay .modal .field-group-fields > .field[data-field-name]").forEach(w => ensureCustomFieldReorderHandle(w));
 }
 // Attach a grip + drag listeners to a single custom-field wrapper. Reorder scope is the wrapper's own container
 // (`#f_fields` for ungrouped, `.field-group-fields` for grouped) so a drop can't accidentally cross between
