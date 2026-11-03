@@ -1451,8 +1451,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.58";
+const VERSION = "3.59";
 const CHANGELOG = [
+  "v3.59 — Calendar continuous-scroll no longer jumps back to today's month when you interact with anything. As you scroll, the top-visible month now updates calRef too (not just the label), so a subsequent re-render (opening a card, toggling a filter, dropping a bar) anchors to where you're actually looking instead of snapping back to the month calRef was initialized with.",
   "v3.58 — Theme stripes: calendar bars now show the full pattern (no inset backdrop) with a strong black text-shadow halo on the title/chips so they stay readable without hiding the stripes. Theming removed from the Notes feed entirely (bars were too thin to carry both the pattern and the content legibly).",
   "v3.57 — Theme stripe frame extended to calendar bars + notes feed. Calendar bars inset the backdrop 2×4px using the bar's own brand color (so the frame still reads as the Meowi orange / Doggi green bar), notes-entry uses the same slim inset to avoid eating the thin row height, and the grid view no longer paints the pattern at all.",
   "v3.56 — Theme stripes now frame the card instead of flooding it. Panel-colored cards (board, planning, list, gallery, notes feed) get a solid panel backdrop inset 6px, so the stripes read as a decorative border and the title/chips sit on a clean background. Calendar bars still fill with stripes since they're too narrow for a frame.",
@@ -6047,11 +6048,20 @@ function renderCalendarContinuous(grid, todayKey) {
     }
   }, { passive: true });
   // Update the top label as the user scrolls through months so "Sept 2026" stays accurate.
+  // Also sync calRef to the top-visible month so a subsequent re-render (e.g. after opening a card
+  // or toggling a filter) anchors back to where the user is scrolled, not to today.
   const labelEl = document.getElementById("calLabel");
   const obs = new IntersectionObserver(entries => {
     // Pick the first visible header from the top.
     const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
-    if (visible.length) { const b = visible[0].target.closest(".cal-cont-month"); if (b) labelEl.textContent = MONTHS[+b.dataset.m] + " " + b.dataset.y; }
+    if (visible.length) {
+      const b = visible[0].target.closest(".cal-cont-month");
+      if (b) {
+        const vy = +b.dataset.y, vm = +b.dataset.m;
+        labelEl.textContent = MONTHS[vm] + " " + vy;
+        if (calRef.getFullYear() !== vy || calRef.getMonth() !== vm) calRef = new Date(vy, vm, 1);
+      }
+    }
   }, { root: grid, rootMargin: "-60px 0px -60% 0px", threshold: 0 });
   stream.querySelectorAll(".cal-cont-header").forEach(h => obs.observe(h));
 }
