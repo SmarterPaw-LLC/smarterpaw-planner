@@ -125,6 +125,17 @@
   .modal-sort-dragging { opacity: .55; }
   .modal-sortable.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent) inset, 0 -2px 0 0 var(--accent); border-top: 2px solid var(--accent); margin-top: -2px; }
   .modal-sortable.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent) inset, 0 2px 0 0 var(--accent); border-bottom: 2px solid var(--accent); margin-bottom: -2px; }
+  /* Custom-field reorder (ungrouped field wrappers + grouped field wrappers + whole field-group sections). Same
+     visual language as the top-level section grip, but scoped to within #f_fields so the two don't collide. */
+  .cf-sortable { position: relative; }
+  .cf-sort-grip { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: grab; color: var(--muted); background: transparent; border-radius: 4px; font-size: 12px; line-height: 1; opacity: 0; transition: opacity .12s; user-select: none; z-index: 4; }
+  .cf-sort-grip-group { top: 6px; right: 6px; }
+  .cf-sortable:hover > .cf-sort-grip { opacity: .55; }
+  .cf-sort-grip:hover { opacity: 1 !important; background: var(--panel-2); color: var(--text); }
+  .cf-sort-grip:active { cursor: grabbing; }
+  .cf-sort-dragging { opacity: .55; }
+  .cf-sortable.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent) inset; border-top: 2px solid var(--accent); margin-top: -2px; }
+  .cf-sortable.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent) inset; border-bottom: 2px solid var(--accent); margin-bottom: -2px; }
   .field label, .seclabel { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
   .seclabel { text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
   .field input, .field select, .field textarea { width: 100%; }
@@ -709,17 +720,25 @@
   .field-currency-row { display: flex; align-items: stretch; }
   .field-currency-row .field-currency-prefix { display: flex; align-items: center; justify-content: center; padding: 0 10px; background: var(--panel-2); border: 1px solid var(--line); border-right: none; border-radius: 8px 0 0 8px; font-weight: 600; color: var(--muted); }
   .field-currency-row input { flex: 1; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
-  /* Rich-text (long-form) field. Toolbar sits above the editable box; both share the input border. */
+  /* Rich-text (long-form) field. Toolbar follows the common web RTE layout: inline marks | paragraph-style
+     dropdown | lists | link + clear. Buttons toggle visibly when the selection is already in that style. */
   .rte-box { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
-  .rte-tb { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  .rte-tb-btn { min-width: 28px; height: 26px; padding: 0 7px; font-size: 12px; line-height: 1; background: transparent; color: var(--text); border: 1px solid transparent; border-radius: 5px; cursor: pointer; font-weight: 600; }
+  .rte-tb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 6px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .rte-tb-btn { min-width: 28px; height: 28px; padding: 0 8px; font-size: 13px; line-height: 1; background: transparent; color: var(--text); border: 1px solid transparent; border-radius: 5px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; }
   .rte-tb-btn:hover { background: var(--panel-2); border-color: var(--line); }
-  .rte-tb-btn:active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .rte-tb-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .rte-tb-btn.active:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.08); }
+  .rte-tb-btn b, .rte-tb-btn i, .rte-tb-btn u, .rte-tb-btn s { font-size: 13px; }
+  .rte-tb-btn sub { font-size: 9px; margin-left: 1px; }
+  .rte-tb-sel { height: 28px; padding: 0 6px; margin: 0 2px; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+  .rte-tb-sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
   .rte-editor { min-height: 110px; max-height: 420px; overflow-y: auto; padding: 10px 12px; font-size: 14px; line-height: 1.5; color: var(--text); background: var(--panel-2); outline: none; }
   .rte-editor:focus { background: var(--panel); box-shadow: inset 0 0 0 1px var(--accent); }
   .rte-editor p { margin: 0 0 8px; }
   .rte-editor p:last-child { margin-bottom: 0; }
-  .rte-editor h3 { margin: 6px 0 6px; font-size: 15px; font-weight: 700; }
+  .rte-editor h1 { margin: 8px 0 6px; font-size: 20px; font-weight: 700; line-height: 1.2; }
+  .rte-editor h2 { margin: 8px 0 6px; font-size: 17px; font-weight: 700; line-height: 1.25; }
+  .rte-editor h3 { margin: 6px 0 6px; font-size: 15px; font-weight: 700; line-height: 1.3; }
   .rte-editor ul, .rte-editor ol { margin: 0 0 8px; padding-left: 22px; }
   .rte-editor a { color: var(--accent); text-decoration: underline; }
   .rte-editor:empty::before { content: attr(data-placeholder); color: var(--muted); }
@@ -1475,8 +1494,10 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.61";
+const VERSION = "3.62";
 const CHANGELOG = [
+  "v3.62 — Modal customization pass: (1) Rich-text toolbar standardized — B/I/U/S inline-mark buttons that show active state (so a second click clears), paragraph-style dropdown with Normal / Heading 1 / Heading 2 / Heading 3 (picking Normal clears the heading), bulleted + numbered lists that toggle, Link, and Tₓ clear-formatting that resets block to Normal. (2) Custom fields and field-group sections are now drag-reorderable right from the card modal — grip appears on hover, drop above/below a peer, saves globally (ungrouped fields update their position in the lists table; grouped fields and group order persist through saveFieldGroups).",
+  "v3.61.1 — Hotfix for v3.61 syntax error (shadowed `html` parameter in sanitizeRichText) that halted all JS.",
   "v3.61 — New custom-field type: Long text (rich). Picks up Bold / Italic / Underline / H3 / bullet + numbered lists / link / clear-format in a small toolbar, with sanitized paste from Word & Docs (strips scripts, inline styles, event handlers). Values are stored as HTML; outside the modal (grid cells, badges, exports) the field renders as plaintext so markup never leaks as literal tags. Also: filtered the v3.60 modal-order sentinel out of the fields editor — it was accidentally rendering as a text field because the filter list missed it.",
   "v3.60 — The Edit-deliverable modal's section blocks (Title, Brand/Channel, Owners, Due date, Status, Priority, Subtasks, Notes, …) are now drag-reorderable. Hover any section to reveal a ⋮⋮ grip in the top-right; drag it above/below another section to drop it there. The new order is saved to Supabase (workspace-scoped sentinel row, same pattern as field groups) so every teammate sees the same arrangement. Unknown or future sections automatically slot in at their default position.",
   "v3.59 — Calendar continuous-scroll no longer jumps back to today's month when you interact with anything. As you scroll, the top-visible month now updates calRef too (not just the label), so a subsequent re-render (opening a card, toggling a filter, dropping a bar) anchors to where you're actually looking instead of snapping back to the month calRef was initialized with.",
@@ -6793,6 +6814,134 @@ function renderFieldInputs(values) {
     if (grouped.has(f.name)) return;
     box.appendChild(_renderOneFieldWrapper(f, (values && values[f.name]) || ""));
   });
+  // Attach drag handles so each custom field (ungrouped or grouped) and each field-group section can be
+  // reordered right from the card modal. Drops persist globally — ungrouped fields update their `position`
+  // in the lists table; grouped fields and group order go through saveFieldGroups.
+  wireCustomFieldReorder();
+}
+// Wire drag reorder for the custom-fields section of the modal. Called at the end of renderFieldInputs so every
+// wrapper + group section in the current DOM gets a handle. Idempotent — ensureCustomFieldReorderHandle guards.
+function wireCustomFieldReorder() {
+  document.querySelectorAll("#overlay .modal .field-group-section").forEach(sec => ensureFieldGroupReorderHandle(sec));
+  document.querySelectorAll("#overlay .modal .field[data-field-name]").forEach(w => ensureCustomFieldReorderHandle(w));
+}
+// Attach a grip + drag listeners to a single custom-field wrapper. Reorder scope is the wrapper's own container
+// (`#f_fields` for ungrouped, `.field-group-fields` for grouped) so a drop can't accidentally cross between
+// grouped and ungrouped — use Manage → Custom fields for that semantic move.
+function ensureCustomFieldReorderHandle(el) {
+  if (!el || el.dataset.cfSortReady === "1") return; el.dataset.cfSortReady = "1";
+  el.classList.add("cf-sortable");
+  const grip = document.createElement("span");
+  grip.className = "cf-sort-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder — saves for everyone";
+  grip.addEventListener("mousedown", e => { e.stopPropagation(); el.draggable = true; });
+  grip.addEventListener("mouseup", () => { el.draggable = false; });
+  el.appendChild(grip);
+  el.addEventListener("dragstart", e => {
+    if (!el.draggable) { e.preventDefault(); return; }
+    e.stopPropagation();
+    e.dataTransfer.setData("application/x-cf-name", el.dataset.fieldName || "");
+    e.dataTransfer.effectAllowed = "move"; el.classList.add("cf-sort-dragging");
+  });
+  el.addEventListener("dragend", () => { el.classList.remove("cf-sort-dragging"); el.draggable = false; document.querySelectorAll(".cf-sortable.drag-over-top,.cf-sortable.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+  el.addEventListener("dragover", e => {
+    if (!(e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes("application/x-cf-name"))) return;
+    e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move";
+    const r = el.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
+    el.classList.toggle("drag-over-top", above); el.classList.toggle("drag-over-bot", !above);
+  });
+  el.addEventListener("dragleave", () => el.classList.remove("drag-over-top", "drag-over-bot"));
+  el.addEventListener("drop", async e => {
+    const fromName = e.dataTransfer.getData("application/x-cf-name"); if (!fromName) return;
+    e.preventDefault(); e.stopPropagation();
+    const toName = el.dataset.fieldName;
+    const r = el.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
+    el.classList.remove("drag-over-top", "drag-over-bot");
+    if (!fromName || fromName === toName) return;
+    const container = el.parentNode; const fromEl = container.querySelector(`.field[data-field-name="${fromName}"]`);
+    if (!fromEl) return; // cross-container drop — ignore
+    await persistCustomFieldReorder(container, fromName, toName, above);
+  });
+}
+// Attach a grip + drag listeners to a field-group section. Drop targets are peer `.field-group-section`s inside
+// `#f_fields`. Reordering mutates fieldGroups and saves globally.
+function ensureFieldGroupReorderHandle(sec) {
+  if (!sec || sec.dataset.cfSortReady === "1") return; sec.dataset.cfSortReady = "1";
+  sec.classList.add("cf-sortable");
+  const grip = document.createElement("span");
+  grip.className = "cf-sort-grip cf-sort-grip-group"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder group — saves for everyone";
+  grip.addEventListener("mousedown", e => { e.stopPropagation(); sec.draggable = true; });
+  grip.addEventListener("mouseup", () => { sec.draggable = false; });
+  sec.appendChild(grip);
+  sec.addEventListener("dragstart", e => {
+    if (!sec.draggable) { e.preventDefault(); return; }
+    e.stopPropagation();
+    e.dataTransfer.setData("application/x-cf-group", sec.dataset.groupId || "");
+    e.dataTransfer.effectAllowed = "move"; sec.classList.add("cf-sort-dragging");
+  });
+  sec.addEventListener("dragend", () => { sec.classList.remove("cf-sort-dragging"); sec.draggable = false; document.querySelectorAll(".cf-sortable.drag-over-top,.cf-sortable.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+  sec.addEventListener("dragover", e => {
+    if (!(e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes("application/x-cf-group"))) return;
+    e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move";
+    const r = sec.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
+    sec.classList.toggle("drag-over-top", above); sec.classList.toggle("drag-over-bot", !above);
+  });
+  sec.addEventListener("dragleave", () => sec.classList.remove("drag-over-top", "drag-over-bot"));
+  sec.addEventListener("drop", async e => {
+    const fromId = e.dataTransfer.getData("application/x-cf-group"); if (!fromId) return;
+    e.preventDefault(); e.stopPropagation();
+    const toId = sec.dataset.groupId;
+    const r = sec.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
+    sec.classList.remove("drag-over-top", "drag-over-bot");
+    if (!fromId || fromId === toId) return;
+    const order = fieldGroups.map(g => g.id);
+    const fromIdx = order.indexOf(fromId); if (fromIdx < 0) return;
+    order.splice(fromIdx, 1);
+    let toIdx = order.indexOf(toId); if (toIdx < 0) return;
+    if (!above) toIdx += 1;
+    order.splice(toIdx, 0, fromId);
+    fieldGroups = order.map(id => fieldGroups.find(g => g.id === id)).filter(Boolean);
+    await saveFieldGroups();
+    renderFieldInputs(currentModalFieldValues());
+    toast("Group order saved");
+  });
+}
+// Persist a drop within a custom-fields container. Ungrouped (container === #f_fields): mutate fieldsList + push
+// `position` updates to the lists table. Grouped (container === .field-group-fields): mutate the group's fields
+// array + saveFieldGroups.
+async function persistCustomFieldReorder(container, fromName, toName, above) {
+  if (container.id === "f_fields") {
+    const arr = fieldsList.slice();
+    const fromIdx = arr.findIndex(x => x.name === fromName); if (fromIdx < 0) return;
+    const [moved] = arr.splice(fromIdx, 1);
+    let toIdx = arr.findIndex(x => x.name === toName); if (toIdx < 0) return;
+    if (!above) toIdx += 1;
+    arr.splice(toIdx, 0, moved);
+    fieldsList = arr;
+    renderFieldInputs(currentModalFieldValues());
+    if (ONLINE) {
+      try { await Promise.all(arr.filter(x => x.id).map((x, k) => db.from("lists").update({ position: k + 1 }).eq("id", x.id))); } catch (e) { toast("Save failed: " + (e.message || e)); return; }
+    }
+    toast("Field order saved");
+  } else if (container.classList && container.classList.contains("field-group-fields")) {
+    const section = container.closest(".field-group-section"); if (!section) return;
+    const g = fieldGroups.find(x => x.id === section.dataset.groupId); if (!g) return;
+    const arr = g.fields.slice();
+    const fromIdx = arr.findIndex(x => x.name === fromName); if (fromIdx < 0) return;
+    const [moved] = arr.splice(fromIdx, 1);
+    let toIdx = arr.findIndex(x => x.name === toName); if (toIdx < 0) return;
+    if (!above) toIdx += 1;
+    arr.splice(toIdx, 0, moved);
+    g.fields = arr;
+    await saveFieldGroups();
+    renderFieldInputs(currentModalFieldValues());
+    toast("Field order saved");
+  }
+}
+// Pull the current values from the modal so a re-render after reorder doesn't blow away unsaved edits.
+function currentModalFieldValues() {
+  const values = {};
+  document.querySelectorAll("#overlay .field[data-field-name] [data-field]").forEach(i => { values[i.dataset.field] = i.value; });
+  return values;
 }
 // Build the DOM wrapper for a single custom field. Extracted so renderFieldInputs can emit the same markup
 // for grouped fields (under their section header) and ungrouped fields (in default position).
@@ -6808,28 +6957,54 @@ function _renderOneFieldWrapper(f, cur) {
       inp.value = cur; wrap.appendChild(inp);
     } else if (f.type === "richtext") {
       // Rich-text long-form field. Contenteditable div holds the live markup; a hidden input mirrors it as HTML
-      // so saveModal's existing [data-field] selector picks it up with no special-casing. Toolbar supports
-      // Bold / Italic / Underline / H3 heading / UL / OL / Link / Clear format.
+      // so saveModal's existing [data-field] selector picks it up with no special-casing. Toolbar follows the
+      // common web RTE pattern: B / I / U / S, paragraph-style dropdown (Normal / H1 / H2 / H3), UL / OL,
+      // Link, Clear format (Tₓ). Active state reflects queryCommandState so toggling off is one click.
       const hidden = document.createElement("input"); hidden.type = "hidden"; hidden.dataset.field = f.name; hidden.value = cur || "";
       const box = document.createElement("div"); box.className = "rte-box";
       const tb = document.createElement("div"); tb.className = "rte-tb";
-      const mkBtn = (label, title, action) => {
-        const b = document.createElement("button"); b.type = "button"; b.className = "rte-tb-btn"; b.textContent = label; b.title = title;
+      const ed = document.createElement("div"); ed.className = "rte-editor"; ed.contentEditable = "true"; ed.spellcheck = true; ed.innerHTML = sanitizeRichText(cur || "");
+      ed.setAttribute("role", "textbox"); ed.setAttribute("aria-multiline", "true");
+      // Walk up from the current selection to find the nearest block-level ancestor still inside the editor.
+      const currentBlockTag = () => {
+        const sel = window.getSelection(); if (!sel || !sel.rangeCount) return "P";
+        let node = sel.getRangeAt(0).commonAncestorContainer;
+        while (node && node !== ed) {
+          if (node.nodeType === 1) { const t = node.tagName.toUpperCase(); if (["H1","H2","H3","H4","P","LI","BLOCKQUOTE"].includes(t)) return t; }
+          node = node.parentNode;
+        }
+        return "P";
+      };
+      let updateToolbarState = () => {}; // forward decl, set after buttons exist
+      const sync = () => { hidden.value = sanitizeRichText(ed.innerHTML); updateToolbarState(); };
+      const exec = (cmd, arg) => { ed.focus(); try { document.execCommand(cmd, false, arg); } catch (e) {} sync(); };
+      const mkBtn = (html, title, action) => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "rte-tb-btn"; b.innerHTML = html; b.title = title;
         b.addEventListener("mousedown", e => { e.preventDefault(); });
         b.addEventListener("click", action);
         return b;
       };
-      const ed = document.createElement("div"); ed.className = "rte-editor"; ed.contentEditable = "true"; ed.spellcheck = true; ed.innerHTML = sanitizeRichText(cur || "");
-      ed.setAttribute("role", "textbox"); ed.setAttribute("aria-multiline", "true");
-      const sync = () => { hidden.value = sanitizeRichText(ed.innerHTML); };
-      const exec = (cmd, arg) => { ed.focus(); try { document.execCommand(cmd, false, arg); } catch (e) {} sync(); };
-      tb.appendChild(mkBtn("B", "Bold (Ctrl+B)", () => exec("bold")));
-      const italicBtn = mkBtn("I", "Italic (Ctrl+I)", () => exec("italic")); italicBtn.style.fontStyle = "italic"; tb.appendChild(italicBtn);
-      const uBtn = mkBtn("U", "Underline (Ctrl+U)", () => exec("underline")); uBtn.style.textDecoration = "underline"; tb.appendChild(uBtn);
-      tb.appendChild(mkBtn("H", "Heading", () => exec("formatBlock", "H3")));
-      tb.appendChild(mkBtn("¶", "Paragraph", () => exec("formatBlock", "P")));
-      tb.appendChild(mkBtn("•", "Bullet list", () => exec("insertUnorderedList")));
-      tb.appendChild(mkBtn("1.", "Numbered list", () => exec("insertOrderedList")));
+      const sep = () => { const s = document.createElement("div"); s.className = "rte-tb-sep"; return s; };
+      // Inline marks
+      const bBtn = mkBtn("<b>B</b>",      "Bold (Ctrl+B)",          () => exec("bold"));
+      const iBtn = mkBtn("<i>I</i>",      "Italic (Ctrl+I)",        () => exec("italic"));
+      const uBtn = mkBtn("<u>U</u>",      "Underline (Ctrl+U)",     () => exec("underline"));
+      const sBtn = mkBtn("<s>S</s>",      "Strikethrough",          () => exec("strikeThrough"));
+      tb.appendChild(bBtn); tb.appendChild(iBtn); tb.appendChild(uBtn); tb.appendChild(sBtn);
+      tb.appendChild(sep());
+      // Paragraph-style dropdown. Default is Normal (P); picking a Heading sets it, picking Normal again clears it.
+      const headSel = document.createElement("select"); headSel.className = "rte-tb-sel"; headSel.title = "Paragraph style";
+      [["P","Normal"],["H1","Heading 1"],["H2","Heading 2"],["H3","Heading 3"]].forEach(([v,l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; headSel.appendChild(o); });
+      headSel.addEventListener("mousedown", e => { /* keep editor selection */ });
+      headSel.addEventListener("change", () => { exec("formatBlock", headSel.value); });
+      tb.appendChild(headSel);
+      tb.appendChild(sep());
+      // Lists — execCommand toggles natively so a 2nd click returns to a plain paragraph
+      const ulBtn = mkBtn("•",            "Bulleted list",          () => exec("insertUnorderedList"));
+      const olBtn = mkBtn("1.",           "Numbered list",          () => exec("insertOrderedList"));
+      tb.appendChild(ulBtn); tb.appendChild(olBtn);
+      tb.appendChild(sep());
+      // Link + clear
       tb.appendChild(mkBtn("🔗", "Insert / change link", () => {
         const url = window.prompt("Link URL (leave blank to remove):", "");
         if (url === null) return;
@@ -6837,7 +7012,24 @@ function _renderOneFieldWrapper(f, cur) {
         const safe = /^(https?:)?\/\//i.test(url) ? url : "https://" + url;
         exec("createLink", safe);
       }));
-      tb.appendChild(mkBtn("⟲", "Clear formatting", () => { exec("removeFormat"); exec("unlink"); }));
+      tb.appendChild(mkBtn("T<sub>x</sub>", "Clear formatting", () => {
+        // Strip inline marks, drop any link, and reset the current block to a plain paragraph — common across
+        // most RTEs (Docs, Notion, Confluence) as a one-shot "revert to normal".
+        exec("removeFormat"); exec("unlink"); exec("formatBlock", "P");
+      }));
+      // Reflect active marks + current block on every selection change so the toolbar always tells the truth.
+      updateToolbarState = () => {
+        try {
+          bBtn.classList.toggle("active", document.queryCommandState("bold"));
+          iBtn.classList.toggle("active", document.queryCommandState("italic"));
+          uBtn.classList.toggle("active", document.queryCommandState("underline"));
+          sBtn.classList.toggle("active", document.queryCommandState("strikeThrough"));
+          ulBtn.classList.toggle("active", document.queryCommandState("insertUnorderedList"));
+          olBtn.classList.toggle("active", document.queryCommandState("insertOrderedList"));
+          const tag = currentBlockTag();
+          headSel.value = ["H1","H2","H3","P"].includes(tag) ? tag : "P";
+        } catch(e) {}
+      };
       // Intercept paste so Word/Docs HTML lands sanitized (strips style attrs, scripts, etc.).
       ed.addEventListener("paste", e => {
         const dt = e.clipboardData || window.clipboardData; if (!dt) return;
@@ -6847,6 +7039,8 @@ function _renderOneFieldWrapper(f, cur) {
       });
       ed.addEventListener("input", sync);
       ed.addEventListener("blur", sync);
+      ed.addEventListener("keyup", updateToolbarState);
+      ed.addEventListener("mouseup", updateToolbarState);
       box.appendChild(tb); box.appendChild(ed); box.appendChild(hidden);
       wrap.appendChild(box);
     } else if (f.type === "multi") {
