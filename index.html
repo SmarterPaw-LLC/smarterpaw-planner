@@ -1533,8 +1533,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.69";
+const VERSION = "3.70";
 const CHANGELOG = [
+  "v3.70 — Card color override now tints the INSIDE of the card and the modal (not the left-border outline, which stays set by the Color: brand/channel/status dimension setting). Panel-background cards get a 14% tint over --panel-2; the modal gets a 10% tint over --panel. Calendar bars still fill-color since they're a solid block. Alert red still supersedes. Live-preview the color in the modal as you pick it in the ⚙ popover.",
   "v3.69 — Card color picker moved to a ⚙ Settings icon in the modal top bar (next to the 🚨 alert). Click it to open a compact popover: Card color (works on ANY card — overrides the brand/channel/status color on calendar bars + left-borders app-wide); Stripe 1 & Stripe 2 (only visible on Theme-channel cards). Alert red (if active) still supersedes the card color via the existing !important rules. The icon lights up when any override is set. Removed the inline Theme Colors field from the modal body (freed real estate).",
   "v3.68 — Per-card Theme colors. When Theme is one of the card's channels, a new Theme Colors picker (Bar + Stripe 1 + Stripe 2) appears in the modal. Pick any color to override the auto-picked defaults (brand color for the bar, month palette for the stripes); the ✕ on each cell reverts just that one picker. Values persist on the card's own fields and apply everywhere decorateTheme renders — calendar bars, planning / board / list / gallery cards.",
   "v3.67 — Removed the reorder affordances from Manage → Custom fields (grip on each field row, grip on each group card, ⇅ Sort A-Z) now that reordering happens directly on the card modal via drag. Grouping (create / rename / color / assign fields / set widths / remove) all stays.",
@@ -1931,13 +1932,24 @@ function decorateTheme(el, c) {
   // so the inset content backdrop can mirror the bar color instead of masking it with a panel gray.
   if (el.style && el.style.background) el.style.setProperty("--theme-bg", el.style.background);
 }
-// The accent color used wherever the card's "color" shows (calendar bar background, left-border on panel cards).
-// Default is colorFor(c) (Color: brand/channel/status/priority per the user's setting). A per-card override saved
-// via the settings popover overrides it on this one card. Alert (red) still supersedes via the .alert-on
-// CSS !important rules — this helper only sets the inline value that alert then overrides.
+// Calendar bars are a solid color block — the "inside" IS the bar — so there the override fully replaces the
+// brand/channel/status color. On panel-background cards (board, planning, list, gallery, notes-feed) the override
+// is applied as a background TINT via applyCardColorOverride so text + chips stay legible. The left border on
+// those panel cards keeps its dimension color (brand/channel/status/priority) unchanged.
 function cardAccentColor(c) {
   const f = (c && c.fields) || {};
   return f[THEME_BAR_KEY] || colorFor(c);
+}
+function cardColorOverride(c) { const f = (c && c.fields) || {}; return f[THEME_BAR_KEY] || ""; }
+// Apply the per-card color override as a tint on a panel-background element. Uses color-mix to blend 14% of the
+// picked color over the default panel bg — mirrors the alert-on tint recipe so legibility is preserved. Alert
+// state still supersedes via the `.alert-on` CSS !important rules; this helper writes only an inline background
+// which alert then overrides.
+function applyCardColorOverride(el, c) {
+  if (!el) return;
+  const hex = cardColorOverride(c);
+  if (!hex) { el.style.removeProperty("background"); return; }
+  el.style.background = `color-mix(in srgb, ${hex} 14%, var(--panel-2))`;
 }
 function cardAlertNote(c) { return (c && c.fields && c.fields[ALERT_NOTE_KEY]) || ""; }
 function cardAlertOwner(c) { return (c && c.fields && c.fields[ALERT_OWNER_KEY]) || ""; }
@@ -4307,7 +4319,7 @@ function renderSprintPlanning() {
     if (!list.length) { const e = document.createElement("div"); e.className = "planning-empty"; e.textContent = "Nothing here."; cardsBox.appendChild(e); }
     else list.forEach(c => {
       const item = document.createElement("div"); item.className = "planning-card" + (cardIsAlert(c) ? " alert-on" : ""); item.draggable = true; decorateTheme(item, c);
-      item.style.borderLeftColor = cardAccentColor(c);
+      item.style.borderLeftColor = colorFor(c); applyCardColorOverride(item, c);
       item.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; item.classList.add("dragging"); });
       item.addEventListener("dragend", () => { item.classList.remove("dragging"); document.querySelectorAll(".planning-sec.drop-over").forEach(el => el.classList.remove("drop-over")); });
       // Card dim row driven by Display → Planning "Shown on each item" + "Pin to top-right". The pinned dim
@@ -4994,7 +5006,7 @@ function renderNotesView() {
     const c = item.card;
     const collapsed = notesAllCollapsed ? !notesCollapsed.has("__open:" + item.key) : notesCollapsed.has(item.key);
     const entry = document.createElement("div"); entry.className = "notes-entry notes-entry-" + item.kind + (collapsed ? " collapsed" : "") + (cardIsAlert(item.card) ? " alert-on" : "");
-    entry.style.borderLeftColor = cardAccentColor(c); applyPromo(entry, c);
+    entry.style.borderLeftColor = colorFor(c); applyPromo(entry, c); applyCardColorOverride(entry, c);
     // Header — clicking anywhere on the bar toggles collapse; children with their own handlers (title opens the
     // modal, ✕ removes the email, done checkbox toggles status) stopPropagation so those clicks don't also toggle.
     const isDone = !!(completeLane && c.status === completeLane);
@@ -5281,7 +5293,7 @@ function renderGalleryView() {
   // balancing stacking everything in column 1. Tile keeps the simpler CSS grid.
   const buildTile = ({ card: c, url, idx, all }) => {
     const tile = document.createElement("div"); tile.className = "gallery-tile" + (cardIsAlert(c) ? " alert-on" : ""); decorateTheme(tile, c);
-    tile.style.borderLeftColor = cardAccentColor(c); applyPromo(tile, c);
+    tile.style.borderLeftColor = colorFor(c); applyPromo(tile, c); applyCardColorOverride(tile, c);
     const isDone = !!(completeLane && c.status === completeLane);
     if (isDone) tile.classList.add("done");
     const imgWrap = document.createElement("div"); imgWrap.className = "gallery-tile-img";
@@ -5403,7 +5415,7 @@ function renderList() {
 function listTaskEl(c) {
   const subs = cardSubtasks(c); const prog = subProgress(c); const exp = listExpanded.has(c.id);
   const wrap = document.createElement("div"); wrap.className = "list-task" + (cardIsAlert(c) ? " alert-on" : ""); decorateTheme(wrap, c);
-  wrap.style.borderLeftColor = cardAccentColor(c);   // respects the Color: brand/channel/status setting (plus per-card color override)
+  wrap.style.borderLeftColor = colorFor(c); applyCardColorOverride(wrap, c);   // border = Color: dimension setting; override tints the inside
   applyPromo(wrap, c);                          // promotion top stripe (same as calendar)
   if (listSplit) {   // in split mode, drag a task to another column to change that dimension's value
     wrap.draggable = true;
@@ -5523,7 +5535,7 @@ function fmtRange(due, end) {
 }
 function cardEl(c) {
   const el = document.createElement("div"); el.className = "card" + (cardIsAlert(c) ? " alert-on" : ""); decorateTheme(el, c);
-  el.style.borderLeftColor = cardAccentColor(c); el.draggable = true; applyPromo(el, c);
+  el.style.borderLeftColor = colorFor(c); el.draggable = true; applyPromo(el, c); applyCardColorOverride(el, c);
   const badges = dimBadges(c);
   const done = doneBadge(c);
   const prog = subProgress(c);
@@ -6597,11 +6609,18 @@ function initThemeColorsPicker(card) {
   if (popover) popover.hidden = true;
   // Wire once-per-lifecycle (elements survive modal opens).
   if (!barInp.dataset.wired) {
+    const livePreview = () => {
+      const modal = document.querySelector("#overlay .modal"); if (!modal) return;
+      const v = barInp.dataset.active === "1" ? barInp.value : "";
+      if (!v) { modal.style.removeProperty("background"); return; }
+      modal.style.background = `color-mix(in srgb, ${v} 10%, var(--panel))`;
+    };
     [barInp, c1Inp, c2Inp].forEach(inp => {
       inp.addEventListener("input", () => {
         inp.dataset.active = "1"; inp.classList.remove("inactive");
         const rid = inp.id + "Reset"; const r = document.getElementById(rid); if (r) r.disabled = false;
         refreshOverrideBadge();
+        if (inp === barInp) livePreview();
       });
     });
     const wireReset = (btnId, inp) => {
@@ -6609,6 +6628,7 @@ function initThemeColorsPicker(card) {
       b.addEventListener("click", () => {
         inp.value = inp.dataset.default || "#888888"; inp.dataset.active = "0"; inp.classList.add("inactive"); b.disabled = true;
         refreshOverrideBadge();
+        if (inp === barInp) livePreview();
       });
     };
     wireReset("f_themeBarReset", barInp);
@@ -7576,6 +7596,7 @@ function openModal(card, prefill) {
   modalChannels = new Set(initChannels);
   renderChannelChips();
   initThemeColorsPicker(card);
+  applyModalColorOverride(card);
   const prefOwners = (prefill && prefill.owner ? String(prefill.owner).split(",") : []).map(s => s.trim()).filter(Boolean);
   modalOwners = new Set((card && card.owner ? card.owner.split(",") : prefOwners).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
@@ -7643,7 +7664,16 @@ function openModal(card, prefill) {
   requestAnimationFrame(autoResizeTitle);   // only measurable once the modal is visible; before that, scrollHeight is 0 and would collapse the field
   if (!card) document.getElementById("f_title").focus();   // only auto-focus when creating; editing just opens the card
 }
-function closeModal() { modalOpen = false; document.getElementById("overlay").classList.remove("show"); if (_modalCardId) { _modalCardId = ""; writeUrl(); } }
+function closeModal() { modalOpen = false; document.getElementById("overlay").classList.remove("show"); applyModalColorOverride(null); if (_modalCardId) { _modalCardId = ""; writeUrl(); } }
+// Tint the modal body background with the card's color override (if any). Called from openModal on each open and
+// from closeModal (with null) to clear. Uses a lighter 10% blend than the panel-card tint so the modal — which is
+// wall-to-wall text + inputs — stays easy to read.
+function applyModalColorOverride(card) {
+  const modal = document.querySelector("#overlay .modal"); if (!modal) return;
+  const hex = cardColorOverride(card);
+  if (!hex) { modal.style.removeProperty("background"); return; }
+  modal.style.background = `color-mix(in srgb, ${hex} 10%, var(--panel))`;
+}
 // Grow the title textarea to fit its contents (so long titles wrap and remain fully visible, esp. on mobile).
 function autoResizeTitle() {
   const t = document.getElementById("f_title"); if (!t) return;
