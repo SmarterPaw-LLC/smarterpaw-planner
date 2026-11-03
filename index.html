@@ -727,6 +727,16 @@
   .field-currency-row { display: flex; align-items: stretch; }
   .field-currency-row .field-currency-prefix { display: flex; align-items: center; justify-content: center; padding: 0 10px; background: var(--panel-2); border: 1px solid var(--line); border-right: none; border-radius: 8px 0 0 8px; font-weight: 600; color: var(--muted); }
   .field-currency-row input { flex: 1; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  /* Theme-colors picker — one row with 3 cells (Bar, Stripe 1, Stripe 2). Each cell has a label, a color swatch,
+     and a tiny ✕ that reverts that one picker to its default. */
+  .theme-colors-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .tc-cell { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+  .tc-cell-lab { font-size: 12px; color: var(--muted); font-weight: 600; min-width: 48px; }
+  .tc-color { width: 32px !important; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: transparent; cursor: pointer; }
+  .tc-color.inactive { opacity: .45; }
+  .tc-reset { width: 20px; height: 20px; padding: 0; font-size: 11px; line-height: 1; background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+  .tc-reset:hover { background: var(--panel); border-color: var(--line); color: var(--text); }
+  .tc-reset:disabled { opacity: .3; cursor: not-allowed; }
   /* Rich-text (long-form) field. Toolbar follows the common web RTE layout: inline marks | paragraph-style
      dropdown | lists | link + clear. Buttons toggle visibly when the selection is already in that style. */
   .rte-box { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
@@ -1232,6 +1242,17 @@
         <div class="owner-chips" id="f_channels"></div>
       </div>
     </div>
+    <!-- Theme Colors — only visible when "Theme" is one of the selected channels. Three color pickers override
+         the auto-picked bar color (default: brand) + the two candy-stripe colors (default: month palette). The ✕
+         next to each reverts that one picker to its default; the whole row disappears once Theme is deselected. -->
+    <div class="field" id="f_themeColorsField" data-sec="theme-colors" style="display:none">
+      <label>Theme colors <span class="opt">— override the auto-picked bar + stripe colors</span></label>
+      <div class="theme-colors-row">
+        <div class="tc-cell"><span class="tc-cell-lab">Bar</span><input type="color" class="tc-color" id="f_themeBar" /><button type="button" class="tc-reset" id="f_themeBarReset" title="Revert to brand color">✕</button></div>
+        <div class="tc-cell"><span class="tc-cell-lab">Stripe 1</span><input type="color" class="tc-color" id="f_themeC1" /><button type="button" class="tc-reset" id="f_themeC1Reset" title="Revert to month default">✕</button></div>
+        <div class="tc-cell"><span class="tc-cell-lab">Stripe 2</span><input type="color" class="tc-color" id="f_themeC2" /><button type="button" class="tc-reset" id="f_themeC2Reset" title="Revert to month default">✕</button></div>
+      </div>
+    </div>
     <div class="field" data-sec="owners"><label>Owners</label><div class="owner-chips" id="f_owners"></div></div>
     <div class="field" data-sec="due">
       <label>Due date</label>
@@ -1502,8 +1523,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.67";
+const VERSION = "3.68";
 const CHANGELOG = [
+  "v3.68 — Per-card Theme colors. When Theme is one of the card's channels, a new Theme Colors picker (Bar + Stripe 1 + Stripe 2) appears in the modal. Pick any color to override the auto-picked defaults (brand color for the bar, month palette for the stripes); the ✕ on each cell reverts just that one picker. Values persist on the card's own fields and apply everywhere decorateTheme renders — calendar bars, planning / board / list / gallery cards.",
   "v3.67 — Removed the reorder affordances from Manage → Custom fields (grip on each field row, grip on each group card, ⇅ Sort A-Z) now that reordering happens directly on the card modal via drag. Grouping (create / rename / color / assign fields / set widths / remove) all stays.",
   "v3.66 — Modal reorder rewrite: custom fields and field groups are now TRUE top-level peers of every built-in section (Cover, Title, Owners, …), so you can drag Description to the very top of the card, or interleave custom fields anywhere. Also fixed the drag jitter — drop indicators now use pure box-shadow (no border/margin flip) so hovered siblings stay in place. Removed the Display-order custom-field reflow (unified reorder owns ordering now). Grips are visible at .4 opacity by default; the field's own label (or group header) is also a drag initiator with a grab cursor.",
   "v3.65 — Custom-field drag discoverability: the field's own `<label>` and the group-section header are now drag initiators too, with a grab cursor on hover. Programmatic drag end-to-end was already working in v3.64; the real problem was the top-right ⋮⋮ grip being easy to miss, so trying to drag the field body silently did nothing because draggable was never set. Now dragging anywhere on the label (or group header) reorders the field.",
@@ -1807,7 +1829,7 @@ let _fieldGroupsRowId = null;
 // that order persist for every teammate. Unknown or missing keys fall back to the hard-coded default order so
 // new sections added later still appear automatically at their default spot.
 const MODAL_SECTION_ORDER_KEY = "__modal_section_order__";
-const MODAL_SECTION_DEFAULT = ["cover","gallery","title","brand-channel","owners","due","sprint","sprint-track","sprint-hist","status","priority","promo","subs","links","custom-fields","notes","emails"];
+const MODAL_SECTION_DEFAULT = ["cover","gallery","title","brand-channel","theme-colors","owners","due","sprint","sprint-track","sprint-hist","status","priority","promo","subs","links","custom-fields","notes","emails"];
 let modalSectionOrder = [];
 let _modalSectionOrderRowId = null;
 function fieldGroupId() { return "fg" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -1850,7 +1872,7 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries", ALERT_KEY = "__alert", ALERT_NOTE_KEY = "__alert_note", ALERT_OWNER_KEY = "__alert_owner", ALERT_DATE_KEY = "__alert_date";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries", ALERT_KEY = "__alert", ALERT_NOTE_KEY = "__alert_note", ALERT_OWNER_KEY = "__alert_owner", ALERT_DATE_KEY = "__alert_date", THEME_BAR_KEY = "__theme_bar", THEME_C1_KEY = "__theme_c1", THEME_C2_KEY = "__theme_c2";
 // Red-alert flag — a workspace-agnostic boolean stored on the card itself (c.fields.__alert). Alerted cards get
 // a red background in every view, always sort to the top regardless of other sort, and feed the toolbar's
 // Alerts counter + Notes-view alerts section. The companion __alert_note / __alert_owner fields hold the
@@ -1888,7 +1910,14 @@ function themeMonth(c) {
 function decorateTheme(el, c) {
   if (!cardHasThemeChannel(c)) return;
   el.classList.add("theme-channel");
-  const [c1, c2] = THEME_MONTH_COLORS[themeMonth(c)];
+  const [defC1, defC2] = THEME_MONTH_COLORS[themeMonth(c)];
+  const f = (c && c.fields) || {};
+  const c1 = f[THEME_C1_KEY] || defC1;
+  const c2 = f[THEME_C2_KEY] || defC2;
+  // Per-card bar color override: if the Theme Colors picker set a custom bar hex, paint it onto the element
+  // directly here so the saved color wins over whatever colorFor(c) set upstream. Only takes effect for Theme-
+  // channel cards (guarded above).
+  if (f[THEME_BAR_KEY]) el.style.background = f[THEME_BAR_KEY];
   el.style.setProperty("--theme-c1", c1);
   el.style.setProperty("--theme-c2", c2);
   // Calendar bars have an inline brand-color background set BEFORE this runs; expose it as --theme-bg so the
@@ -6504,13 +6533,73 @@ function renderChannelChips() {
     const chip = document.createElement("span");
     chip.className = "owner-chip" + (modalChannels.has(ch.name) ? " sel" : "");
     chip.textContent = ch.name;
-    chip.onclick = () => { if (modalChannels.has(ch.name)) modalChannels.delete(ch.name); else modalChannels.add(ch.name); renderChannelChips(); };
+    chip.onclick = () => { if (modalChannels.has(ch.name)) modalChannels.delete(ch.name); else modalChannels.add(ch.name); renderChannelChips(); syncThemeColorsVisibility(); };
     box.appendChild(chip);
   });
   const add = document.createElement("span"); add.className = "owner-chip add"; add.textContent = "＋ Channel";
   add.onclick = async () => { const name = (prompt("New channel name:") || "").trim(); if (!name) return;
-    const ok = await addList("channel", name); if (ok) { modalChannels.add(name); renderChannelChips(); } };
+    const ok = await addList("channel", name); if (ok) { modalChannels.add(name); renderChannelChips(); syncThemeColorsVisibility(); } };
   box.appendChild(add);
+  syncThemeColorsVisibility();
+}
+// Show the Theme-Colors picker row only when "Theme" is among the selected channels. Keeping it hidden when not
+// relevant avoids cluttering the modal for everyday deliverables.
+function syncThemeColorsVisibility() {
+  const row = document.getElementById("f_themeColorsField"); if (!row) return;
+  const hasTheme = [...modalChannels].some(ch => (ch || "").toLowerCase() === "theme");
+  row.style.display = hasTheme ? "" : "none";
+}
+// Load the three color inputs from the card's stored overrides (if any), fall back to the live defaults (brand
+// color + month palette) so the native color picker opens on a sensible starting hue even when no override is
+// set. The `data-active` dataset marks whether the user has picked a custom value — only "1" values get saved.
+function initThemeColorsPicker(card) {
+  const f = (card && card.fields) || {};
+  const barInp = document.getElementById("f_themeBar");
+  const c1Inp = document.getElementById("f_themeC1");
+  const c2Inp = document.getElementById("f_themeC2");
+  if (!barInp || !c1Inp || !c2Inp) return;
+  const bar = f[THEME_BAR_KEY] || "";
+  const c1 = f[THEME_C1_KEY] || "";
+  const c2 = f[THEME_C2_KEY] || "";
+  // Default fallbacks: bar = brand color for the card's brand; stripes = month palette.
+  const brandDef = (card && card.brand && brandColorLight(card.brand)) || "#f07830";
+  const monthIdx = card ? themeMonth(card) : new Date().getMonth();
+  const [defC1, defC2] = THEME_MONTH_COLORS[monthIdx];
+  // Setter: `active` 1 means user override; 0 means "render shows default, nothing is saved on close".
+  const set = (inp, resetId, value, def) => {
+    inp.value = (value || def || "#888888").toLowerCase();
+    inp.dataset.active = value ? "1" : "0";
+    inp.classList.toggle("inactive", !value);
+    const reset = document.getElementById(resetId); if (reset) reset.disabled = !value;
+  };
+  set(barInp, "f_themeBarReset", bar, brandDef);
+  set(c1Inp, "f_themeC1Reset", c1, defC1);
+  set(c2Inp, "f_themeC2Reset", c2, defC2);
+  // Wire input + reset once per inputs' lifecycle. The elements survive modal opens (reused), so guard against
+  // double-wire with a dataset flag.
+  if (!barInp.dataset.wired) {
+    [barInp, c1Inp, c2Inp].forEach(inp => {
+      inp.addEventListener("input", () => { inp.dataset.active = "1"; inp.classList.remove("inactive"); const rid = inp.id + "Reset"; const r = document.getElementById(rid); if (r) r.disabled = false; });
+    });
+    const wireReset = (btnId, inp, def) => {
+      const b = document.getElementById(btnId); if (!b) return;
+      b.addEventListener("click", () => { inp.value = def; inp.dataset.active = "0"; inp.classList.add("inactive"); b.disabled = true; });
+    };
+    wireReset("f_themeBarReset", barInp, brandDef);
+    wireReset("f_themeC1Reset", c1Inp, defC1);
+    wireReset("f_themeC2Reset", c2Inp, defC2);
+    barInp.dataset.wired = "1"; c1Inp.dataset.wired = "1"; c2Inp.dataset.wired = "1";
+  }
+}
+// Pull the picker's current state into the fields object. Called from saveModal — only writes keys when the user
+// actually picked something (data-active="1"), so unmodified cards stay clean.
+function collectThemeColors(fields) {
+  const barInp = document.getElementById("f_themeBar");
+  const c1Inp = document.getElementById("f_themeC1");
+  const c2Inp = document.getElementById("f_themeC2");
+  if (barInp && barInp.dataset.active === "1") fields[THEME_BAR_KEY] = barInp.value; else delete fields[THEME_BAR_KEY];
+  if (c1Inp && c1Inp.dataset.active === "1") fields[THEME_C1_KEY] = c1Inp.value; else delete fields[THEME_C1_KEY];
+  if (c2Inp && c2Inp.dataset.active === "1") fields[THEME_C2_KEY] = c2Inp.value; else delete fields[THEME_C2_KEY];
 }
 // Walk a flat subtasks array and compute {headerId → {done, total}}. Headers group everything BELOW them up to
 // the next header (or end). Anything before the first header is ungrouped (not counted per-header).
@@ -7450,6 +7539,7 @@ function openModal(card, prefill) {
   const initChannels = card ? splitChannels(card.channel) : (prefChannels.length ? prefChannels : (defaultNewChannel() ? [defaultNewChannel()] : []));
   modalChannels = new Set(initChannels);
   renderChannelChips();
+  initThemeColorsPicker(card);
   const prefOwners = (prefill && prefill.owner ? String(prefill.owner).split(",") : []).map(s => s.trim()).filter(Boolean);
   modalOwners = new Set((card && card.owner ? card.owner.split(",") : prefOwners).map(s => s.trim()).filter(Boolean));
   renderOwnerChips();
@@ -7583,6 +7673,9 @@ function saveModal() {
   } else {
     delete fields[ALERT_KEY]; delete fields[ALERT_NOTE_KEY]; delete fields[ALERT_OWNER_KEY]; delete fields[ALERT_DATE_KEY];
   }
+  // Theme-colors overrides — only persisted when the user actually picked a color on the Theme Colors picker.
+  // Values written to the fields map so decorateTheme reads them next render.
+  collectThemeColors(fields);
   const d = { title, brand: document.getElementById("f_brand").value, channel: [...modalChannels].join(", "),
     owner: [...modalOwners].join(", "), due: document.getElementById("f_due").value, end: endShown ? document.getElementById("f_end").value : "",
     status: document.getElementById("f_status").value, notes: notes, fields };
