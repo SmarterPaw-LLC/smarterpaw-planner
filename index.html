@@ -115,6 +115,16 @@
   .modal > h2 { padding-right: 36px; }
   .modal h2 { margin: 0 0 16px; font-size: 16px; }
   .field { margin-bottom: 13px; }
+  /* Modal section reorder — grip appears on hover at the top-right of each sortable block (title, brand/channel,
+     owners, …). Dragging it reorders the block within the modal and saves the order for every teammate. */
+  .modal-sortable { position: relative; }
+  .modal-sort-grip { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: grab; color: var(--muted); background: transparent; border-radius: 4px; font-size: 12px; line-height: 1; opacity: 0; transition: opacity .12s; user-select: none; z-index: 3; }
+  .modal-sortable:hover > .modal-sort-grip { opacity: .55; }
+  .modal-sort-grip:hover { opacity: 1 !important; background: var(--panel-2); color: var(--text); }
+  .modal-sort-grip:active { cursor: grabbing; }
+  .modal-sort-dragging { opacity: .55; }
+  .modal-sortable.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent) inset, 0 -2px 0 0 var(--accent); border-top: 2px solid var(--accent); margin-top: -2px; }
+  .modal-sortable.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent) inset, 0 2px 0 0 var(--accent); border-bottom: 2px solid var(--accent); margin-bottom: -2px; }
   .field label, .seclabel { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
   .seclabel { text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
   .field input, .field select, .field textarea { width: 100%; }
@@ -1144,7 +1154,7 @@
     </div>
     <input type="hidden" id="f_id" />
     <!-- Cover photo. Click to upload (resized client-side), paste a URL, or drag-and-drop an image file. -->
-    <div class="field cover-field">
+    <div class="field cover-field" data-sec="cover">
       <label>Cover photo <span class="opt">— click to upload, paste a URL, or drag-and-drop</span></label>
       <div id="f_cover" class="cover-wrap">
         <img id="f_coverImg" alt="" />
@@ -1155,7 +1165,7 @@
       <input type="hidden" id="f_coverUrl" />
     </div>
     <!-- Image gallery — multiple photos per card. First image is used as the auto cover when no explicit cover is set. -->
-    <div class="field gallery-field">
+    <div class="field gallery-field" data-sec="gallery">
       <label>Image gallery <span class="opt">— drop or paste multiple; first image serves as the auto cover</span></label>
       <div id="f_gallery" class="gallery-wrap"></div>
       <div class="gallery-tools">
@@ -1163,7 +1173,7 @@
       </div>
       <input type="file" id="f_galleryFile" accept="image/*" multiple style="display:none" />
     </div>
-    <div class="field"><label>Title</label>
+    <div class="field" data-sec="title"><label>Title</label>
       <div class="title-wrap">
         <textarea id="f_title" rows="1" placeholder="e.g. July sale carousel"></textarea>
         <button type="button" id="f_titleEmoji" class="title-emoji-btn" title="Insert an emoji">😀</button>
@@ -1174,14 +1184,14 @@
         <div id="f_emojiBody" class="emoji-body"></div>
       </div>
     </div>
-    <div class="row2">
+    <div class="row2" data-sec="brand-channel">
       <div class="field"><label>Brand</label><select id="f_brand"></select></div>
       <div class="field"><label>Channel</label>
         <div class="owner-chips" id="f_channels"></div>
       </div>
     </div>
-    <div class="field"><label>Owners</label><div class="owner-chips" id="f_owners"></div></div>
-    <div class="field">
+    <div class="field" data-sec="owners"><label>Owners</label><div class="owner-chips" id="f_owners"></div></div>
+    <div class="field" data-sec="due">
       <label>Due date</label>
       <div class="ch-wrap"><input id="f_due" type="date" /><button type="button" id="f_addEnd" class="ghost">＋ end date</button></div>
       <div id="f_endWrap" style="display:none;margin-top:8px;">
@@ -1189,41 +1199,41 @@
         <div class="ch-wrap"><input id="f_end" type="date" /><button type="button" id="f_clearEnd" title="Remove end date">✕</button></div>
       </div>
     </div>
-    <div class="field" id="f_sprintField"><label id="f_sprintLabel">Sprint week <span class="opt">— auto from due date; add a planning week here if you’ll start earlier</span></label>
+    <div class="field" id="f_sprintField" data-sec="sprint"><label id="f_sprintLabel">Sprint week <span class="opt">— auto from due date; add a planning week here if you’ll start earlier</span></label>
       <span id="f_sprintText" class="sprint-readonly" style="display:none;margin-bottom:6px"></span>
       <input id="f_sprint" type="date" onchange="renderSprintTrack()" />
       <input id="f_sprintYear" type="number" min="2000" max="2099" step="1" style="display:none" />
     </div>
-    <div class="field" id="f_sprintTrackWrap" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
-    <div class="field" id="f_sprintHistWrap" style="display:none">
+    <div class="field" id="f_sprintTrackWrap" data-sec="sprint-track" style="display:none"><label>Sprints tracked <span class="opt">— every sprint this item has spanned</span></label><div id="f_sprintTrack" class="sprint-track"></div></div>
+    <div class="field" id="f_sprintHistWrap" data-sec="sprint-hist" style="display:none">
       <label style="cursor:pointer" id="f_sprintHistLabel">▸ Historical sprints <span class="opt">— permanent record; entries can't be removed</span> <span id="f_sprintHistCount" class="opt"></span></label>
       <div id="f_sprintHist" class="sprint-track" style="display:none"></div>
     </div>
-    <div class="field"><label>Status</label><select id="f_status"></select></div>
-    <div class="field"><label>Priority</label><select id="f_priority"></select></div>
-    <div class="field" id="f_promoField"><label>Promotion</label>
+    <div class="field" data-sec="status"><label>Status</label><select id="f_status"></select></div>
+    <div class="field" data-sec="priority"><label>Priority</label><select id="f_priority"></select></div>
+    <div class="field" id="f_promoField" data-sec="promo"><label>Promotion</label>
       <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
     </div>
-    <div class="field"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
+    <div class="field" data-sec="subs"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
       <div id="f_subs" class="subs-edit"></div>
       <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask… (end with “:” for a group header, or paste a multi-line list)" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button><button type="button" id="f_subAddHeaderBtn" class="ghost" title="Add a group header (section title)">＋ Header</button></div>
     </div>
-    <div class="field"><label>Linked deliverables <span id="f_linkCount" class="opt"></span> <span class="opt">— appears on both cards</span></label>
+    <div class="field" data-sec="links"><label>Linked deliverables <span id="f_linkCount" class="opt"></span> <span class="opt">— appears on both cards</span></label>
       <div id="f_links" class="links-edit"></div>
       <div class="link-picker">
         <input id="f_linkSearch" type="text" placeholder="Search a deliverable to link…" autocomplete="off" />
         <div id="f_linkResults" class="link-results"></div>
       </div>
     </div>
-    <div id="f_fields"></div>
-    <div class="field"><label>Notes <span id="f_notesUpdated" class="opt"></span></label>
+    <div id="f_fields" data-sec="custom-fields"></div>
+    <div class="field" data-sec="notes"><label>Notes <span id="f_notesUpdated" class="opt"></span></label>
       <div class="notes-list-tools">
         <button type="button" class="rte-btn" id="f_notesAdd" title="Add a new note stamped with today's date">＋ Add note</button>
         <button type="button" class="rte-btn" id="f_notesEmail" title="Paste an email — added to this deliverable's Emails list below">📧 Email</button>
       </div>
       <div id="f_notesList" class="notes-list"></div>
     </div>
-    <div class="field"><label>Emails <span id="f_emailCount" class="opt"></span></label>
+    <div class="field" data-sec="emails"><label>Emails <span id="f_emailCount" class="opt"></span></label>
       <div id="f_emails" class="emails-edit"></div>
       <button type="button" id="f_emailAdd" class="ghost" style="width:100%">＋ Add email (paste)</button>
     </div>
@@ -1451,8 +1461,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.59";
+const VERSION = "3.60";
 const CHANGELOG = [
+  "v3.60 — The Edit-deliverable modal's section blocks (Title, Brand/Channel, Owners, Due date, Status, Priority, Subtasks, Notes, …) are now drag-reorderable. Hover any section to reveal a ⋮⋮ grip in the top-right; drag it above/below another section to drop it there. The new order is saved to Supabase (workspace-scoped sentinel row, same pattern as field groups) so every teammate sees the same arrangement. Unknown or future sections automatically slot in at their default position.",
   "v3.59 — Calendar continuous-scroll no longer jumps back to today's month when you interact with anything. As you scroll, the top-visible month now updates calRef too (not just the label), so a subsequent re-render (opening a card, toggling a filter, dropping a bar) anchors to where you're actually looking instead of snapping back to the month calRef was initialized with.",
   "v3.58 — Theme stripes: calendar bars now show the full pattern (no inset backdrop) with a strong black text-shadow halo on the title/chips so they stay readable without hiding the stripes. Theming removed from the Notes feed entirely (bars were too thin to carry both the pattern and the content legibly).",
   "v3.57 — Theme stripe frame extended to calendar bars + notes feed. Calendar bars inset the backdrop 2×4px using the bar's own brand color (so the frame still reads as the Meowi orange / Doggi green bar), notes-entry uses the same slim inset to avoid eating the thin row height, and the grid view no longer paints the pattern at all.",
@@ -1742,6 +1753,14 @@ const BRAND_DARK_COLORS_KEY = "__brand_dark_colors__";
 const FIELD_GROUPS_KEY = "__field_groups__";
 let fieldGroups = [];
 let _fieldGroupsRowId = null;
+// Modal section order — a workspace-scoped sentinel row holding `{order:[sec,...]}`. Lets the user drag the
+// Edit-deliverable modal's section blocks (title, brand/channel, owners, due, status, …) into any order and have
+// that order persist for every teammate. Unknown or missing keys fall back to the hard-coded default order so
+// new sections added later still appear automatically at their default spot.
+const MODAL_SECTION_ORDER_KEY = "__modal_section_order__";
+const MODAL_SECTION_DEFAULT = ["cover","gallery","title","brand-channel","owners","due","sprint","sprint-track","sprint-hist","status","priority","promo","subs","links","custom-fields","notes","emails"];
+let modalSectionOrder = [];
+let _modalSectionOrderRowId = null;
 function fieldGroupId() { return "fg" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function getBrandColorsGlobal() {
   try { const raw = localStorage.getItem(BRAND_COLORS_LS_KEY); return raw ? (JSON.parse(raw) || {}) : {}; } catch (e) { return {}; }
@@ -3008,6 +3027,17 @@ async function loadLists() {
       }
     } catch (e) {}
   }
+  // Modal section order (per-workspace). Shape: {order:[sec,...]}. Unknown keys are tolerated — merged with the
+  // default list below so renames or new sections just slot into place.
+  const msoRow = data.find(r => r.kind === "field" && r.name === MODAL_SECTION_ORDER_KEY);
+  _modalSectionOrderRowId = msoRow ? msoRow.id : null;
+  modalSectionOrder = [];
+  if (msoRow && msoRow.color) {
+    try {
+      const m = JSON.parse(msoRow.color);
+      if (m && Array.isArray(m.order)) modalSectionOrder = m.order.filter(x => typeof x === "string");
+    } catch (e) {}
+  }
   // Server-side brand-colors mirror — authoritative over whatever's in localStorage, since it survives
   // incognito / fresh browsers / team members. Load last so it wins over the legacy BRAND_DARK_COLORS_KEY migration.
   // Brand colors are GLOBAL — the sentinel row may live under any workspace's name. Query it unscoped so a row
@@ -3178,6 +3208,77 @@ async function saveFieldGroups() {
     _fieldGroupsRowId = data.id;
   }
   afterListsChanged();
+}
+// Persist the Edit-deliverable modal's section order (globally per workspace). Insert on first write, update after.
+async function saveModalSectionOrder() {
+  if (!ONLINE) return;
+  const payload = JSON.stringify({ order: modalSectionOrder });
+  if (_modalSectionOrderRowId) {
+    const { error } = await db.from("lists").update({ color: payload }).eq("id", _modalSectionOrderRowId);
+    if (error) { toast("Save failed: " + error.message); return; }
+  } else {
+    const { data, error } = await db.from("lists").insert(wsStamp({ kind: "field", name: MODAL_SECTION_ORDER_KEY, color: payload, position: 99997 })).select("id").single();
+    if (error) { toast("Save failed: " + error.message); return; }
+    _modalSectionOrderRowId = data.id;
+  }
+}
+// Resolve the effective modal section order: start with the saved list, then append any default sections it
+// doesn't name (so new sections added in future versions always render).
+function effectiveModalSectionOrder() {
+  const saved = (modalSectionOrder || []).filter(k => MODAL_SECTION_DEFAULT.includes(k));
+  const missing = MODAL_SECTION_DEFAULT.filter(k => !saved.includes(k));
+  return saved.concat(missing);
+}
+// Apply the current order to the modal DOM. Called every time the modal opens so a teammate's reorder shows up on
+// the next open without a page reload. Also wires drag handles.
+function applyModalSectionOrder() {
+  const modal = document.querySelector("#overlay .modal"); if (!modal) return;
+  const actions = modal.querySelector(".modal-actions");
+  const order = effectiveModalSectionOrder();
+  order.forEach(k => {
+    const el = modal.querySelector(`[data-sec="${k}"]`);
+    if (!el) return;
+    if (actions) modal.insertBefore(el, actions); else modal.appendChild(el);
+    ensureModalSectionHandle(el, k);
+  });
+}
+// Attach a drag grip to a section block (once). The grip hovers over the top-right corner and only sets the block
+// draggable on grip mousedown — so text selection inside the block still works normally.
+function ensureModalSectionHandle(el, sec) {
+  if (!el || el.dataset.sortReady === "1") return; el.dataset.sortReady = "1";
+  el.classList.add("modal-sortable");
+  const grip = document.createElement("span");
+  grip.className = "modal-sort-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder — saves for everyone";
+  grip.addEventListener("mousedown", e => { e.stopPropagation(); el.draggable = true; });
+  grip.addEventListener("mouseup", () => { el.draggable = false; });
+  el.appendChild(grip);
+  el.addEventListener("dragstart", e => {
+    if (!el.draggable) { e.preventDefault(); return; }
+    e.dataTransfer.setData("text/plain", sec); e.dataTransfer.effectAllowed = "move"; el.classList.add("modal-sort-dragging");
+  });
+  el.addEventListener("dragend", () => { el.classList.remove("modal-sort-dragging"); el.draggable = false; document.querySelectorAll(".modal-sortable.drag-over-top,.modal-sortable.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
+  el.addEventListener("dragover", e => {
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    const r = el.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
+    el.classList.toggle("drag-over-top", above); el.classList.toggle("drag-over-bot", !above);
+  });
+  el.addEventListener("dragleave", () => el.classList.remove("drag-over-top", "drag-over-bot"));
+  el.addEventListener("drop", async e => {
+    e.preventDefault(); const from = e.dataTransfer.getData("text/plain");
+    const r = el.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2;
+    el.classList.remove("drag-over-top", "drag-over-bot");
+    if (!from || from === sec) return;
+    const order = effectiveModalSectionOrder().slice();
+    const fromIdx = order.indexOf(from); if (fromIdx < 0) return;
+    order.splice(fromIdx, 1);
+    let toIdx = order.indexOf(sec); if (toIdx < 0) return;
+    if (!above) toIdx += 1;
+    order.splice(toIdx, 0, from);
+    modalSectionOrder = order;
+    applyModalSectionOrder();
+    await saveModalSectionOrder();
+    toast("Section order saved");
+  });
 }
 // Add a new empty group with the given name.
 function addFieldGroup(name) { const n = (name || "").trim(); if (!n) return; fieldGroups.push({ id: fieldGroupId(), name: n, color: "", fields: [] }); saveFieldGroups(); renderFieldsEditor(); }
@@ -6940,6 +7041,9 @@ function openModal(card, prefill) {
   // is itself a direct link to this card. New cards (no id yet) stay out of the URL until saved.
   _modalCardId = (card && card.id) ? card.id : "";
   writeUrl();
+  // Apply the saved section order (and attach drag handles) before anything else so the DOM render order is final
+  // by the time fields are populated.
+  applyModalSectionOrder();
   document.getElementById("modalTitle").textContent = (card ? "Edit " : "New ") + wsDef().nounLower;
   document.getElementById("f_id").value = card ? card.id : "";
   document.getElementById("f_title").value = card ? card.title : "";
