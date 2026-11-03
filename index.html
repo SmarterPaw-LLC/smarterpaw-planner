@@ -2318,12 +2318,12 @@ function sanitizeRichText(html) {
     });
   };
   walk(root);
-  const html = root.innerHTML.trim();
+  const out = root.innerHTML.trim();
   // Collapse "visually empty" documents (leftover <br> or <p><br></p> from contenteditable) to "" so an empty
   // rich-text field doesn't persist as a stray tag.
   const txt = (root.textContent || "").trim();
   if (!txt && !root.querySelector("img,a,hr")) return "";
-  return html;
+  return out;
 }
 function fieldByName(n) { return fieldsList.find(f => f.name === n); }
 function splitMulti(v) { return (v || "").split(",").map(s => s.trim()).filter(Boolean); }
