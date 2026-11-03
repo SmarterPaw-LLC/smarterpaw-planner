@@ -1336,7 +1336,6 @@
     <button class="modal-x" id="fieldsX" title="Close">✕</button>
     <h2>Custom fields</h2>
     <div class="hint">Fields show on every deliverable and as a column in Grid/List. <b>Dropdown</b> picks one option; <b>Multi-select</b> picks several.</div>
-    <div class="fields-sort-row"><button type="button" id="fSortAZ" class="ghost" title="Sort fields A-Z and persist">⇅ Sort A–Z</button></div>
     <div id="fieldsEditor" class="fields-editor"></div>
     <div class="add-row"><input id="fAddField" placeholder="New field name (e.g. Priority, Budget)…" autocomplete="off" /><button class="primary" id="fAddFieldBtn">Add field</button></div>
     <h3 class="fe-groups-title">Groups</h3>
@@ -1503,8 +1502,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.66";
+const VERSION = "3.67";
 const CHANGELOG = [
+  "v3.67 — Removed the reorder affordances from Manage → Custom fields (grip on each field row, grip on each group card, ⇅ Sort A-Z) now that reordering happens directly on the card modal via drag. Grouping (create / rename / color / assign fields / set widths / remove) all stays.",
   "v3.66 — Modal reorder rewrite: custom fields and field groups are now TRUE top-level peers of every built-in section (Cover, Title, Owners, …), so you can drag Description to the very top of the card, or interleave custom fields anywhere. Also fixed the drag jitter — drop indicators now use pure box-shadow (no border/margin flip) so hovered siblings stay in place. Removed the Display-order custom-field reflow (unified reorder owns ordering now). Grips are visible at .4 opacity by default; the field's own label (or group header) is also a drag initiator with a grab cursor.",
   "v3.65 — Custom-field drag discoverability: the field's own `<label>` and the group-section header are now drag initiators too, with a grab cursor on hover. Programmatic drag end-to-end was already working in v3.64; the real problem was the top-right ⋮⋮ grip being easy to miss, so trying to drag the field body silently did nothing because draggable was never set. Now dragging anywhere on the label (or group header) reorders the field.",
   "v3.64 — Custom-field drag reorder now actually fires: dragover was gated on `dataTransfer.types` containing the custom MIME, which Chrome masks for custom types — the preventDefault never ran so drop silently no-op'd. Switched to a module-level drag-source stash set in dragstart; also now setData `text/plain` as a fallback. Grips are visible at .4 opacity by default (brighter on hover) so you can see where to grab.",
@@ -7681,17 +7681,8 @@ function renderFieldGroupsEditor() {
   fieldGroups.forEach((g, idx) => {
     const card = document.createElement("div"); card.className = "fg-card"; card.dataset.idx = String(idx);
     if (g.color) card.style.setProperty("--group-color", g.color);
-    // Drag-to-reorder: grab the ⋮⋮ handle to flip the card into draggable mode. Mirrors fieldEditorCard so
-    // behavior is consistent between the fields list and the groups list.
+    // Reorder moved to the card modal in v3.66 (drag the group header right where it renders) — no grip here.
     const top = document.createElement("div"); top.className = "fg-top";
-    const grip = document.createElement("span"); grip.className = "fe-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
-    grip.addEventListener("mousedown", () => { card.draggable = true; });
-    grip.addEventListener("mouseup", () => { card.draggable = false; });
-    card.addEventListener("dragstart", e => { const payload = e.dataTransfer.getData("text/plain"); if (payload) return; e.dataTransfer.setData("text/plain", "group:" + idx); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
-    card.addEventListener("dragend", () => { card.classList.remove("dragging"); card.draggable = false; document.querySelectorAll(".fg-card.drag-over-top,.fg-card.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
-    card.addEventListener("dragover", e => { const types = e.dataTransfer && e.dataTransfer.types; if (!types || !types.includes("text/plain")) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = card.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; card.classList.toggle("drag-over-top", above); card.classList.toggle("drag-over-bot", !above); });
-    card.addEventListener("dragleave", () => card.classList.remove("drag-over-top", "drag-over-bot"));
-    card.addEventListener("drop", e => { const payload = e.dataTransfer.getData("text/plain") || ""; card.classList.remove("drag-over-top", "drag-over-bot"); if (!payload.startsWith("group:")) return; e.preventDefault(); const from = +payload.slice(6); const r = card.getBoundingClientRect(); const to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1); if (!isNaN(from)) reorderFieldGroup(from, to); });
     const nm = document.createElement("input"); nm.className = "fg-name"; nm.value = g.name; nm.title = "Group name";
     nm.onchange = () => { renameFieldGroup(g.id, nm.value); };
     // Color picker — sets the group's accent color used by the modal section header. A tiny Reset ✕ clears
@@ -7706,7 +7697,7 @@ function renderFieldGroupsEditor() {
       colorWrap.appendChild(reset);
     }
     const del = document.createElement("button"); del.className = "fg-del"; del.type = "button"; del.textContent = "Remove"; del.onclick = () => { if (confirm('Remove group "' + g.name + '"? Its fields stay as custom fields, just ungrouped.')) removeFieldGroup(g.id); };
-    top.appendChild(grip); top.appendChild(nm); top.appendChild(colorWrap); top.appendChild(del); card.appendChild(top);
+    top.appendChild(nm); top.appendChild(colorWrap); top.appendChild(del); card.appendChild(top);
     const lab = document.createElement("div"); lab.className = "fg-picker-lab"; lab.textContent = "Fields in this group";
     card.appendChild(lab);
     const chips = document.createElement("div"); chips.className = "fg-chips";
@@ -7776,22 +7767,14 @@ async function reorderField(fromIdx, toIdx) {
 function fieldEditorCard(f, idx) {
   const card = document.createElement("div"); card.className = "fe-card"; card.dataset.idx = String(idx);
   const top = document.createElement("div"); top.className = "fe-top";
-  // Drag handle — grab here to reorder among all custom fields.
-  const grip = document.createElement("span"); grip.className = "fe-grip"; grip.textContent = "⋮⋮"; grip.title = "Drag to reorder";
-  grip.addEventListener("mousedown", () => { card.draggable = true; });
-  grip.addEventListener("mouseup", () => { card.draggable = false; });
-  card.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
-  card.addEventListener("dragend", () => { card.classList.remove("dragging"); card.draggable = false; document.querySelectorAll(".fe-card.drag-over-top,.fe-card.drag-over-bot").forEach(r => r.classList.remove("drag-over-top", "drag-over-bot")); });
-  card.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = card.getBoundingClientRect(); const above = e.clientY < r.top + r.height / 2; card.classList.toggle("drag-over-top", above); card.classList.toggle("drag-over-bot", !above); });
-  card.addEventListener("dragleave", () => card.classList.remove("drag-over-top", "drag-over-bot"));
-  card.addEventListener("drop", e => { e.preventDefault(); const from = +e.dataTransfer.getData("text/plain"); const r = card.getBoundingClientRect(); const to = idx + (e.clientY < r.top + r.height / 2 ? 0 : 1); card.classList.remove("drag-over-top", "drag-over-bot"); if (!isNaN(from)) reorderField(from, to); });
+  // Reorder moved to the card modal in v3.66 (drag the field's label right where it renders) — no grip here.
   const name = document.createElement("input"); name.className = "fe-name"; name.value = f.name; name.title = "Field name";
   name.onchange = () => { const nn = name.value.trim(); if (nn && nn !== f.name) renameList("field", f, nn); else name.value = f.name; };
   const type = document.createElement("select"); type.className = "fe-type"; type.title = "Field type";
   FIELD_TYPES.forEach(t => { const o = document.createElement("option"); o.value = t.v; o.textContent = t.label; type.appendChild(o); });
   type.value = f.type || "text";
   const del = document.createElement("button"); del.className = "fe-del"; del.textContent = "Remove"; del.onclick = () => removeList("field", f);
-  top.appendChild(grip); top.appendChild(name); top.appendChild(type); top.appendChild(del); card.appendChild(top);
+  top.appendChild(name); top.appendChild(type); top.appendChild(del); card.appendChild(top);
 
   const opts = document.createElement("div"); opts.className = "fe-opts"; opts.style.display = fieldHasOptions(f) ? "" : "none";
   const lab = document.createElement("div"); lab.className = "fe-opts-lab"; lab.textContent = "Options";
