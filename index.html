@@ -709,6 +709,20 @@
   .field-currency-row { display: flex; align-items: stretch; }
   .field-currency-row .field-currency-prefix { display: flex; align-items: center; justify-content: center; padding: 0 10px; background: var(--panel-2); border: 1px solid var(--line); border-right: none; border-radius: 8px 0 0 8px; font-weight: 600; color: var(--muted); }
   .field-currency-row input { flex: 1; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  /* Rich-text (long-form) field. Toolbar sits above the editable box; both share the input border. */
+  .rte-box { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
+  .rte-tb { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .rte-tb-btn { min-width: 28px; height: 26px; padding: 0 7px; font-size: 12px; line-height: 1; background: transparent; color: var(--text); border: 1px solid transparent; border-radius: 5px; cursor: pointer; font-weight: 600; }
+  .rte-tb-btn:hover { background: var(--panel-2); border-color: var(--line); }
+  .rte-tb-btn:active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .rte-editor { min-height: 110px; max-height: 420px; overflow-y: auto; padding: 10px 12px; font-size: 14px; line-height: 1.5; color: var(--text); background: var(--panel-2); outline: none; }
+  .rte-editor:focus { background: var(--panel); box-shadow: inset 0 0 0 1px var(--accent); }
+  .rte-editor p { margin: 0 0 8px; }
+  .rte-editor p:last-child { margin-bottom: 0; }
+  .rte-editor h3 { margin: 6px 0 6px; font-size: 15px; font-weight: 700; }
+  .rte-editor ul, .rte-editor ol { margin: 0 0 8px; padding-left: 22px; }
+  .rte-editor a { color: var(--accent); text-decoration: underline; }
+  .rte-editor:empty::before { content: attr(data-placeholder); color: var(--muted); }
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .field-link-open:hover { border-color: var(--accent); background: rgba(109,93,252,.06); }
   .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
@@ -1461,8 +1475,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.60";
+const VERSION = "3.61";
 const CHANGELOG = [
+  "v3.61 — New custom-field type: Long text (rich). Picks up Bold / Italic / Underline / H3 / bullet + numbered lists / link / clear-format in a small toolbar, with sanitized paste from Word & Docs (strips scripts, inline styles, event handlers). Values are stored as HTML; outside the modal (grid cells, badges, exports) the field renders as plaintext so markup never leaks as literal tags. Also: filtered the v3.60 modal-order sentinel out of the fields editor — it was accidentally rendering as a text field because the filter list missed it.",
   "v3.60 — The Edit-deliverable modal's section blocks (Title, Brand/Channel, Owners, Due date, Status, Priority, Subtasks, Notes, …) are now drag-reorderable. Hover any section to reveal a ⋮⋮ grip in the top-right; drag it above/below another section to drop it there. The new order is saved to Supabase (workspace-scoped sentinel row, same pattern as field groups) so every teammate sees the same arrangement. Unknown or future sections automatically slot in at their default position.",
   "v3.59 — Calendar continuous-scroll no longer jumps back to today's month when you interact with anything. As you scroll, the top-visible month now updates calRef too (not just the label), so a subsequent re-render (opening a card, toggling a filter, dropping a bar) anchors to where you're actually looking instead of snapping back to the month calRef was initialized with.",
   "v3.58 — Theme stripes: calendar bars now show the full pattern (no inset backdrop) with a strong black text-shadow halo on the title/chips so they stay readable without hiding the stripes. Theming removed from the Notes feed entirely (bars were too thin to carry both the pattern and the content legibly).",
@@ -2246,6 +2261,7 @@ let brandsList = [];     // [{id?, name, color}]
 let fieldsList = [];     // [{id?, name, type, options}] — custom field definitions
 const FIELD_TYPES = [    // selectable types for a custom field
   { v: "text",     label: "Text" },
+  { v: "richtext", label: "Long text (rich)" },
   { v: "number",   label: "Number" },
   { v: "currency", label: "Currency ($)" },
   { v: "date",     label: "Date" },
@@ -2265,7 +2281,49 @@ function fmtFieldValue(f, v) {
     if (!isFinite(n)) return String(v);
     return "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+  // Rich-text values are stored as HTML; outside the modal (grid cells, badges, exports) we need plain text so
+  // the markup doesn't leak as literal tags. Collapse whitespace, decode a few common entities.
+  if (f && f.type === "richtext") return htmlToPlainText(String(v));
   return String(v);
+}
+// Strip HTML to text for compact displays. Keeps paragraphs/line breaks as single spaces so a long formatted
+// note shows as one legible line in a grid cell or badge.
+function htmlToPlainText(html) {
+  if (!html) return "";
+  const d = document.createElement("div"); d.innerHTML = html;
+  const t = (d.textContent || d.innerText || "").replace(/\s+/g, " ").trim();
+  return t;
+}
+// Sanitize rich-text HTML before saving. Removes scripts/styles/iframes and strips any `on*=` event-handler
+// attributes. Also removes `style` attributes to keep stored content theme-safe. Permissive otherwise so paste
+// from Docs/Word still comes through as formatted content.
+function sanitizeRichText(html) {
+  if (!html) return "";
+  const doc = new DOMParser().parseFromString("<div id=root>" + html + "</div>", "text/html");
+  const root = doc.getElementById("root"); if (!root) return "";
+  const DROP = new Set(["script","style","iframe","object","embed","link","meta","form","input","button","textarea","select"]);
+  const walk = (node) => {
+    [...node.childNodes].forEach(ch => {
+      if (ch.nodeType === 1) {
+        const tag = ch.tagName.toLowerCase();
+        if (DROP.has(tag)) { ch.remove(); return; }
+        [...ch.attributes].forEach(a => {
+          const n = a.name.toLowerCase();
+          if (n.startsWith("on") || n === "style" || n === "class" || n === "srcset") ch.removeAttribute(a.name);
+          if (n === "href" && /^(javascript|data|vbscript):/i.test(a.value)) ch.removeAttribute(a.name);
+          if (n === "src" && /^(javascript|data|vbscript):/i.test(a.value)) ch.removeAttribute(a.name);
+        });
+        walk(ch);
+      }
+    });
+  };
+  walk(root);
+  const html = root.innerHTML.trim();
+  // Collapse "visually empty" documents (leftover <br> or <p><br></p> from contenteditable) to "" so an empty
+  // rich-text field doesn't persist as a stray tag.
+  const txt = (root.textContent || "").trim();
+  if (!txt && !root.querySelector("img,a,hr")) return "";
+  return html;
 }
 function fieldByName(n) { return fieldsList.find(f => f.name === n); }
 function splitMulti(v) { return (v || "").split(",").map(s => s.trim()).filter(Boolean); }
@@ -2992,7 +3050,7 @@ async function loadLists() {
   data.filter(r => r.kind === "promotion").forEach(r => { if (r.color) promoOverrides[r.name] = { id: r.id, color: r.color }; });
   // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
   // The sentinel name PROMO_COLORS_KEY holds a JSON {promoName: hexColor} map — pulled into promoOverrides, not fieldsList.
-  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY && r.name !== FIELD_GROUPS_KEY && r.name !== INNOVATION_START_YEAR_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY && r.name !== FIELD_GROUPS_KEY && r.name !== INNOVATION_START_YEAR_KEY && r.name !== MODAL_SECTION_ORDER_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
   // Innovation start-year sentinel (global). Unscoped lookup so a row written under any workspace resolves.
   let isyRow = data.find(r => r.kind === "field" && r.name === INNOVATION_START_YEAR_KEY);
   if (!isyRow && ONLINE && !WS_COL_MISSING) {
@@ -6748,6 +6806,49 @@ function _renderOneFieldWrapper(f, cur) {
       const opts = (f.options || []).slice(); if (cur && !opts.includes(cur)) opts.push(cur);   // keep a legacy value visible
       opts.forEach(o => { const op = document.createElement("option"); op.value = o; op.textContent = o; inp.appendChild(op); });
       inp.value = cur; wrap.appendChild(inp);
+    } else if (f.type === "richtext") {
+      // Rich-text long-form field. Contenteditable div holds the live markup; a hidden input mirrors it as HTML
+      // so saveModal's existing [data-field] selector picks it up with no special-casing. Toolbar supports
+      // Bold / Italic / Underline / H3 heading / UL / OL / Link / Clear format.
+      const hidden = document.createElement("input"); hidden.type = "hidden"; hidden.dataset.field = f.name; hidden.value = cur || "";
+      const box = document.createElement("div"); box.className = "rte-box";
+      const tb = document.createElement("div"); tb.className = "rte-tb";
+      const mkBtn = (label, title, action) => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "rte-tb-btn"; b.textContent = label; b.title = title;
+        b.addEventListener("mousedown", e => { e.preventDefault(); });
+        b.addEventListener("click", action);
+        return b;
+      };
+      const ed = document.createElement("div"); ed.className = "rte-editor"; ed.contentEditable = "true"; ed.spellcheck = true; ed.innerHTML = sanitizeRichText(cur || "");
+      ed.setAttribute("role", "textbox"); ed.setAttribute("aria-multiline", "true");
+      const sync = () => { hidden.value = sanitizeRichText(ed.innerHTML); };
+      const exec = (cmd, arg) => { ed.focus(); try { document.execCommand(cmd, false, arg); } catch (e) {} sync(); };
+      tb.appendChild(mkBtn("B", "Bold (Ctrl+B)", () => exec("bold")));
+      const italicBtn = mkBtn("I", "Italic (Ctrl+I)", () => exec("italic")); italicBtn.style.fontStyle = "italic"; tb.appendChild(italicBtn);
+      const uBtn = mkBtn("U", "Underline (Ctrl+U)", () => exec("underline")); uBtn.style.textDecoration = "underline"; tb.appendChild(uBtn);
+      tb.appendChild(mkBtn("H", "Heading", () => exec("formatBlock", "H3")));
+      tb.appendChild(mkBtn("¶", "Paragraph", () => exec("formatBlock", "P")));
+      tb.appendChild(mkBtn("•", "Bullet list", () => exec("insertUnorderedList")));
+      tb.appendChild(mkBtn("1.", "Numbered list", () => exec("insertOrderedList")));
+      tb.appendChild(mkBtn("🔗", "Insert / change link", () => {
+        const url = window.prompt("Link URL (leave blank to remove):", "");
+        if (url === null) return;
+        if (!url) { exec("unlink"); return; }
+        const safe = /^(https?:)?\/\//i.test(url) ? url : "https://" + url;
+        exec("createLink", safe);
+      }));
+      tb.appendChild(mkBtn("⟲", "Clear formatting", () => { exec("removeFormat"); exec("unlink"); }));
+      // Intercept paste so Word/Docs HTML lands sanitized (strips style attrs, scripts, etc.).
+      ed.addEventListener("paste", e => {
+        const dt = e.clipboardData || window.clipboardData; if (!dt) return;
+        const html = dt.getData("text/html"); const text = dt.getData("text/plain");
+        if (html) { e.preventDefault(); const clean = sanitizeRichText(html); document.execCommand("insertHTML", false, clean); sync(); }
+        else if (text) { e.preventDefault(); document.execCommand("insertText", false, text); sync(); }
+      });
+      ed.addEventListener("input", sync);
+      ed.addEventListener("blur", sync);
+      box.appendChild(tb); box.appendChild(ed); box.appendChild(hidden);
+      wrap.appendChild(box);
     } else if (f.type === "multi") {
       const sel = new Set(splitMulti(cur));
       const hidden = document.createElement("input"); hidden.type = "hidden"; hidden.dataset.field = f.name; hidden.value = [...sel].join(", ");
