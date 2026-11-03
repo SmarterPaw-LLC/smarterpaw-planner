@@ -804,7 +804,9 @@
   .card.theme-channel::before, .planning-card.theme-channel::before,
   .list-task.theme-channel::before, .gallery-tile.theme-channel::before {
     content: ""; position: absolute; inset: 6px; z-index: 0; pointer-events: none;
-    background: var(--panel-2); border-radius: 6px;
+    /* Use the card's own effective background (set by applyCardColorOverride as --card-bg) so a per-card color
+       override shows through the Theme stripes' inset backdrop. Falls back to --panel-2 for cards with no override. */
+    background: var(--card-bg, var(--panel-2)); border-radius: 6px;
   }
   /* Calendar bars: no inset backdrop (would hide most of the stripes). Instead give the text a strong
      text-shadow halo so the title/chips pop over the striped background without blocking the pattern. */
@@ -1545,8 +1547,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.71";
+const VERSION = "3.72";
 const CHANGELOG = [
+  "v3.72 — Fix: Theme-channel stripes were hiding the card color override. The inset backdrop painted behind the stripes was hard-coded to --panel-2, which masked any card-color tint. It now uses --card-bg (stamped by applyCardColorOverride, falls back to --panel-2) so Theme + card-color combines cleanly — stripes on top, card color tint behind.",
   "v3.71 — Card color override can now be a gradient. The ⚙ popover gains a second color (\"Gradient to\") and a direction dropdown (↓ top-to-bottom, → left-to-right, ↘/↗ diagonals, plus the reverses). Leave the second color unset for a solid color (same as v3.70). Direction row only shows when both colors are active. Tinted via two rgba() stops over the panel background for panel cards + modal (keeps text legible); calendar bars get the full gradient.",
   "v3.70 — Card color override now tints the INSIDE of the card and the modal (not the left-border outline, which stays set by the Color: brand/channel/status dimension setting). Panel-background cards get a 14% tint over --panel-2; the modal gets a 10% tint over --panel. Calendar bars still fill-color since they're a solid block. Alert red still supersedes. Live-preview the color in the modal as you pick it in the ⚙ popover.",
   "v3.69 — Card color picker moved to a ⚙ Settings icon in the modal top bar (next to the 🚨 alert). Click it to open a compact popover: Card color (works on ANY card — overrides the brand/channel/status color on calendar bars + left-borders app-wide); Stripe 1 & Stripe 2 (only visible on Theme-channel cards). Alert red (if active) still supersedes the card color via the existing !important rules. The icon lights up when any override is set. Removed the inline Theme Colors field from the modal body (freed real estate).",
@@ -1985,8 +1988,12 @@ function tintedBg(o, pct, baseVar) {
 function applyCardColorOverride(el, c) {
   if (!el) return;
   const o = cardColorOverride(c);
-  if (!o) { el.style.removeProperty("background"); return; }
-  el.style.background = tintedBg(o, 14, "var(--panel-2)");
+  if (!o) { el.style.removeProperty("background"); el.style.removeProperty("--card-bg"); return; }
+  const bg = tintedBg(o, 14, "var(--panel-2)");
+  el.style.background = bg;
+  // Expose the same bg as --card-bg so the Theme-channel ::before backdrop can mirror the card color instead of
+  // masking it with a flat --panel-2 gray.
+  el.style.setProperty("--card-bg", bg);
 }
 function cardAlertNote(c) { return (c && c.fields && c.fields[ALERT_NOTE_KEY]) || ""; }
 function cardAlertOwner(c) { return (c && c.fields && c.fields[ALERT_OWNER_KEY]) || ""; }
