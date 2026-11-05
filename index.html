@@ -236,39 +236,42 @@
   .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
   .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
   .subs-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-  /* Row layout — single line: grip | checkbox | text (fills, auto-grows to content, clamped to 2 lines unless
-     ⋯ expanded) | owner | due | ➜ Convert | ⋯ (only shown when text overflows 2 lines) | ✕.
-     flex-wrap:wrap so the "added Aug 26" caption lands on its own line underneath without pushing the main controls. */
+  /* Row layout: grip | checkbox | textarea (~75% width, 3-line clamp) | 👤 | 📅 | ➜ | ⋯ (overflow only) | ✕.
+     Owner and date are icon buttons; click to reveal the full control in a wrapped panel underneath. */
   .sub-row { display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; position: relative; }
   .sub-drag { flex: none; cursor: grab; color: var(--muted); font-size: 14px; letter-spacing: -2px; user-select: none; padding: 6px 2px 0; opacity: .35; }
   .sub-row:hover .sub-drag { opacity: 1; }
   .sub-drag:hover { color: var(--text); }
   .sub-row.dragging { opacity: .4; }
-  /* Drop indicator: a colored line at the top or bottom of the target row while dragging. */
   .sub-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
   .sub-row.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
   .sub-row > input[type=checkbox] { flex: none; width: 16px; height: 16px; margin: 8px 0 0; cursor: pointer; }
-  /* Text: auto-growing textarea. Clamps at ~2 lines by default; the ⋯ expand toggle removes the cap.
-     The .field min-height: 64px baseline (set globally for the modal's larger inputs) is overridden here so the box
-     collapses to the actual content height instead of a forced 64px minimum. */
-  .field textarea.sub-text { flex: 1 1 200px; min-width: 0; padding: 5px 9px; min-height: 30px; resize: none; overflow: hidden; font: inherit; line-height: 1.35; word-break: break-word; max-height: calc(2 * 1.35em + 12px); box-sizing: border-box; }
+  /* Textarea takes ~75% of the row width and shows 3 lines before clamping. Overrides the .field min-height baseline. */
+  .field textarea.sub-text { flex: 1 1 0; min-width: 50%; padding: 6px 10px; min-height: 34px; resize: none; overflow: hidden; font: inherit; line-height: 1.4; word-break: break-word; max-height: calc(3 * 1.4em + 16px); box-sizing: border-box; }
   .field textarea.sub-text.sub-row-expanded, .sub-row.sub-row-expanded .sub-text { max-height: none; }
   .sub-text.done { text-decoration: line-through; color: var(--muted); }
-  /* Owner, due and ➜ Convert live on the top row always. Compact so the text keeps most of the width. */
-  .sub-owner { flex: 0 0 110px; padding: 4px 6px; font-size: 12px; margin-top: 2px; }
-  .sub-due { flex: 0 0 125px; padding: 4px 6px; font-size: 12px; margin-top: 2px; }
-  .sub-convert { flex: none; padding: 4px 8px; font-size: 12px; color: var(--accent); border-color: transparent; background: transparent; margin-top: 2px; opacity: .55; }
-  .sub-row:hover .sub-convert { opacity: 1; }
-  .sub-convert:hover { border-color: var(--accent); }
-  /* Text-clamp expand toggle — shown only when the textarea's content exceeds the 2-line clamp. */
-  .sub-expand-tog { flex: none; padding: 3px 7px; font-size: 13px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; margin-top: 2px; }
+  /* Icon buttons for owner / date / convert. Compact, muted by default, accent when the field has a value or the panel is open. */
+  .sub-icon-btn { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 14px; margin-top: 3px; opacity: .6; }
+  .sub-row:hover .sub-icon-btn { opacity: 1; }
+  .sub-icon-btn:hover { color: var(--text); border-color: var(--line); }
+  .sub-icon-btn.has-value { color: var(--accent); opacity: 1; }
+  .sub-icon-btn.open { color: var(--accent); border-color: var(--accent); background: var(--panel-2); opacity: 1; }
+  /* Text-clamp expand toggle — shown only when the textarea's content exceeds the 3-line clamp. */
+  .sub-expand-tog { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; font-size: 14px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; margin-top: 3px; opacity: .6; }
+  .sub-row:hover .sub-expand-tog { opacity: 1; }
   .sub-expand-tog:hover { color: var(--text); border-color: var(--line); }
-  .sub-row.sub-row-expanded .sub-expand-tog { color: var(--accent); border-color: var(--accent); }
-  /* Spacer that occupies the expand slot when a row has no overflow — keeps the ✕ column aligned across rows. */
-  .sub-expand-tog-empty { flex: none; width: 24px; }
-  .sub-rm { flex: none; padding: 3px 9px; color: var(--danger); border-color: transparent; background: transparent; margin-top: 2px; opacity: .4; }
+  .sub-row.sub-row-expanded .sub-expand-tog { color: var(--accent); border-color: var(--accent); opacity: 1; }
+  .sub-expand-tog-empty { flex: none; width: 28px; }
+  .sub-rm { flex: none; padding: 3px 9px; color: var(--danger); border-color: transparent; background: transparent; margin-top: 3px; opacity: .4; }
   .sub-row:hover .sub-rm { opacity: 1; }
   .sub-rm:hover { border-color: var(--danger); }
+  /* Control panel — wraps to its own line underneath when an owner/date icon is clicked open. Left-padded to sit under the textarea. */
+  .sub-ctrl-panel { flex-basis: 100%; display: flex; gap: 10px; align-items: center; padding: 4px 0 2px 26px; font-size: 12px; }
+  .sub-ctrl-panel label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+  .sub-ctrl-panel select, .sub-ctrl-panel input[type=date] { padding: 5px 8px; font-size: 12px; }
+  .sub-ctrl-panel select { min-width: 150px; }
+  .sub-ctrl-panel .ctrl-clear { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+  .sub-ctrl-panel .ctrl-clear:hover { color: var(--danger); }
   /* "added Aug 26" timestamp — a subtle line under the text. Does not steal top-row width. */
   .sub-added { flex-basis: 100%; font-size: 11px; color: var(--muted); padding-left: 26px; margin-top: -2px; }
   /* Linked subtask pill: shows the target deliverable's title + status, click to open it. */
@@ -292,7 +295,8 @@
   .lt-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
   .lt-sub-in-group { padding-left: 14px; border-left: 2px solid var(--line); margin-left: 4px; }
   @media (max-width: 600px) {
-    .sub-owner, .sub-due { flex: 1 1 40%; min-width: 0; }
+    .sub-ctrl-panel { padding-left: 4px; }
+    .sub-ctrl-panel select { min-width: 120px; }
   }
   /* Header rows (group titles) use the same flex row but stay single-line and vertically centered. */
   .sub-row.sub-row-header { align-items: center; }
@@ -1575,8 +1579,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.75";
+const VERSION = "3.76";
 const CHANGELOG = [
+  "v3.76 — Subtask rows redesigned again: text now claims ~75% of the row with 3 lines visible by default, and owner / date / ➜ Convert become compact icon buttons (👤 📅 ➜). Click 👤 or 📅 to open the full control in a wrapped panel directly below the icon; icons color accent when a value is set. ⋯ now toggles the row expansion in place (no re-render), so clicking ⋯ on a row several down no longer scrolls the modal or lands on a different row.",
   "v3.75 — Subtask rows: owner + due + ➜ Convert are back on the top row always (no more clicking through to see them). The textarea collapses to the exact height of its content and clamps at two lines by default; a ⋯ toggle appears only on rows whose text overflows the clamp, and expands just that row. \"Expand all\" / \"Collapse all\" now flips every long-text clamp at once.",
   "v3.74 — Subtask rows redesigned so the text gets most of the width. The input is now a textarea that auto-grows to fit long titles — no more clipped mid-sentence. Owner, due date, ➜ Convert and the \"added\" timestamp collapse behind a ⋯ toggle per row (auto-expanded when any of them are already set), and a new \"Expand all\" / \"Collapse all\" button next to the Subtasks label flips every row at once.",
   "v3.73 — Workspace switch now shows its state. The sync dot pulses blue \"Loading Product Innovation…\" while the switch is in flight, clears old-workspace cards immediately (no stale rows under new chrome), and if the load fails it flips red with a sticky \"Workspace: <error>\" label you can click to retry. A fast A→B→A toggle no longer lets B's late response overwrite A's state (switch is race-guarded with a token).",
@@ -6796,6 +6801,8 @@ function subtaskInGroup(list, idx) { for (let i = 0; i < idx; i++) if (list[i].t
 // Session-only; not persisted.
 let _subExpanded = new Set();
 let _subExpandAll = false;
+// Per-subtask "which control panel is open" state. Values: "owner" | "due". Preserved across re-renders.
+let _subOpenCtrl = new Map();
 function isSubExpanded(s) { return _subExpandAll || _subExpanded.has(s.id); }
 // Size the textarea to fit its content (collapsed cap handled via CSS max-height). Call after mount and on every
 // input so the box collapses to one line of text and only grows when the content wraps.
@@ -6900,28 +6907,71 @@ function renderSubsEdit() {
       modalSubs.splice(idx + 1, 0, ns); renderSubsEdit();
       const next = document.querySelectorAll("#f_subs .sub-text")[idx + 1]; if (next) next.focus();
     });
-    // Owner / due / convert — on the top row always, so Jason doesn't need to open each subtask to see them.
-    const own = document.createElement("select"); own.className = "sub-owner"; own.title = "Owner (used if converted to a deliverable)";
-    const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "— owner —"; own.appendChild(noneOpt);
-    peopleList.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; own.appendChild(o); });
-    if (s.owner && !peopleList.some(p => p.name === s.owner)) { const o = document.createElement("option"); o.value = s.owner; o.textContent = s.owner; own.appendChild(o); }
-    own.value = s.owner || "";
-    own.onchange = () => { s.owner = own.value; };
-    const due = document.createElement("input"); due.type = "date"; due.className = "sub-due"; due.value = s.due || ""; due.title = "Due date (used if converted to a deliverable)";
-    due.onchange = () => { s.due = due.value; };
-    const conv = document.createElement("button"); conv.type = "button"; conv.className = "sub-convert"; conv.textContent = "➜ Convert"; conv.title = "Convert this subtask to a new deliverable";
+    // Owner / due / convert — icon buttons on the top row. Owner and date open a wrapped control panel below when clicked
+    // (so the text keeps most of the row width); convert fires immediately. Icons color accent when the field has a value.
+    const ownerIcon = document.createElement("button"); ownerIcon.type = "button"; ownerIcon.className = "sub-icon-btn";
+    if (s.owner) ownerIcon.classList.add("has-value");
+    if (_subOpenCtrl.get(s.id) === "owner") ownerIcon.classList.add("open");
+    ownerIcon.textContent = "👤"; ownerIcon.title = s.owner ? "Owner: " + s.owner + " (click to change)" : "Set owner";
+    ownerIcon.onclick = () => {
+      if (_subOpenCtrl.get(s.id) === "owner") _subOpenCtrl.delete(s.id); else _subOpenCtrl.set(s.id, "owner");
+      renderSubsEdit();
+    };
+    const dueIcon = document.createElement("button"); dueIcon.type = "button"; dueIcon.className = "sub-icon-btn";
+    if (s.due) dueIcon.classList.add("has-value");
+    if (_subOpenCtrl.get(s.id) === "due") dueIcon.classList.add("open");
+    dueIcon.textContent = "📅"; dueIcon.title = s.due ? "Due: " + s.due + " (click to change)" : "Set due date";
+    dueIcon.onclick = () => {
+      if (_subOpenCtrl.get(s.id) === "due") _subOpenCtrl.delete(s.id); else _subOpenCtrl.set(s.id, "due");
+      renderSubsEdit();
+    };
+    const conv = document.createElement("button"); conv.type = "button"; conv.className = "sub-icon-btn"; conv.textContent = "➜";
+    conv.title = "Convert this subtask to a new deliverable";
     conv.onclick = () => convertSubtaskToDeliverable(s);
-    // ⋯ text-clamp toggle — only mounted visibly when the textarea content exceeds the 2-line clamp. Collapsed by
-    // default; its slot is reserved via a spacer element to keep the ✕ column aligned across rows.
+    // ⋯ text-clamp toggle — mounted visibly when the textarea content exceeds the 3-line clamp. Toggling expand is
+    // in-place (no full re-render) so clicking ⋯ several rows down doesn't scroll the modal and move the cursor target.
     if (isSubExpanded(s)) row.classList.add("sub-row-expanded");
     const expandTog = document.createElement("button"); expandTog.type = "button";
     expandTog.className = isSubExpanded(s) ? "sub-expand-tog" : "sub-expand-tog-empty";
     expandTog.textContent = isSubExpanded(s) ? "⋯" : "";
-    expandTog.title = isSubExpanded(s) ? "Collapse the subtask text to two lines" : "";
-    expandTog.onclick = () => { if (_subExpanded.has(s.id)) _subExpanded.delete(s.id); else _subExpanded.add(s.id); renderSubsEdit(); };
+    expandTog.title = isSubExpanded(s) ? "Collapse the subtask text to three lines" : "";
+    expandTog.onclick = () => {
+      const willExpand = !row.classList.contains("sub-row-expanded");
+      if (willExpand) _subExpanded.add(s.id); else _subExpanded.delete(s.id);
+      row.classList.toggle("sub-row-expanded", willExpand);
+      expandTog.className = "sub-expand-tog";
+      expandTog.textContent = "⋯";
+      expandTog.title = willExpand ? "Collapse the subtask text to three lines" : "Show the full subtask text";
+      autoGrowSubText(inp);
+    };
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
-    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
-    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(own); row.appendChild(due); row.appendChild(conv); row.appendChild(expandTog); row.appendChild(rm);
+    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); _subOpenCtrl.delete(s.id); _subExpanded.delete(s.id); renderSubsEdit(); };
+    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(ownerIcon); row.appendChild(dueIcon); row.appendChild(conv); row.appendChild(expandTog); row.appendChild(rm);
+    // Control panel wraps to its own line underneath when the owner or date icon is clicked open.
+    const openCtrl = _subOpenCtrl.get(s.id);
+    if (openCtrl === "owner") {
+      const panel = document.createElement("div"); panel.className = "sub-ctrl-panel";
+      const lbl = document.createElement("label"); lbl.textContent = "Owner:";
+      const own = document.createElement("select");
+      const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "— owner —"; own.appendChild(noneOpt);
+      peopleList.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; own.appendChild(o); });
+      if (s.owner && !peopleList.some(p => p.name === s.owner)) { const o = document.createElement("option"); o.value = s.owner; o.textContent = s.owner; own.appendChild(o); }
+      own.value = s.owner || "";
+      own.onchange = () => { s.owner = own.value; ownerIcon.classList.toggle("has-value", !!s.owner); ownerIcon.title = s.owner ? "Owner: " + s.owner + " (click to change)" : "Set owner"; };
+      panel.appendChild(lbl); panel.appendChild(own);
+      if (s.owner) { const clr = document.createElement("button"); clr.type = "button"; clr.className = "ctrl-clear"; clr.textContent = "clear"; clr.onclick = () => { s.owner = ""; own.value = ""; ownerIcon.classList.remove("has-value"); ownerIcon.title = "Set owner"; }; panel.appendChild(clr); }
+      row.appendChild(panel);
+      setTimeout(() => own.focus(), 0);
+    } else if (openCtrl === "due") {
+      const panel = document.createElement("div"); panel.className = "sub-ctrl-panel";
+      const lbl = document.createElement("label"); lbl.textContent = "Due:";
+      const due = document.createElement("input"); due.type = "date"; due.value = s.due || "";
+      due.onchange = () => { s.due = due.value; dueIcon.classList.toggle("has-value", !!s.due); dueIcon.title = s.due ? "Due: " + s.due + " (click to change)" : "Set due date"; };
+      panel.appendChild(lbl); panel.appendChild(due);
+      if (s.due) { const clr = document.createElement("button"); clr.type = "button"; clr.className = "ctrl-clear"; clr.textContent = "clear"; clr.onclick = () => { s.due = ""; due.value = ""; dueIcon.classList.remove("has-value"); dueIcon.title = "Set due date"; }; panel.appendChild(clr); }
+      row.appendChild(panel);
+      setTimeout(() => due.focus(), 0);
+    }
     // "added [date]" sits on its own wrapped line underneath so it never shrinks the top-row text width.
     if (s.addedAt) { const t = document.createElement("span"); t.className = "sub-added"; t.textContent = "added " + fmtIso(s.addedAt); t.title = new Date(s.addedAt).toLocaleString(); row.appendChild(t); }
     box.appendChild(row);
@@ -7783,7 +7833,7 @@ function openModal(card, prefill) {
     updateSprintField();   // also renders the Sprints-tracked preview
   }
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "", addedAt: s.addedAt || "", type: s.type || "" })) : [];
-  _subExpanded = new Set(); _subExpandAll = false;
+  _subExpanded = new Set(); _subExpandAll = false; _subOpenCtrl = new Map();
   modalEmails = card ? cardEmails(card).map(e => Object.assign({}, e)) : [];
   renderEmailsEdit();
   modalLinks = card ? cardLinks(card).slice() : [];
