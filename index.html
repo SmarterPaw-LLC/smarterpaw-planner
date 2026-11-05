@@ -265,6 +265,8 @@
   .sub-icon-wrap.open .sub-icon-btn { color: var(--accent); border-color: var(--accent); background: var(--panel-2); opacity: 1; }
   .sub-icon-val { display: block; min-height: 12px; font-size: 10px; line-height: 1.1; color: var(--muted); max-width: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; margin-top: 1px; font-variant-numeric: tabular-nums; }
   .sub-icon-val.has { color: var(--accent); }
+  /* Past-due date on an unchecked subtask: red + bold. Checking the subtask off clears it. */
+  .sub-icon-val.overdue { color: var(--danger); font-weight: 700; }
   /* Popover for the owner/date picker, attached to its icon. Positioned under the icon, above other rows. */
   .sub-icon-pop { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); z-index: 60; margin-top: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.45); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
   .sub-icon-pop select, .sub-icon-pop input[type=date] { padding: 5px 8px; font-size: 13px; }
@@ -1582,8 +1584,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.77";
+const VERSION = "3.78";
 const CHANGELOG = [
+  "v3.78 — Subtask due-date label turns red + bold under the 📅 icon when the date is past today and the subtask is still unchecked (checking it off clears the overdue styling). Clicking 👤 now opens the owner dropdown in one click (showPicker on the native select), matching the 📅 single-click behavior.",
   "v3.77 — Subtask rows: 👤 and 📅 icons show the value as small text UNDER the icon (owner name, M/D date) and open a popover attached to the icon when clicked — no more full-width panel below the row, no wasted vertical space on every selection. The 📅 popover auto-opens the native date picker. The ⋯ expand toggle now lives in the bottom-right corner of the textarea itself (absolutely positioned inside it), so the empty pill in its own column is gone — the icon only appears when text overflows three lines.",
   "v3.76 — Subtask rows redesigned again: text now claims ~75% of the row with 3 lines visible by default, and owner / date / ➜ Convert become compact icon buttons (👤 📅 ➜). Click 👤 or 📅 to open the full control in a wrapped panel directly below the icon; icons color accent when a value is set. ⋯ now toggles the row expansion in place (no re-render), so clicking ⋯ on a row several down no longer scrolls the modal or lands on a different row.",
   "v3.75 — Subtask rows: owner + due + ➜ Convert are back on the top row always (no more clicking through to see them). The textarea collapses to the exact height of its content and clamps at two lines by default; a ⋯ toggle appears only on rows whose text overflows the clamp, and expands just that row. \"Expand all\" / \"Collapse all\" now flips every long-text clamp at once.",
@@ -6811,6 +6814,17 @@ function fmtDueShort(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
   return m ? (parseInt(m[2], 10) + "/" + parseInt(m[3], 10)) : (iso || "");
 }
+// Past-due on an unchecked subtask → red label. Done subtasks never count as overdue.
+function isSubOverdue(s) {
+  if (!s || !s.due || s.done) return false;
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return new Date(s.due + "T00:00:00") < t;
+}
+function paintDueLabel(valSpan, s) {
+  valSpan.textContent = s.due ? fmtDueShort(s.due) : "";
+  valSpan.classList.toggle("has", !!s.due);
+  valSpan.classList.toggle("overdue", isSubOverdue(s));
+}
 // Open/close a per-icon popover (owner or date picker). Only one is open at a time; outside-click closes it.
 function closeAnySubPop() {
   document.querySelectorAll(".sub-icon-pop").forEach(p => p.remove());
@@ -6845,15 +6859,14 @@ function openSubPop(wrap, kind, s, btn, valSpan) {
       pop.appendChild(clr);
     }
     wrap.appendChild(pop);
-    setTimeout(() => sel.focus(), 0);
+    setTimeout(() => { sel.focus(); if (typeof sel.showPicker === "function") { try { sel.showPicker(); } catch (e) {} } }, 0);
   } else if (kind === "due") {
     const inp = document.createElement("input"); inp.type = "date"; inp.value = s.due || "";
     const applyDue = v => {
       s.due = v;
       btn.classList.toggle("has-value", !!v);
       btn.title = v ? "Due: " + v + " (click to change)" : "Set due date";
-      valSpan.textContent = v ? fmtDueShort(v) : "";
-      valSpan.classList.toggle("has", !!v);
+      paintDueLabel(valSpan, s);
     };
     inp.onchange = () => { applyDue(inp.value); closeAnySubPop(); };
     pop.appendChild(inp);
@@ -6997,8 +7010,8 @@ function renderSubsEdit() {
     const dueWrap = document.createElement("div"); dueWrap.className = "sub-icon-wrap";
     const dueBtn = document.createElement("button"); dueBtn.type = "button"; dueBtn.className = "sub-icon-btn" + (s.due ? " has-value" : "");
     dueBtn.textContent = "📅"; dueBtn.title = s.due ? "Due: " + s.due + " (click to change)" : "Set due date";
-    const dueVal = document.createElement("span"); dueVal.className = "sub-icon-val" + (s.due ? " has" : "");
-    dueVal.textContent = s.due ? fmtDueShort(s.due) : "";
+    const dueVal = document.createElement("span"); dueVal.className = "sub-icon-val";
+    paintDueLabel(dueVal, s);
     dueBtn.onclick = (e) => { e.stopPropagation(); openSubPop(dueWrap, "due", s, dueBtn, dueVal); };
     dueWrap.appendChild(dueBtn); dueWrap.appendChild(dueVal);
     // Convert fires immediately; stays a plain icon button.
