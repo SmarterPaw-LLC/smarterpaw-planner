@@ -236,18 +236,36 @@
   .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
   .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
   .subs-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-  .sub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; }
-  .sub-drag { flex: none; cursor: grab; color: var(--muted); font-size: 14px; letter-spacing: -2px; user-select: none; padding: 0 2px; }
+  /* Row layout: grip | checkbox | auto-growing text (fills) | ⋯ details toggle | ✕. Owner/due/convert/added
+     collapse behind the ⋯ toggle so by default the text has most of the width and can wrap/expand. */
+  .sub-row { display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; position: relative; }
+  .sub-drag { flex: none; cursor: grab; color: var(--muted); font-size: 14px; letter-spacing: -2px; user-select: none; padding: 6px 2px 0; opacity: .35; }
+  .sub-row:hover .sub-drag { opacity: 1; }
   .sub-drag:hover { color: var(--text); }
   .sub-row.dragging { opacity: .4; }
   /* Drop indicator: a colored line at the top or bottom of the target row while dragging. */
   .sub-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
   .sub-row.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
-  .sub-row input[type=checkbox] { width: 16px; height: 16px; flex: none; margin: 0; cursor: pointer; }
-  .sub-text { flex: 1 1 180px; padding: 5px 9px; min-width: 0; }
+  .sub-row > input[type=checkbox] { flex: none; width: 16px; height: 16px; margin: 8px 0 0; cursor: pointer; }
+  /* Text: auto-growing textarea so long subtask titles stay fully visible. JS keeps height in sync with content. */
+  .sub-text { flex: 1 1 260px; min-width: 0; padding: 5px 9px; min-height: 30px; resize: none; overflow: hidden; font: inherit; line-height: 1.35; word-break: break-word; }
   .sub-text.done { text-decoration: line-through; color: var(--muted); }
-  .sub-owner { flex: 0 0 120px; padding: 4px 6px; font-size: 12px; }
-  .sub-due { flex: 0 0 130px; padding: 4px 6px; font-size: 12px; }
+  /* Details toggle — reveals owner / due / convert / added-date below the text. Faded until hover. */
+  .sub-details-tog { flex: none; padding: 3px 8px; font-size: 13px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; opacity: .35; }
+  .sub-row:hover .sub-details-tog { opacity: 1; }
+  .sub-details-tog:hover { color: var(--text); border-color: var(--line); }
+  .sub-details-tog.on { color: var(--accent); border-color: var(--accent); opacity: 1; }
+  .sub-rm { flex: none; padding: 3px 9px; color: var(--danger); border-color: transparent; background: transparent; opacity: .35; }
+  .sub-row:hover .sub-rm { opacity: 1; }
+  .sub-rm:hover { border-color: var(--danger); }
+  /* Details strip under the text — only mounts when the ⋯ toggle is on. Spans full row width (new flex line). */
+  .sub-details { flex-basis: 100%; display: none; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0 4px 26px; }
+  .sub-row.sub-row-expanded .sub-details { display: flex; }
+  .sub-owner { padding: 4px 6px; font-size: 12px; min-width: 120px; }
+  .sub-due { padding: 4px 6px; font-size: 12px; min-width: 130px; }
+  .sub-convert { padding: 4px 8px; font-size: 12px; color: var(--accent); border-color: transparent; background: transparent; }
+  .sub-convert:hover { border-color: var(--accent); }
+  .sub-added { font-size: 11px; color: var(--muted); margin-left: auto; }
   /* Linked subtask pill: shows the target deliverable's title + status, click to open it. */
   .sub-link { flex: 1 1 220px; display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; font-size: 13px; text-align: left; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); cursor: pointer; min-width: 0; }
   .sub-link:hover { border-color: var(--accent); }
@@ -255,11 +273,6 @@
   .sub-link .sub-link-icon { flex: none; opacity: .7; }
   .sub-link .sub-link-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .sub-link .sub-link-status { flex: none; font-size: 10px; padding: 2px 8px; border-radius: 999px; color: #fff; font-weight: 600; letter-spacing: .2px; }
-  .sub-convert { flex: none; padding: 4px 8px; font-size: 12px; color: var(--accent); border-color: transparent; background: transparent; }
-  .sub-convert:hover { border-color: var(--accent); }
-  .sub-rm { flex: none; padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
-  .sub-rm:hover { border-color: var(--danger); }
-  .sub-added { flex: 0 0 100%; font-size: 11px; color: var(--muted); padding-left: 26px; margin-top: -2px; }
   /* Subtask group header — a section title (like "Cat Toys:") that groups the subtasks below. Not a task, just a divider. */
   .sub-row-header { padding-top: 4px; margin-top: 4px; border-top: 1px dashed var(--line); }
   .sub-row-header:first-child { padding-top: 0; margin-top: 0; border-top: none; }
@@ -274,8 +287,11 @@
   .lt-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
   .lt-sub-in-group { padding-left: 14px; border-left: 2px solid var(--line); margin-left: 4px; }
   @media (max-width: 600px) {
-    .sub-owner, .sub-due { flex-basis: 40%; }
+    .sub-owner, .sub-due { flex: 1 1 40%; min-width: 0; }
   }
+  /* Header rows (group titles) use the same flex row but stay single-line and vertically centered. */
+  .sub-row.sub-row-header { align-items: center; }
+  .sub-row.sub-row-header .sub-drag { padding-top: 0; }
   .progress { height: 6px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
   .progress > i { display: block; height: 100%; background: var(--ok); border-radius: 999px; transition: width .15s; }
   .progress.full > i { background: var(--ok); }
@@ -902,6 +918,9 @@
   .swatch { width: 28px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
   .row-left { display: inline-flex; align-items: center; gap: 9px; }
   .opt { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .opt-btn { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; padding: 2px 8px; margin-left: 6px; background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .opt-btn:hover { color: var(--text); border-color: var(--accent); }
+  .opt-btn.on { color: var(--accent); border-color: var(--accent); }
   .cardfields { margin-top: 6px; font-size: 11px; color: var(--muted); }
   #grid { display: none; flex: 1; flex-direction: column; padding: 14px 20px; overflow: hidden; }
   .grid-wrap { flex: 1; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
@@ -1305,7 +1324,7 @@
     <div class="field" id="f_promoField" data-sec="promo"><label>Promotion</label>
       <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
     </div>
-    <div class="field" data-sec="subs"><label>Subtasks <span id="f_subProg" class="opt"></span></label>
+    <div class="field" data-sec="subs"><label>Subtasks <span id="f_subProg" class="opt"></span> <button type="button" id="f_subExpandAll" class="opt-btn" title="Show / hide owner, due and convert for every subtask at once">Expand all</button></label>
       <div id="f_subs" class="subs-edit"></div>
       <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask… (end with “:” for a group header, or paste a multi-line list)" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button><button type="button" id="f_subAddHeaderBtn" class="ghost" title="Add a group header (section title)">＋ Header</button></div>
     </div>
@@ -1551,8 +1570,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.73";
+const VERSION = "3.74";
 const CHANGELOG = [
+  "v3.74 — Subtask rows redesigned so the text gets most of the width. The input is now a textarea that auto-grows to fit long titles — no more clipped mid-sentence. Owner, due date, ➜ Convert and the \"added\" timestamp collapse behind a ⋯ toggle per row (auto-expanded when any of them are already set), and a new \"Expand all\" / \"Collapse all\" button next to the Subtasks label flips every row at once.",
   "v3.73 — Workspace switch now shows its state. The sync dot pulses blue \"Loading Product Innovation…\" while the switch is in flight, clears old-workspace cards immediately (no stale rows under new chrome), and if the load fails it flips red with a sticky \"Workspace: <error>\" label you can click to retry. A fast A→B→A toggle no longer lets B's late response overwrite A's state (switch is race-guarded with a token).",
   "v3.72 — Fix: Theme-channel stripes were hiding the card color override. The inset backdrop painted behind the stripes was hard-coded to --panel-2, which masked any card-color tint. It now uses --card-bg (stamped by applyCardColorOverride, falls back to --panel-2) so Theme + card-color combines cleanly — stripes on top, card color tint behind.",
   "v3.71 — Card color override can now be a gradient. The ⚙ popover gains a second color (\"Gradient to\") and a direction dropdown (↓ top-to-bottom, → left-to-right, ↘/↗ diagonals, plus the reverses). Leave the second color unset for a solid color (same as v3.70). Direction row only shows when both colors are active. Tinted via two rgba() stops over the panel background for panel cards + modal (keeps text legible); calendar bars get the full gradient.",
@@ -6766,12 +6786,19 @@ function subtaskGroupCounts(list) {
 }
 // Returns true if the item at position idx is inside any header group (i.e. some earlier row is a header).
 function subtaskInGroup(list, idx) { for (let i = 0; i < idx; i++) if (list[i].type === "header") return true; return false; }
+// Per-id expanded state for subtask detail rows (owner/due/convert/added). Session-only; not persisted.
+let _subExpanded = new Set();
+let _subExpandAll = false;
+function isSubExpanded(s) { return _subExpandAll || _subExpanded.has(s.id); }
+function autoGrowSubText(ta) { ta.style.height = "auto"; ta.style.height = (ta.scrollHeight + 2) + "px"; }
 function renderSubsEdit() {
   const box = document.getElementById("f_subs"); box.innerHTML = "";
   // Count actual subtasks only — header rows are group titles, not work items.
   const items = modalSubs.filter(s => s.type !== "header");
   const done = items.filter(s => s.done).length;
   document.getElementById("f_subProg").textContent = items.length ? "(" + done + "/" + items.length + ")" : "";
+  const expandBtn = document.getElementById("f_subExpandAll");
+  if (expandBtn) { expandBtn.textContent = _subExpandAll ? "Collapse all" : "Expand all"; expandBtn.classList.toggle("on", _subExpandAll); }
   const counts = subtaskGroupCounts(modalSubs);
   modalSubs.forEach((s, idx) => {
     const row = document.createElement("div"); row.className = "sub-row"; row.dataset.idx = String(idx);
@@ -6839,39 +6866,46 @@ function renderSubsEdit() {
       row.appendChild(grip); row.appendChild(cb); row.appendChild(link); row.appendChild(rm); box.appendChild(row);
       return;
     }
-    const inp = document.createElement("input"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.value = s.text;
-    inp.oninput = () => { s.text = inp.value; };
+    // Auto-growing textarea for the subtask text — long titles stay fully visible instead of being clipped in a one-line input.
+    const inp = document.createElement("textarea"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.rows = 1; inp.value = s.text;
+    inp.oninput = () => { s.text = inp.value; autoGrowSubText(inp); };
     // Enter commits the edit and adds a new subtask below (list-style "keep typing" flow). stopPropagation so the
-    // modal's global Enter-to-save handler doesn't close the card behind us. Shift+Enter keeps focus here in case
-    // you're just pausing mid-thought.
+    // modal's global Enter-to-save handler doesn't close the card behind us. Shift+Enter inserts a newline into the
+    // same subtask (textarea default behavior).
     inp.addEventListener("keydown", e => {
-      if (e.key !== "Enter") return;
+      if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault(); e.stopPropagation();
-      if (e.shiftKey) return;
       const ns = { id: subId(), text: "", done: false, addedAt: nowIso() };
       modalSubs.splice(idx + 1, 0, ns); renderSubsEdit();
       const next = document.querySelectorAll("#f_subs .sub-text")[idx + 1]; if (next) next.focus();
     });
-    // Optional owner picker — single person from peopleList; "" = unassigned.
+    // ⋯ reveals the details strip (owner / due / convert / added) below this row. Shows as "on" when a value is
+    // already set so users don't lose sight of configured metadata.
+    const hasDetails = !!(s.owner || s.due || s.addedAt);
+    const tog = document.createElement("button"); tog.type = "button"; tog.className = "sub-details-tog" + (isSubExpanded(s) || hasDetails ? " on" : ""); tog.textContent = "⋯"; tog.title = "Show owner, due date and convert";
+    tog.onclick = () => { if (_subExpanded.has(s.id)) _subExpanded.delete(s.id); else _subExpanded.add(s.id); renderSubsEdit(); };
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
+    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
+    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(tog); row.appendChild(rm);
+    // Details strip — mounted always, hidden via CSS unless this row is expanded (either per-id or via "Expand all").
+    if (isSubExpanded(s) || hasDetails) row.classList.add("sub-row-expanded");
+    const details = document.createElement("div"); details.className = "sub-details";
     const own = document.createElement("select"); own.className = "sub-owner"; own.title = "Owner (used if converted to a deliverable)";
     const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "— owner —"; own.appendChild(noneOpt);
     peopleList.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; own.appendChild(o); });
     if (s.owner && !peopleList.some(p => p.name === s.owner)) { const o = document.createElement("option"); o.value = s.owner; o.textContent = s.owner; own.appendChild(o); }
     own.value = s.owner || "";
     own.onchange = () => { s.owner = own.value; };
-    // Optional due date — used as the deliverable's due date on convert.
     const due = document.createElement("input"); due.type = "date"; due.className = "sub-due"; due.value = s.due || ""; due.title = "Due date (used if converted to a deliverable)";
     due.onchange = () => { s.due = due.value; };
-    // Convert this subtask to a full deliverable (inherits brand/channel/promotion from the current card).
     const conv = document.createElement("button"); conv.type = "button"; conv.className = "sub-convert"; conv.textContent = "➜ Convert"; conv.title = "Convert this subtask to a new deliverable";
     conv.onclick = () => convertSubtaskToDeliverable(s);
-    const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
-    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
-    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(own); row.appendChild(due); row.appendChild(conv); row.appendChild(rm);
-    // "added [date]" affordance — only shown for subtasks that carry a timestamp (new/imported ones going forward;
-    // subtasks written before v2.27 don't have addedAt, so nothing shows there — we don't want to falsely claim a date).
-    if (s.addedAt) { const t = document.createElement("span"); t.className = "sub-added"; t.textContent = "added " + fmtIso(s.addedAt); t.title = new Date(s.addedAt).toLocaleString(); row.appendChild(t); }
+    details.appendChild(own); details.appendChild(due); details.appendChild(conv);
+    if (s.addedAt) { const t = document.createElement("span"); t.className = "sub-added"; t.textContent = "added " + fmtIso(s.addedAt); t.title = new Date(s.addedAt).toLocaleString(); details.appendChild(t); }
+    row.appendChild(details);
     box.appendChild(row);
+    // Size the textarea to its content on mount (needs to happen after it's in the DOM).
+    requestAnimationFrame(() => autoGrowSubText(inp));
   });
 }
 // Turn a subtask row into a full deliverable card. Uses the subtask's text/owner/due, inherits the parent card's brand/channel/promotion.
@@ -7723,6 +7757,7 @@ function openModal(card, prefill) {
     updateSprintField();   // also renders the Sprints-tracked preview
   }
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "", addedAt: s.addedAt || "", type: s.type || "" })) : [];
+  _subExpanded = new Set(); _subExpandAll = false;
   modalEmails = card ? cardEmails(card).map(e => Object.assign({}, e)) : [];
   renderEmailsEdit();
   modalLinks = card ? cardLinks(card).slice() : [];
@@ -8867,6 +8902,7 @@ async function init() {
     closeEmailPaste();
   };
   document.getElementById("f_subAddBtn").onclick = addModalSub;
+  document.getElementById("f_subExpandAll").onclick = () => { _subExpandAll = !_subExpandAll; if (!_subExpandAll) _subExpanded = new Set(); renderSubsEdit(); };
   document.getElementById("f_linkSearch").addEventListener("input", renderLinkPickerResults);
   document.getElementById("f_linkSearch").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); const first = document.querySelector("#f_linkResults .link-result:not(.empty)"); if (first) first.click(); } });
   // Explicit "＋ Header" — uses whatever's in the add input (stripped of trailing ":") as the group title, or
