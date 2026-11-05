@@ -236,8 +236,8 @@
   .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
   .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
   .subs-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-  /* Row layout: grip | checkbox | textarea (~75% width, 3-line clamp) | 👤 | 📅 | ➜ | ⋯ (overflow only) | ✕.
-     Owner and date are icon buttons; click to reveal the full control in a wrapped panel underneath. */
+  /* Row layout: grip | checkbox | [textarea + ⋯ in its bottom-right corner] | 👤+val | 📅+val | ➜ | ✕.
+     Owner/date icons stack a small value label underneath and open a popover attached to the icon when clicked. */
   .sub-row { display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; position: relative; }
   .sub-drag { flex: none; cursor: grab; color: var(--muted); font-size: 14px; letter-spacing: -2px; user-select: none; padding: 6px 2px 0; opacity: .35; }
   .sub-row:hover .sub-drag { opacity: 1; }
@@ -246,32 +246,36 @@
   .sub-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
   .sub-row.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
   .sub-row > input[type=checkbox] { flex: none; width: 16px; height: 16px; margin: 8px 0 0; cursor: pointer; }
-  /* Textarea takes ~75% of the row width and shows 3 lines before clamping. Overrides the .field min-height baseline. */
-  .field textarea.sub-text { flex: 1 1 0; min-width: 50%; padding: 6px 10px; min-height: 34px; resize: none; overflow: hidden; font: inherit; line-height: 1.4; word-break: break-word; max-height: calc(3 * 1.4em + 16px); box-sizing: border-box; }
+  /* Textarea wrapped so the ⋯ expand toggle can sit absolutely in its bottom-right corner (no separate flex slot). */
+  .sub-text-wrap { flex: 1 1 0; min-width: 55%; position: relative; display: flex; }
+  .field textarea.sub-text { flex: 1; min-width: 0; padding: 6px 30px 6px 10px; min-height: 34px; resize: none; overflow: hidden; font: inherit; line-height: 1.4; word-break: break-word; max-height: calc(3 * 1.4em + 16px); box-sizing: border-box; }
   .field textarea.sub-text.sub-row-expanded, .sub-row.sub-row-expanded .sub-text { max-height: none; }
   .sub-text.done { text-decoration: line-through; color: var(--muted); }
-  /* Icon buttons for owner / date / convert. Compact, muted by default, accent when the field has a value or the panel is open. */
-  .sub-icon-btn { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 14px; margin-top: 3px; opacity: .6; }
+  .sub-text-wrap .sub-expand-tog { position: absolute; bottom: 4px; right: 4px; width: 22px; height: 20px; display: inline-flex; align-items: center; justify-content: center; padding: 0; font-size: 16px; line-height: 1; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; opacity: .55; }
+  .sub-text-wrap:hover .sub-expand-tog { opacity: 1; }
+  .sub-text-wrap .sub-expand-tog:hover { color: var(--text); border-color: var(--accent); }
+  .sub-row.sub-row-expanded .sub-expand-tog { color: var(--accent); border-color: var(--accent); opacity: 1; }
+  .sub-text-wrap .sub-expand-tog[hidden] { display: none; }
+  /* Icon + value label stack. Keeps the icon column aligned across rows whether or not the value is set. */
+  .sub-icon-wrap { flex: none; display: inline-flex; flex-direction: column; align-items: center; gap: 0; margin-top: 3px; min-width: 36px; position: relative; }
+  .sub-icon-btn { width: 28px; height: 26px; display: inline-flex; align-items: center; justify-content: center; padding: 0; background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 14px; opacity: .6; }
   .sub-row:hover .sub-icon-btn { opacity: 1; }
   .sub-icon-btn:hover { color: var(--text); border-color: var(--line); }
   .sub-icon-btn.has-value { color: var(--accent); opacity: 1; }
-  .sub-icon-btn.open { color: var(--accent); border-color: var(--accent); background: var(--panel-2); opacity: 1; }
-  /* Text-clamp expand toggle — shown only when the textarea's content exceeds the 3-line clamp. */
-  .sub-expand-tog { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; font-size: 14px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; margin-top: 3px; opacity: .6; }
-  .sub-row:hover .sub-expand-tog { opacity: 1; }
-  .sub-expand-tog:hover { color: var(--text); border-color: var(--line); }
-  .sub-row.sub-row-expanded .sub-expand-tog { color: var(--accent); border-color: var(--accent); opacity: 1; }
-  .sub-expand-tog-empty { flex: none; width: 28px; }
+  .sub-icon-wrap.open .sub-icon-btn { color: var(--accent); border-color: var(--accent); background: var(--panel-2); opacity: 1; }
+  .sub-icon-val { display: block; min-height: 12px; font-size: 10px; line-height: 1.1; color: var(--muted); max-width: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .sub-icon-val.has { color: var(--accent); }
+  /* Popover for the owner/date picker, attached to its icon. Positioned under the icon, above other rows. */
+  .sub-icon-pop { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); z-index: 60; margin-top: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.45); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .sub-icon-pop select, .sub-icon-pop input[type=date] { padding: 5px 8px; font-size: 13px; }
+  .sub-icon-pop select { min-width: 150px; }
+  .sub-icon-pop .ctrl-clear { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+  .sub-icon-pop .ctrl-clear:hover { color: var(--danger); }
+  /* The convert ➜ and remove ✕ buttons stay plain. */
+  .sub-row > .sub-icon-btn.sub-convert { flex: none; margin-top: 3px; }
   .sub-rm { flex: none; padding: 3px 9px; color: var(--danger); border-color: transparent; background: transparent; margin-top: 3px; opacity: .4; }
   .sub-row:hover .sub-rm { opacity: 1; }
   .sub-rm:hover { border-color: var(--danger); }
-  /* Control panel — wraps to its own line underneath when an owner/date icon is clicked open. Left-padded to sit under the textarea. */
-  .sub-ctrl-panel { flex-basis: 100%; display: flex; gap: 10px; align-items: center; padding: 4px 0 2px 26px; font-size: 12px; }
-  .sub-ctrl-panel label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
-  .sub-ctrl-panel select, .sub-ctrl-panel input[type=date] { padding: 5px 8px; font-size: 12px; }
-  .sub-ctrl-panel select { min-width: 150px; }
-  .sub-ctrl-panel .ctrl-clear { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
-  .sub-ctrl-panel .ctrl-clear:hover { color: var(--danger); }
   /* "added Aug 26" timestamp — a subtle line under the text. Does not steal top-row width. */
   .sub-added { flex-basis: 100%; font-size: 11px; color: var(--muted); padding-left: 26px; margin-top: -2px; }
   /* Linked subtask pill: shows the target deliverable's title + status, click to open it. */
@@ -295,8 +299,7 @@
   .lt-sub-header { font-weight: 700; text-decoration: underline; font-size: 13px; margin: 6px 0 2px; color: var(--text); }
   .lt-sub-in-group { padding-left: 14px; border-left: 2px solid var(--line); margin-left: 4px; }
   @media (max-width: 600px) {
-    .sub-ctrl-panel { padding-left: 4px; }
-    .sub-ctrl-panel select { min-width: 120px; }
+    .sub-icon-pop select { min-width: 120px; }
   }
   /* Header rows (group titles) use the same flex row but stay single-line and vertically centered. */
   .sub-row.sub-row-header { align-items: center; }
@@ -1579,8 +1582,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.76";
+const VERSION = "3.77";
 const CHANGELOG = [
+  "v3.77 — Subtask rows: 👤 and 📅 icons show the value as small text UNDER the icon (owner name, M/D date) and open a popover attached to the icon when clicked — no more full-width panel below the row, no wasted vertical space on every selection. The 📅 popover auto-opens the native date picker. The ⋯ expand toggle now lives in the bottom-right corner of the textarea itself (absolutely positioned inside it), so the empty pill in its own column is gone — the icon only appears when text overflows three lines.",
   "v3.76 — Subtask rows redesigned again: text now claims ~75% of the row with 3 lines visible by default, and owner / date / ➜ Convert become compact icon buttons (👤 📅 ➜). Click 👤 or 📅 to open the full control in a wrapped panel directly below the icon; icons color accent when a value is set. ⋯ now toggles the row expansion in place (no re-render), so clicking ⋯ on a row several down no longer scrolls the modal or lands on a different row.",
   "v3.75 — Subtask rows: owner + due + ➜ Convert are back on the top row always (no more clicking through to see them). The textarea collapses to the exact height of its content and clamps at two lines by default; a ⋯ toggle appears only on rows whose text overflows the clamp, and expands just that row. \"Expand all\" / \"Collapse all\" now flips every long-text clamp at once.",
   "v3.74 — Subtask rows redesigned so the text gets most of the width. The input is now a textarea that auto-grows to fit long titles — no more clipped mid-sentence. Owner, due date, ➜ Convert and the \"added\" timestamp collapse behind a ⋯ toggle per row (auto-expanded when any of them are already set), and a new \"Expand all\" / \"Collapse all\" button next to the Subtasks label flips every row at once.",
@@ -6801,23 +6805,83 @@ function subtaskInGroup(list, idx) { for (let i = 0; i < idx; i++) if (list[i].t
 // Session-only; not persisted.
 let _subExpanded = new Set();
 let _subExpandAll = false;
-// Per-subtask "which control panel is open" state. Values: "owner" | "due". Preserved across re-renders.
-let _subOpenCtrl = new Map();
 function isSubExpanded(s) { return _subExpandAll || _subExpanded.has(s.id); }
+// Compact "M/D" for the small date label shown under the 📅 icon.
+function fmtDueShort(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  return m ? (parseInt(m[2], 10) + "/" + parseInt(m[3], 10)) : (iso || "");
+}
+// Open/close a per-icon popover (owner or date picker). Only one is open at a time; outside-click closes it.
+function closeAnySubPop() {
+  document.querySelectorAll(".sub-icon-pop").forEach(p => p.remove());
+  document.querySelectorAll(".sub-icon-wrap.open").forEach(w => w.classList.remove("open"));
+  if (window._subPopHandler) { document.removeEventListener("mousedown", window._subPopHandler, true); window._subPopHandler = null; }
+}
+function openSubPop(wrap, kind, s, btn, valSpan) {
+  const alreadyOpen = wrap.classList.contains("open");
+  closeAnySubPop();
+  if (alreadyOpen) return;   // second click on the same icon = close
+  wrap.classList.add("open");
+  const pop = document.createElement("div"); pop.className = "sub-icon-pop";
+  pop.addEventListener("mousedown", e => e.stopPropagation());
+  if (kind === "owner") {
+    const sel = document.createElement("select");
+    const none = document.createElement("option"); none.value = ""; none.textContent = "— owner —"; sel.appendChild(none);
+    peopleList.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; sel.appendChild(o); });
+    if (s.owner && !peopleList.some(p => p.name === s.owner)) { const o = document.createElement("option"); o.value = s.owner; o.textContent = s.owner; sel.appendChild(o); }
+    sel.value = s.owner || "";
+    const applyOwner = v => {
+      s.owner = v;
+      btn.classList.toggle("has-value", !!v);
+      btn.title = v ? "Owner: " + v + " (click to change)" : "Set owner";
+      valSpan.textContent = v ? (v.length > 7 ? v.slice(0, 6) + "…" : v) : "";
+      valSpan.classList.toggle("has", !!v);
+    };
+    sel.onchange = () => { applyOwner(sel.value); closeAnySubPop(); };
+    pop.appendChild(sel);
+    if (s.owner) {
+      const clr = document.createElement("button"); clr.type = "button"; clr.className = "ctrl-clear"; clr.textContent = "clear";
+      clr.onclick = () => { applyOwner(""); closeAnySubPop(); };
+      pop.appendChild(clr);
+    }
+    wrap.appendChild(pop);
+    setTimeout(() => sel.focus(), 0);
+  } else if (kind === "due") {
+    const inp = document.createElement("input"); inp.type = "date"; inp.value = s.due || "";
+    const applyDue = v => {
+      s.due = v;
+      btn.classList.toggle("has-value", !!v);
+      btn.title = v ? "Due: " + v + " (click to change)" : "Set due date";
+      valSpan.textContent = v ? fmtDueShort(v) : "";
+      valSpan.classList.toggle("has", !!v);
+    };
+    inp.onchange = () => { applyDue(inp.value); closeAnySubPop(); };
+    pop.appendChild(inp);
+    if (s.due) {
+      const clr = document.createElement("button"); clr.type = "button"; clr.className = "ctrl-clear"; clr.textContent = "clear";
+      clr.onclick = () => { applyDue(""); closeAnySubPop(); };
+      pop.appendChild(clr);
+    }
+    wrap.appendChild(pop);
+    setTimeout(() => { inp.focus(); if (typeof inp.showPicker === "function") { try { inp.showPicker(); } catch (e) {} } }, 0);
+  }
+  setTimeout(() => {
+    window._subPopHandler = ev => { if (!wrap.contains(ev.target)) closeAnySubPop(); };
+    document.addEventListener("mousedown", window._subPopHandler, true);
+  }, 0);
+}
 // Size the textarea to fit its content (collapsed cap handled via CSS max-height). Call after mount and on every
 // input so the box collapses to one line of text and only grows when the content wraps.
 function autoGrowSubText(ta) {
   ta.style.height = "auto";
   ta.style.height = (ta.scrollHeight + 2) + "px";
-  // Show the ⋯ expand toggle only when the content overflows the clamp (checked against the natural scrollHeight
-  // vs. the currently-rendered height after CSS max-height took effect).
-  const row = ta.closest(".sub-row"); if (!row) return;
-  const tog = row.querySelector(".sub-expand-tog, .sub-expand-tog-empty");
-  if (!tog) return;
+  // ⋯ sits inside the textarea's bottom-right corner — shown only when the content overflows the 3-line clamp or
+  // the row is already expanded (so the user can click to collapse). No separate flex slot = no empty pill.
+  const wrap = ta.closest(".sub-text-wrap"); if (!wrap) return;
+  const tog = wrap.querySelector(".sub-expand-tog"); if (!tog) return;
+  const row = ta.closest(".sub-row");
   const overflows = ta.scrollHeight > ta.clientHeight + 1;
-  const isTog = tog.classList.contains("sub-expand-tog");
-  if (overflows && !isTog) { tog.className = "sub-expand-tog"; tog.textContent = "⋯"; tog.title = "Show the full subtask text"; }
-  else if (!overflows && isTog && !row.classList.contains("sub-row-expanded")) { tog.className = "sub-expand-tog-empty"; tog.textContent = ""; tog.title = ""; }
+  tog.hidden = !(overflows || (row && row.classList.contains("sub-row-expanded")));
 }
 function renderSubsEdit() {
   const box = document.getElementById("f_subs"); box.innerHTML = "";
@@ -6894,8 +6958,8 @@ function renderSubsEdit() {
       row.appendChild(grip); row.appendChild(cb); row.appendChild(link); row.appendChild(rm); box.appendChild(row);
       return;
     }
-    // Auto-growing textarea for the subtask text — collapses to the height of the actual content, capped at ~2 lines
-    // by CSS unless this row is marked expanded (either per-id or via the global "Expand all" toggle).
+    // Auto-growing textarea wrapped so the ⋯ expand toggle can sit absolutely in its bottom-right corner.
+    const wrap = document.createElement("div"); wrap.className = "sub-text-wrap";
     const inp = document.createElement("textarea"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.rows = 1; inp.value = s.text;
     inp.oninput = () => { s.text = inp.value; autoGrowSubText(inp); };
     // Enter commits the edit and adds a new subtask below (list-style "keep typing" flow). stopPropagation so the
@@ -6907,72 +6971,43 @@ function renderSubsEdit() {
       modalSubs.splice(idx + 1, 0, ns); renderSubsEdit();
       const next = document.querySelectorAll("#f_subs .sub-text")[idx + 1]; if (next) next.focus();
     });
-    // Owner / due / convert — icon buttons on the top row. Owner and date open a wrapped control panel below when clicked
-    // (so the text keeps most of the row width); convert fires immediately. Icons color accent when the field has a value.
-    const ownerIcon = document.createElement("button"); ownerIcon.type = "button"; ownerIcon.className = "sub-icon-btn";
-    if (s.owner) ownerIcon.classList.add("has-value");
-    if (_subOpenCtrl.get(s.id) === "owner") ownerIcon.classList.add("open");
-    ownerIcon.textContent = "👤"; ownerIcon.title = s.owner ? "Owner: " + s.owner + " (click to change)" : "Set owner";
-    ownerIcon.onclick = () => {
-      if (_subOpenCtrl.get(s.id) === "owner") _subOpenCtrl.delete(s.id); else _subOpenCtrl.set(s.id, "owner");
-      renderSubsEdit();
-    };
-    const dueIcon = document.createElement("button"); dueIcon.type = "button"; dueIcon.className = "sub-icon-btn";
-    if (s.due) dueIcon.classList.add("has-value");
-    if (_subOpenCtrl.get(s.id) === "due") dueIcon.classList.add("open");
-    dueIcon.textContent = "📅"; dueIcon.title = s.due ? "Due: " + s.due + " (click to change)" : "Set due date";
-    dueIcon.onclick = () => {
-      if (_subOpenCtrl.get(s.id) === "due") _subOpenCtrl.delete(s.id); else _subOpenCtrl.set(s.id, "due");
-      renderSubsEdit();
-    };
-    const conv = document.createElement("button"); conv.type = "button"; conv.className = "sub-icon-btn"; conv.textContent = "➜";
-    conv.title = "Convert this subtask to a new deliverable";
-    conv.onclick = () => convertSubtaskToDeliverable(s);
-    // ⋯ text-clamp toggle — mounted visibly when the textarea content exceeds the 3-line clamp. Toggling expand is
-    // in-place (no full re-render) so clicking ⋯ several rows down doesn't scroll the modal and move the cursor target.
+    // ⋯ expand toggle — absolutely positioned in the bottom-right corner of the textarea. Hidden when the content
+    // fits the 3-line clamp. In-place toggle (no re-render), so clicking it several rows down doesn't scroll the modal.
     if (isSubExpanded(s)) row.classList.add("sub-row-expanded");
-    const expandTog = document.createElement("button"); expandTog.type = "button";
-    expandTog.className = isSubExpanded(s) ? "sub-expand-tog" : "sub-expand-tog-empty";
-    expandTog.textContent = isSubExpanded(s) ? "⋯" : "";
-    expandTog.title = isSubExpanded(s) ? "Collapse the subtask text to three lines" : "";
-    expandTog.onclick = () => {
+    const expandTog = document.createElement("button"); expandTog.type = "button"; expandTog.className = "sub-expand-tog"; expandTog.textContent = "⋯"; expandTog.hidden = true;
+    expandTog.title = isSubExpanded(s) ? "Collapse the subtask text to three lines" : "Show the full subtask text";
+    expandTog.onclick = (e) => {
+      e.stopPropagation();
       const willExpand = !row.classList.contains("sub-row-expanded");
       if (willExpand) _subExpanded.add(s.id); else _subExpanded.delete(s.id);
       row.classList.toggle("sub-row-expanded", willExpand);
-      expandTog.className = "sub-expand-tog";
-      expandTog.textContent = "⋯";
       expandTog.title = willExpand ? "Collapse the subtask text to three lines" : "Show the full subtask text";
       autoGrowSubText(inp);
     };
+    wrap.appendChild(inp); wrap.appendChild(expandTog);
+    // Owner icon-wrap: button on top, small value label below (always reserved so rows align even when empty).
+    const ownerWrap = document.createElement("div"); ownerWrap.className = "sub-icon-wrap";
+    const ownerBtn = document.createElement("button"); ownerBtn.type = "button"; ownerBtn.className = "sub-icon-btn" + (s.owner ? " has-value" : "");
+    ownerBtn.textContent = "👤"; ownerBtn.title = s.owner ? "Owner: " + s.owner + " (click to change)" : "Set owner";
+    const ownerVal = document.createElement("span"); ownerVal.className = "sub-icon-val" + (s.owner ? " has" : "");
+    ownerVal.textContent = s.owner ? (s.owner.length > 7 ? s.owner.slice(0, 6) + "…" : s.owner) : "";
+    ownerBtn.onclick = (e) => { e.stopPropagation(); openSubPop(ownerWrap, "owner", s, ownerBtn, ownerVal); };
+    ownerWrap.appendChild(ownerBtn); ownerWrap.appendChild(ownerVal);
+    // Date icon-wrap: button on top, compact M/D label below. Click opens the native date picker in a popover under the icon.
+    const dueWrap = document.createElement("div"); dueWrap.className = "sub-icon-wrap";
+    const dueBtn = document.createElement("button"); dueBtn.type = "button"; dueBtn.className = "sub-icon-btn" + (s.due ? " has-value" : "");
+    dueBtn.textContent = "📅"; dueBtn.title = s.due ? "Due: " + s.due + " (click to change)" : "Set due date";
+    const dueVal = document.createElement("span"); dueVal.className = "sub-icon-val" + (s.due ? " has" : "");
+    dueVal.textContent = s.due ? fmtDueShort(s.due) : "";
+    dueBtn.onclick = (e) => { e.stopPropagation(); openSubPop(dueWrap, "due", s, dueBtn, dueVal); };
+    dueWrap.appendChild(dueBtn); dueWrap.appendChild(dueVal);
+    // Convert fires immediately; stays a plain icon button.
+    const conv = document.createElement("button"); conv.type = "button"; conv.className = "sub-icon-btn sub-convert"; conv.textContent = "➜";
+    conv.title = "Convert this subtask to a new deliverable";
+    conv.onclick = () => convertSubtaskToDeliverable(s);
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
-    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); _subOpenCtrl.delete(s.id); _subExpanded.delete(s.id); renderSubsEdit(); };
-    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(ownerIcon); row.appendChild(dueIcon); row.appendChild(conv); row.appendChild(expandTog); row.appendChild(rm);
-    // Control panel wraps to its own line underneath when the owner or date icon is clicked open.
-    const openCtrl = _subOpenCtrl.get(s.id);
-    if (openCtrl === "owner") {
-      const panel = document.createElement("div"); panel.className = "sub-ctrl-panel";
-      const lbl = document.createElement("label"); lbl.textContent = "Owner:";
-      const own = document.createElement("select");
-      const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "— owner —"; own.appendChild(noneOpt);
-      peopleList.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; own.appendChild(o); });
-      if (s.owner && !peopleList.some(p => p.name === s.owner)) { const o = document.createElement("option"); o.value = s.owner; o.textContent = s.owner; own.appendChild(o); }
-      own.value = s.owner || "";
-      own.onchange = () => { s.owner = own.value; ownerIcon.classList.toggle("has-value", !!s.owner); ownerIcon.title = s.owner ? "Owner: " + s.owner + " (click to change)" : "Set owner"; };
-      panel.appendChild(lbl); panel.appendChild(own);
-      if (s.owner) { const clr = document.createElement("button"); clr.type = "button"; clr.className = "ctrl-clear"; clr.textContent = "clear"; clr.onclick = () => { s.owner = ""; own.value = ""; ownerIcon.classList.remove("has-value"); ownerIcon.title = "Set owner"; }; panel.appendChild(clr); }
-      row.appendChild(panel);
-      setTimeout(() => own.focus(), 0);
-    } else if (openCtrl === "due") {
-      const panel = document.createElement("div"); panel.className = "sub-ctrl-panel";
-      const lbl = document.createElement("label"); lbl.textContent = "Due:";
-      const due = document.createElement("input"); due.type = "date"; due.value = s.due || "";
-      due.onchange = () => { s.due = due.value; dueIcon.classList.toggle("has-value", !!s.due); dueIcon.title = s.due ? "Due: " + s.due + " (click to change)" : "Set due date"; };
-      panel.appendChild(lbl); panel.appendChild(due);
-      if (s.due) { const clr = document.createElement("button"); clr.type = "button"; clr.className = "ctrl-clear"; clr.textContent = "clear"; clr.onclick = () => { s.due = ""; due.value = ""; dueIcon.classList.remove("has-value"); dueIcon.title = "Set due date"; }; panel.appendChild(clr); }
-      row.appendChild(panel);
-      setTimeout(() => due.focus(), 0);
-    }
-    // "added [date]" sits on its own wrapped line underneath so it never shrinks the top-row text width.
+    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); _subExpanded.delete(s.id); renderSubsEdit(); };
+    row.appendChild(grip); row.appendChild(cb); row.appendChild(wrap); row.appendChild(ownerWrap); row.appendChild(dueWrap); row.appendChild(conv); row.appendChild(rm);
     if (s.addedAt) { const t = document.createElement("span"); t.className = "sub-added"; t.textContent = "added " + fmtIso(s.addedAt); t.title = new Date(s.addedAt).toLocaleString(); row.appendChild(t); }
     box.appendChild(row);
     autoGrowSubText(inp);
@@ -7833,7 +7868,7 @@ function openModal(card, prefill) {
     updateSprintField();   // also renders the Sprints-tracked preview
   }
   modalSubs = card ? cardSubtasks(card).map(s => ({ id: s.id || subId(), text: s.text, done: !!s.done, owner: s.owner || "", due: s.due || "", linkedCardId: s.linkedCardId || "", addedAt: s.addedAt || "", type: s.type || "" })) : [];
-  _subExpanded = new Set(); _subExpandAll = false; _subOpenCtrl = new Map();
+  _subExpanded = new Set(); _subExpandAll = false; closeAnySubPop();
   modalEmails = card ? cardEmails(card).map(e => Object.assign({}, e)) : [];
   renderEmailsEdit();
   modalLinks = card ? cardLinks(card).slice() : [];
