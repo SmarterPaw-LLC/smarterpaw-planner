@@ -6925,8 +6925,9 @@ function renderSubsEdit() {
     // "added [date]" sits on its own wrapped line underneath so it never shrinks the top-row text width.
     if (s.addedAt) { const t = document.createElement("span"); t.className = "sub-added"; t.textContent = "added " + fmtIso(s.addedAt); t.title = new Date(s.addedAt).toLocaleString(); row.appendChild(t); }
     box.appendChild(row);
-    // Size the textarea to its content on mount (needs to happen after it's in the DOM so scrollHeight is real).
-    requestAnimationFrame(() => autoGrowSubText(inp));
+    // Size the textarea to its content on mount. Double rAF so the modal is both inserted AND laid out (scrollHeight
+    // reads 0 in the same tick as DOM insertion when the modal is still being painted).
+    requestAnimationFrame(() => requestAnimationFrame(() => autoGrowSubText(inp)));
   });
 }
 // Turn a subtask row into a full deliverable card. Uses the subtask's text/owner/due, inherits the parent card's brand/channel/promotion.
