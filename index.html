@@ -248,9 +248,11 @@
   .sub-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
   .sub-row.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
   .sub-row > input[type=checkbox] { flex: none; width: 16px; height: 16px; margin: 8px 0 0; cursor: pointer; }
-  /* Text: auto-growing textarea. Clamps at ~2 lines by default; the ⋯ expand toggle removes the cap. */
-  .sub-text { flex: 1 1 200px; min-width: 0; padding: 5px 9px; min-height: 30px; resize: none; overflow: hidden; font: inherit; line-height: 1.35; word-break: break-word; max-height: 3em; }
-  .sub-row.sub-row-expanded .sub-text { max-height: none; }
+  /* Text: auto-growing textarea. Clamps at ~2 lines by default; the ⋯ expand toggle removes the cap.
+     The .field min-height: 64px baseline (set globally for the modal's larger inputs) is overridden here so the box
+     collapses to the actual content height instead of a forced 64px minimum. */
+  .field textarea.sub-text { flex: 1 1 200px; min-width: 0; padding: 5px 9px; min-height: 30px; resize: none; overflow: hidden; font: inherit; line-height: 1.35; word-break: break-word; max-height: calc(2 * 1.35em + 12px); box-sizing: border-box; }
+  .field textarea.sub-text.sub-row-expanded, .sub-row.sub-row-expanded .sub-text { max-height: none; }
   .sub-text.done { text-decoration: line-through; color: var(--muted); }
   /* Owner, due and ➜ Convert live on the top row always. Compact so the text keeps most of the width. */
   .sub-owner { flex: 0 0 110px; padding: 4px 6px; font-size: 12px; margin-top: 2px; }
