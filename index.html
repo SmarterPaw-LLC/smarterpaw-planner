@@ -42,6 +42,10 @@
   .status-dot .d { width:9px; height:9px; border-radius:50%; background:var(--muted); }
   .status-dot.live .d { background: var(--ok); box-shadow:0 0 6px var(--ok); }
   .status-dot.local .d { background: var(--scheduled); }
+  .status-dot.loading .d { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: syncPulse 1s ease-in-out infinite; }
+  .status-dot.error { color: var(--danger, #ef4444); cursor: pointer; }
+  .status-dot.error .d { background: var(--danger, #ef4444); box-shadow: 0 0 6px var(--danger, #ef4444); }
+  @keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
   .toolbar, .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel-2);
     color: var(--text); padding: 7px 12px; border-radius: 8px; transition: .12s; }
@@ -1547,8 +1551,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.72";
+const VERSION = "3.73";
 const CHANGELOG = [
+  "v3.73 — Workspace switch now shows its state. The sync dot pulses blue \"Loading Product Innovation…\" while the switch is in flight, clears old-workspace cards immediately (no stale rows under new chrome), and if the load fails it flips red with a sticky \"Workspace: <error>\" label you can click to retry. A fast A→B→A toggle no longer lets B's late response overwrite A's state (switch is race-guarded with a token).",
   "v3.72 — Fix: Theme-channel stripes were hiding the card color override. The inset backdrop painted behind the stripes was hard-coded to --panel-2, which masked any card-color tint. It now uses --card-bg (stamped by applyCardColorOverride, falls back to --panel-2) so Theme + card-color combines cleanly — stripes on top, card color tint behind.",
   "v3.71 — Card color override can now be a gradient. The ⚙ popover gains a second color (\"Gradient to\") and a direction dropdown (↓ top-to-bottom, → left-to-right, ↘/↗ diagonals, plus the reverses). Leave the second color unset for a solid color (same as v3.70). Direction row only shows when both colors are active. Tinted via two rgba() stops over the panel background for panel cards + modal (keeps text legible); calendar bars get the full gradient.",
   "v3.70 — Card color override now tints the INSIDE of the card and the modal (not the left-border outline, which stays set by the Color: brand/channel/status dimension setting). Panel-background cards get a 14% tint over --panel-2; the modal gets a 10% tint over --panel. Calendar bars still fill-color since they're a solid block. Alert red still supersedes. Live-preview the color in the modal as you pick it in the ⚙ popover.",
@@ -2725,8 +2730,11 @@ let completeLane = "";
 // that person's work. Persists in localStorage across sessions — the prompt only re-appears if the choice is
 // cleared. "" means "All" (no owner filter).
 let currentUser = localStorage.getItem("planner-current-user") || "";
-async function switchWorkspace(id) {
-  if (id === currentWorkspace || !WORKSPACES.some(w => w.id === id)) return;
+let _wsSwitchToken = 0;
+async function switchWorkspace(id, force) {
+  if (!WORKSPACES.some(w => w.id === id)) return;
+  if (id === currentWorkspace && !force) return;
+  const token = ++_wsSwitchToken;
   currentWorkspace = id; applyWorkspace();
   loadLaneRoles();
   loadQuickFilterRows();
@@ -2737,7 +2745,24 @@ async function switchWorkspace(id) {
   // Reset session-only filter state so a Planner-era sprint pick doesn't leak into Innovation (which has no sprints).
   filters = {}; filterRules = []; filterMatch = "all"; filterOverdue = false;
   try { sessionStorage.removeItem("planner-session-init"); } catch (e) {}
-  await loadLists(); await refetch();
+  // Clear old-workspace cards immediately so the user never sees stale rows while the new workspace loads.
+  // Without this, a slow/failed fetch leaves cards from the previous workspace rendered under the new chrome.
+  cards = [];
+  const wsName = (wsDef() && wsDef().name) || id;
+  setSyncState("loading", "Loading " + wsName + "…");
+  render();
+  _lastLoadError = null;
+  await loadLists();
+  if (token !== _wsSwitchToken) return;   // superseded by another switch — abandon this chain
+  await refetch();
+  if (token !== _wsSwitchToken) return;
+  if (_lastLoadError) {
+    const msg = _lastLoadError.message || "Load failed";
+    // The error is sticky on the sync dot so Jason can see it even if the toast has dismissed. Click to retry.
+    setSyncState("error", wsName + ": " + msg, () => { _lastLoadError = null; switchWorkspace(id, true); });
+  } else {
+    setSyncState("live");
+  }
   const cs = document.getElementById("colorBy"); if (cs) cs.value = colorBy;
   render();
 }
@@ -2978,6 +3003,9 @@ function toast(msg) {
 /* ---------- deliverables data ---------- */
 function loadLocal() { try { return JSON.parse(localStorage.getItem(STORE_KEY)) || sampleData(); } catch (e) { return sampleData(); } }
 function saveLocal() { localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
+// Last error from refetch/loadLists. switchWorkspace reads this after its awaits so it can surface a visible
+// "Load failed" state on the sync dot (not just a transient toast that auto-dismisses before the user looks).
+let _lastLoadError = null;
 async function refetch() {
   if (!ONLINE) { cards = loadLocal(); render(); return; }
   let { data, error } = await wsEq(db.from("deliverables").select("*")).order("created_at", { ascending: true });
@@ -2987,12 +3015,14 @@ async function refetch() {
     ({ data, error } = await db.from("deliverables").select("*").order("created_at", { ascending: true }));
   }
   if (error) {
+    _lastLoadError = error;
     // Transient (statement timeout, 5xx, network): keep the cached board rather than clearing to zero.
     const msg = (error.message || "") + " " + (error.code || "");
     const transient = /timeout|canceling statement|upstream|gateway|network|fetch|503|502|504/i.test(msg);
     if (transient) { console.warn("refetch: transient error — keeping cached cards:", error); return; }
     toast("Load failed: " + error.message); return;
   }
+  _lastLoadError = null;
   cards = data.map(r => ({ id: r.id, title: r.title, brand: r.brand, channel: r.channel,
     owner: r.owner || "", due: r.due || "", end: r.end_date || "", status: r.status, notes: r.notes || "",
     fields: r.fields || {}, createdAt: r.created_at || "" }));
@@ -3146,6 +3176,7 @@ async function loadLists() {
     ({ data, error } = await db.from("lists").select("*").order("position", { ascending: true }));
   }
   if (error) {
+    _lastLoadError = error;
     // Transient errors (statement timeout, 500/503, network): keep whatever we already have in memory and
     // just log — resetting to defaults would wipe the user's channels/fields/people from the UI for one page.
     // Only fall back to defaults on real schema problems (table/column missing) which this app's SQL migrations fix.
@@ -8384,6 +8415,23 @@ function setSyncUI() {
   document.getElementById("menuHint").textContent = ONLINE
     ? "Connected to Supabase. Changes sync live across everyone with the board open."
     : "Not connected — saving to this browser only.";
+}
+// Transient sync-dot state. Used so a workspace switch is visibly "loading" (blue pulsing) and a failed load
+// is visibly "error" (red, click to retry) — instead of the previous silent toast-then-leave-stale-cards path.
+let _syncErrorRetry = null;
+function setSyncState(state, text, retryFn) {
+  const el = document.getElementById("syncStatus"); if (!el) return;
+  el.classList.remove("live", "local", "loading", "error");
+  if (state === "loading") { el.classList.add("loading"); el.querySelector(".t").textContent = text || "Loading…"; el.title = text || "Loading…"; el.onclick = null; _syncErrorRetry = null; return; }
+  if (state === "error") {
+    el.classList.add("error"); el.querySelector(".t").textContent = text || "Load failed — click to retry";
+    el.title = (text || "Load failed") + " — click to retry";
+    _syncErrorRetry = retryFn || null;
+    el.onclick = () => { const fn = _syncErrorRetry; if (fn) fn(); };
+    return;
+  }
+  el.title = ""; el.onclick = null; _syncErrorRetry = null;
+  setSyncUI();
 }
 function renderChangelog() {
   const box = document.getElementById("changelogList"); box.innerHTML = "";
