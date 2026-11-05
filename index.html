@@ -236,8 +236,9 @@
   .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
   .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
   .subs-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-  /* Row layout: grip | checkbox | auto-growing text (fills) | ⋯ details toggle | ✕. Owner/due/convert/added
-     collapse behind the ⋯ toggle so by default the text has most of the width and can wrap/expand. */
+  /* Row layout — single line: grip | checkbox | text (fills, auto-grows to content, clamped to 2 lines unless
+     ⋯ expanded) | owner | due | ➜ Convert | ⋯ (only shown when text overflows 2 lines) | ✕.
+     flex-wrap:wrap so the "added Aug 26" caption lands on its own line underneath without pushing the main controls. */
   .sub-row { display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; position: relative; }
   .sub-drag { flex: none; cursor: grab; color: var(--muted); font-size: 14px; letter-spacing: -2px; user-select: none; padding: 6px 2px 0; opacity: .35; }
   .sub-row:hover .sub-drag { opacity: 1; }
@@ -247,25 +248,27 @@
   .sub-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
   .sub-row.drag-over-bot { box-shadow: 0 2px 0 0 var(--accent); }
   .sub-row > input[type=checkbox] { flex: none; width: 16px; height: 16px; margin: 8px 0 0; cursor: pointer; }
-  /* Text: auto-growing textarea so long subtask titles stay fully visible. JS keeps height in sync with content. */
-  .sub-text { flex: 1 1 260px; min-width: 0; padding: 5px 9px; min-height: 30px; resize: none; overflow: hidden; font: inherit; line-height: 1.35; word-break: break-word; }
+  /* Text: auto-growing textarea. Clamps at ~2 lines by default; the ⋯ expand toggle removes the cap. */
+  .sub-text { flex: 1 1 200px; min-width: 0; padding: 5px 9px; min-height: 30px; resize: none; overflow: hidden; font: inherit; line-height: 1.35; word-break: break-word; max-height: 3em; }
+  .sub-row.sub-row-expanded .sub-text { max-height: none; }
   .sub-text.done { text-decoration: line-through; color: var(--muted); }
-  /* Details toggle — reveals owner / due / convert / added-date below the text. Faded until hover. */
-  .sub-details-tog { flex: none; padding: 3px 8px; font-size: 13px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; opacity: .35; }
-  .sub-row:hover .sub-details-tog { opacity: 1; }
-  .sub-details-tog:hover { color: var(--text); border-color: var(--line); }
-  .sub-details-tog.on { color: var(--accent); border-color: var(--accent); opacity: 1; }
-  .sub-rm { flex: none; padding: 3px 9px; color: var(--danger); border-color: transparent; background: transparent; opacity: .35; }
+  /* Owner, due and ➜ Convert live on the top row always. Compact so the text keeps most of the width. */
+  .sub-owner { flex: 0 0 110px; padding: 4px 6px; font-size: 12px; margin-top: 2px; }
+  .sub-due { flex: 0 0 125px; padding: 4px 6px; font-size: 12px; margin-top: 2px; }
+  .sub-convert { flex: none; padding: 4px 8px; font-size: 12px; color: var(--accent); border-color: transparent; background: transparent; margin-top: 2px; opacity: .55; }
+  .sub-row:hover .sub-convert { opacity: 1; }
+  .sub-convert:hover { border-color: var(--accent); }
+  /* Text-clamp expand toggle — shown only when the textarea's content exceeds the 2-line clamp. */
+  .sub-expand-tog { flex: none; padding: 3px 7px; font-size: 13px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; margin-top: 2px; }
+  .sub-expand-tog:hover { color: var(--text); border-color: var(--line); }
+  .sub-row.sub-row-expanded .sub-expand-tog { color: var(--accent); border-color: var(--accent); }
+  /* Spacer that occupies the expand slot when a row has no overflow — keeps the ✕ column aligned across rows. */
+  .sub-expand-tog-empty { flex: none; width: 24px; }
+  .sub-rm { flex: none; padding: 3px 9px; color: var(--danger); border-color: transparent; background: transparent; margin-top: 2px; opacity: .4; }
   .sub-row:hover .sub-rm { opacity: 1; }
   .sub-rm:hover { border-color: var(--danger); }
-  /* Details strip under the text — only mounts when the ⋯ toggle is on. Spans full row width (new flex line). */
-  .sub-details { flex-basis: 100%; display: none; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0 4px 26px; }
-  .sub-row.sub-row-expanded .sub-details { display: flex; }
-  .sub-owner { padding: 4px 6px; font-size: 12px; min-width: 120px; }
-  .sub-due { padding: 4px 6px; font-size: 12px; min-width: 130px; }
-  .sub-convert { padding: 4px 8px; font-size: 12px; color: var(--accent); border-color: transparent; background: transparent; }
-  .sub-convert:hover { border-color: var(--accent); }
-  .sub-added { font-size: 11px; color: var(--muted); margin-left: auto; }
+  /* "added Aug 26" timestamp — a subtle line under the text. Does not steal top-row width. */
+  .sub-added { flex-basis: 100%; font-size: 11px; color: var(--muted); padding-left: 26px; margin-top: -2px; }
   /* Linked subtask pill: shows the target deliverable's title + status, click to open it. */
   .sub-link { flex: 1 1 220px; display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; font-size: 13px; text-align: left; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); cursor: pointer; min-width: 0; }
   .sub-link:hover { border-color: var(--accent); }
@@ -1324,7 +1327,7 @@
     <div class="field" id="f_promoField" data-sec="promo"><label>Promotion</label>
       <div class="ch-wrap"><select id="f_promo"></select><button type="button" id="f_promoAdd" title="Add a promotion">＋</button></div>
     </div>
-    <div class="field" data-sec="subs"><label>Subtasks <span id="f_subProg" class="opt"></span> <button type="button" id="f_subExpandAll" class="opt-btn" title="Show / hide owner, due and convert for every subtask at once">Expand all</button></label>
+    <div class="field" data-sec="subs"><label>Subtasks <span id="f_subProg" class="opt"></span> <button type="button" id="f_subExpandAll" class="opt-btn" title="Show the full text of every subtask (otherwise long titles clamp to two lines)">Expand all</button></label>
       <div id="f_subs" class="subs-edit"></div>
       <div class="ch-wrap"><input id="f_subAdd" placeholder="Add a subtask… (end with “:” for a group header, or paste a multi-line list)" autocomplete="off" /><button type="button" id="f_subAddBtn" title="Add subtask">＋</button><button type="button" id="f_subAddHeaderBtn" class="ghost" title="Add a group header (section title)">＋ Header</button></div>
     </div>
@@ -1570,8 +1573,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.74";
+const VERSION = "3.75";
 const CHANGELOG = [
+  "v3.75 — Subtask rows: owner + due + ➜ Convert are back on the top row always (no more clicking through to see them). The textarea collapses to the exact height of its content and clamps at two lines by default; a ⋯ toggle appears only on rows whose text overflows the clamp, and expands just that row. \"Expand all\" / \"Collapse all\" now flips every long-text clamp at once.",
   "v3.74 — Subtask rows redesigned so the text gets most of the width. The input is now a textarea that auto-grows to fit long titles — no more clipped mid-sentence. Owner, due date, ➜ Convert and the \"added\" timestamp collapse behind a ⋯ toggle per row (auto-expanded when any of them are already set), and a new \"Expand all\" / \"Collapse all\" button next to the Subtasks label flips every row at once.",
   "v3.73 — Workspace switch now shows its state. The sync dot pulses blue \"Loading Product Innovation…\" while the switch is in flight, clears old-workspace cards immediately (no stale rows under new chrome), and if the load fails it flips red with a sticky \"Workspace: <error>\" label you can click to retry. A fast A→B→A toggle no longer lets B's late response overwrite A's state (switch is race-guarded with a token).",
   "v3.72 — Fix: Theme-channel stripes were hiding the card color override. The inset backdrop painted behind the stripes was hard-coded to --panel-2, which masked any card-color tint. It now uses --card-bg (stamped by applyCardColorOverride, falls back to --panel-2) so Theme + card-color combines cleanly — stripes on top, card color tint behind.",
@@ -6786,11 +6790,26 @@ function subtaskGroupCounts(list) {
 }
 // Returns true if the item at position idx is inside any header group (i.e. some earlier row is a header).
 function subtaskInGroup(list, idx) { for (let i = 0; i < idx; i++) if (list[i].type === "header") return true; return false; }
-// Per-id expanded state for subtask detail rows (owner/due/convert/added). Session-only; not persisted.
+// Per-id expanded state for subtask TEXT wrapping. Collapsed = clamped to ~2 lines, expanded = full text.
+// Session-only; not persisted.
 let _subExpanded = new Set();
 let _subExpandAll = false;
 function isSubExpanded(s) { return _subExpandAll || _subExpanded.has(s.id); }
-function autoGrowSubText(ta) { ta.style.height = "auto"; ta.style.height = (ta.scrollHeight + 2) + "px"; }
+// Size the textarea to fit its content (collapsed cap handled via CSS max-height). Call after mount and on every
+// input so the box collapses to one line of text and only grows when the content wraps.
+function autoGrowSubText(ta) {
+  ta.style.height = "auto";
+  ta.style.height = (ta.scrollHeight + 2) + "px";
+  // Show the ⋯ expand toggle only when the content overflows the clamp (checked against the natural scrollHeight
+  // vs. the currently-rendered height after CSS max-height took effect).
+  const row = ta.closest(".sub-row"); if (!row) return;
+  const tog = row.querySelector(".sub-expand-tog, .sub-expand-tog-empty");
+  if (!tog) return;
+  const overflows = ta.scrollHeight > ta.clientHeight + 1;
+  const isTog = tog.classList.contains("sub-expand-tog");
+  if (overflows && !isTog) { tog.className = "sub-expand-tog"; tog.textContent = "⋯"; tog.title = "Show the full subtask text"; }
+  else if (!overflows && isTog && !row.classList.contains("sub-row-expanded")) { tog.className = "sub-expand-tog-empty"; tog.textContent = ""; tog.title = ""; }
+}
 function renderSubsEdit() {
   const box = document.getElementById("f_subs"); box.innerHTML = "";
   // Count actual subtasks only — header rows are group titles, not work items.
@@ -6866,12 +6885,12 @@ function renderSubsEdit() {
       row.appendChild(grip); row.appendChild(cb); row.appendChild(link); row.appendChild(rm); box.appendChild(row);
       return;
     }
-    // Auto-growing textarea for the subtask text — long titles stay fully visible instead of being clipped in a one-line input.
+    // Auto-growing textarea for the subtask text — collapses to the height of the actual content, capped at ~2 lines
+    // by CSS unless this row is marked expanded (either per-id or via the global "Expand all" toggle).
     const inp = document.createElement("textarea"); inp.className = "sub-text" + (s.done ? " done" : ""); inp.rows = 1; inp.value = s.text;
     inp.oninput = () => { s.text = inp.value; autoGrowSubText(inp); };
     // Enter commits the edit and adds a new subtask below (list-style "keep typing" flow). stopPropagation so the
-    // modal's global Enter-to-save handler doesn't close the card behind us. Shift+Enter inserts a newline into the
-    // same subtask (textarea default behavior).
+    // modal's global Enter-to-save handler doesn't close the card behind us. Shift+Enter inserts a newline.
     inp.addEventListener("keydown", e => {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault(); e.stopPropagation();
@@ -6879,17 +6898,7 @@ function renderSubsEdit() {
       modalSubs.splice(idx + 1, 0, ns); renderSubsEdit();
       const next = document.querySelectorAll("#f_subs .sub-text")[idx + 1]; if (next) next.focus();
     });
-    // ⋯ reveals the details strip (owner / due / convert / added) below this row. Shows as "on" when a value is
-    // already set so users don't lose sight of configured metadata.
-    const hasDetails = !!(s.owner || s.due || s.addedAt);
-    const tog = document.createElement("button"); tog.type = "button"; tog.className = "sub-details-tog" + (isSubExpanded(s) || hasDetails ? " on" : ""); tog.textContent = "⋯"; tog.title = "Show owner, due date and convert";
-    tog.onclick = () => { if (_subExpanded.has(s.id)) _subExpanded.delete(s.id); else _subExpanded.add(s.id); renderSubsEdit(); };
-    const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
-    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
-    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(tog); row.appendChild(rm);
-    // Details strip — mounted always, hidden via CSS unless this row is expanded (either per-id or via "Expand all").
-    if (isSubExpanded(s) || hasDetails) row.classList.add("sub-row-expanded");
-    const details = document.createElement("div"); details.className = "sub-details";
+    // Owner / due / convert — on the top row always, so Jason doesn't need to open each subtask to see them.
     const own = document.createElement("select"); own.className = "sub-owner"; own.title = "Owner (used if converted to a deliverable)";
     const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "— owner —"; own.appendChild(noneOpt);
     peopleList.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; own.appendChild(o); });
@@ -6900,11 +6909,21 @@ function renderSubsEdit() {
     due.onchange = () => { s.due = due.value; };
     const conv = document.createElement("button"); conv.type = "button"; conv.className = "sub-convert"; conv.textContent = "➜ Convert"; conv.title = "Convert this subtask to a new deliverable";
     conv.onclick = () => convertSubtaskToDeliverable(s);
-    details.appendChild(own); details.appendChild(due); details.appendChild(conv);
-    if (s.addedAt) { const t = document.createElement("span"); t.className = "sub-added"; t.textContent = "added " + fmtIso(s.addedAt); t.title = new Date(s.addedAt).toLocaleString(); details.appendChild(t); }
-    row.appendChild(details);
+    // ⋯ text-clamp toggle — only mounted visibly when the textarea content exceeds the 2-line clamp. Collapsed by
+    // default; its slot is reserved via a spacer element to keep the ✕ column aligned across rows.
+    if (isSubExpanded(s)) row.classList.add("sub-row-expanded");
+    const expandTog = document.createElement("button"); expandTog.type = "button";
+    expandTog.className = isSubExpanded(s) ? "sub-expand-tog" : "sub-expand-tog-empty";
+    expandTog.textContent = isSubExpanded(s) ? "⋯" : "";
+    expandTog.title = isSubExpanded(s) ? "Collapse the subtask text to two lines" : "";
+    expandTog.onclick = () => { if (_subExpanded.has(s.id)) _subExpanded.delete(s.id); else _subExpanded.add(s.id); renderSubsEdit(); };
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "sub-rm"; rm.textContent = "✕"; rm.title = "Remove";
+    rm.onclick = () => { modalSubs = modalSubs.filter(x => x !== s); renderSubsEdit(); };
+    row.appendChild(grip); row.appendChild(cb); row.appendChild(inp); row.appendChild(own); row.appendChild(due); row.appendChild(conv); row.appendChild(expandTog); row.appendChild(rm);
+    // "added [date]" sits on its own wrapped line underneath so it never shrinks the top-row text width.
+    if (s.addedAt) { const t = document.createElement("span"); t.className = "sub-added"; t.textContent = "added " + fmtIso(s.addedAt); t.title = new Date(s.addedAt).toLocaleString(); row.appendChild(t); }
     box.appendChild(row);
-    // Size the textarea to its content on mount (needs to happen after it's in the DOM).
+    // Size the textarea to its content on mount (needs to happen after it's in the DOM so scrollHeight is real).
     requestAnimationFrame(() => autoGrowSubText(inp));
   });
 }
