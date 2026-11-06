@@ -867,7 +867,7 @@
      no blend-mode, so stripes stay crisp on dark panels too. The subtle white hairline between stripes gives
      the pattern a classic candy-cane look at any hue. */
   .card.theme-channel, .list-task.theme-channel, .gallery-tile.theme-channel,
-  .planning-card.theme-channel { position: relative; overflow: hidden; isolation: isolate; }
+  .planning-card.theme-channel { position: relative; overflow: hidden; isolation: isolate; min-height: fit-content; flex-shrink: 0; }
   .ev.theme-channel, .ev-bar.theme-channel { overflow: hidden; isolation: isolate; }
   .theme-channel::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
@@ -1635,8 +1635,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.88";
+const VERSION = "3.89";
 const CHANGELOG = [
+  "v3.89 — Fix: Theme-channel cards (candy-stripe pattern) were collapsing to ~24px in constrained-height flex columns, hiding their own title/chips under the stripe pattern. The stripe overlay uses overflow:hidden to clip to the rounded corner; per the CSS spec, a flex item with overflow:hidden loses its implicit min-height:auto, so it shrinks past its content when the column runs out of vertical room. Added min-height:fit-content + flex-shrink:0 on all four Theme card renderers (card / planning-card / list-task / gallery-tile) so Theme cards always render at full content height.",
   "v3.88 — Removed the Close ✕ button from the title emoji picker header. With the backdrop click, ESC, and 😀 toggle all working reliably, the button was redundant visual noise.",
   "v3.87 — Title emoji picker rebuilt as a floating overlay with a full-viewport backdrop. Root cause of the lingering 'stuck' feel: every open rebuilt ~2000 emoji buttons (Chrome logged it as a 736ms click handler violation), so clicks on the 😀 button queued behind the lag and felt dead. Now the emoji grid is built once and cached, so re-opens are instant. Four ways to close: click the backdrop, the Close ✕ button (now large/red), ESC, or the 😀 button again. The picker no longer pushes other modal content down.",
   "v3.86 — ROOT CAUSE for the 'emoji window is stuck' complaints: the RTE toolbar 😀 / 🖍 / A buttons in the Description + Notes format bars never toggled. Clicking them a second time silently rebuilt a fresh popover instead of closing — looked stuck because nothing visible changed. Fixed: clicking the same anchor again now closes the open picker. Also added an ESC-key handler to both the emoji and color popovers for a guaranteed way out.",
