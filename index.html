@@ -178,8 +178,13 @@
   .note-row { display: grid; grid-template-columns: 88px 1fr 24px; gap: 8px; align-items: start; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
   .note-row input[type="date"] { padding: 3px 4px; font-size: 10.5px; width: 100%; box-sizing: border-box; }
   .note-row textarea { padding: 7px 9px; font-size: 13.5px; font-family: inherit; line-height: 1.55; width: 100%; box-sizing: border-box; resize: none; overflow: hidden; }
+  .note-row .note-editor-wrap { display: flex; flex-direction: column; min-width: 0; }
+  .note-row .note-editor-wrap > .rte-tb { border: 1px solid var(--line); border-bottom: none; border-radius: 6px 6px 0 0; background: var(--panel-2); }
+  .note-row .note-editor-wrap > .note-text { border-top-left-radius: 0; border-top-right-radius: 0; }
   .note-row .note-text { padding: 7px 9px; font-size: 13.5px; font-family: inherit; line-height: 1.55; width: 100%; box-sizing: border-box; min-height: 28px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; }
   .note-row .note-text:focus { border-color: var(--accent); }
+  .email-body-wrap { display: flex; flex-direction: column; }
+  .email-body-wrap > .rte-tb { border-bottom: 1px solid var(--line); background: var(--panel-2); }
   .email-item-body[contenteditable="true"] { outline: none; }
   .email-item-body[contenteditable="true"]:focus { background: var(--panel); border-radius: 4px; }
   .note-row .note-rm { width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 13px; color: var(--danger); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
@@ -795,6 +800,18 @@
   .rte-editor ul, .rte-editor ol { margin: 0 0 8px; padding-left: 22px; }
   .rte-editor a { color: var(--accent); text-decoration: underline; }
   .rte-editor:empty::before { content: attr(data-placeholder); color: var(--muted); }
+  /* Compact variant used for note/email editors where vertical space is tight. */
+  .rte-tb-compact { padding: 3px 5px; gap: 0; }
+  .rte-tb-compact .rte-tb-btn { min-width: 24px; height: 22px; padding: 0 4px; font-size: 11px; }
+  .rte-tb-compact .rte-tb-sep { height: 14px; margin: 0 2px; }
+  /* Reusable emoji popover anchored under the 😀 toolbar button. */
+  .rte-emoji-pop { position: fixed; z-index: 10001; width: 260px; max-height: 300px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; box-shadow: 0 8px 22px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 6px; }
+  .rte-emoji-search { padding: 5px 8px; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; outline: none; }
+  .rte-emoji-search:focus { border-color: var(--accent); }
+  .rte-emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 240px; overflow-y: auto; }
+  .rte-emoji-btn { width: 28px; height: 28px; padding: 0; font-size: 18px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+  .rte-emoji-btn:hover { background: var(--panel-2); border-color: var(--accent); }
+  .rte-emoji-empty { grid-column: 1 / -1; padding: 8px; font-size: 12px; color: var(--muted); text-align: center; }
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .field-link-open:hover { border-color: var(--accent); background: rgba(109,93,252,.06); }
   .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
@@ -1584,8 +1601,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.78";
+const VERSION = "3.79";
 const CHANGELOG = [
+  "v3.79 — Shared rich-text format bar across every long-text editor in the modal (custom rich-text fields, each Note row, each expanded Email body). New buttons on the bar: 🖍 Highlight (toggles yellow <mark> on the selected text, same wrapper the floating ✨ pill produces) and 😀 Emoji (opens a 60-emoji popover with search; inserts at the caret, keyboard-friendly). The custom-field RTE was refactored onto the shared builder, so all three editors stay in lockstep forever.",
   "v3.78 — Subtask due-date label turns red + bold under the 📅 icon when the date is past today and the subtask is still unchecked (checking it off clears the overdue styling). Clicking 👤 now opens the owner dropdown in one click (showPicker on the native select), matching the 📅 single-click behavior.",
   "v3.77 — Subtask rows: 👤 and 📅 icons show the value as small text UNDER the icon (owner name, M/D date) and open a popover attached to the icon when clicked — no more full-width panel below the row, no wasted vertical space on every selection. The 📅 popover auto-opens the native date picker. The ⋯ expand toggle now lives in the bottom-right corner of the textarea itself (absolutely positioned inside it), so the empty pill in its own column is gone — the icon only appears when text overflows three lines.",
   "v3.76 — Subtask rows redesigned again: text now claims ~75% of the row with 3 lines visible by default, and owner / date / ➜ Convert become compact icon buttons (👤 📅 ➜). Click 👤 or 📅 to open the full control in a wrapped panel directly below the icon; icons color accent when a value is set. ⋯ now toggles the row expansion in place (no re-render), so clicking ⋯ on a row several down no longer scrolls the modal or lands on a different row.",
@@ -7093,16 +7111,20 @@ function renderEmailsEdit() {
       headersBox.appendChild(mkField("Subject", "subject", "Email subject"));
       headersBox.appendChild(mkField("Date", "sent", "Sent date (free text)"));
       row.appendChild(headersBox);
-      // Contenteditable so highlights apply inline. Save flow pulls em.content from modalEmails on Save, and
-      // _hlSavePersist's "email-modal" branch syncs em.content when the pill is clicked.
+      // Contenteditable with the shared RTE toolbar. Save flow pulls em.content from modalEmails on Save, and
+      // _hlSavePersist's "email-modal" branch syncs em.content when the ✨ pill is clicked.
+      const bodyWrap = document.createElement("div"); bodyWrap.className = "email-body-wrap";
       const body = document.createElement("div"); body.className = "email-item-body hl-container";
       body.setAttribute("contenteditable", "true");
       body.dataset.hlKind = "email-modal"; body.dataset.hlCardId = (document.getElementById("f_id") || {}).value || ""; body.dataset.hlEmailId = em.id || "";
       body.innerHTML = sanitizeNotes(em.content || "");
-      body.addEventListener("input", () => { em.content = sanitizeNotes(body.innerHTML); });
-      body.addEventListener("blur", () => { em.content = sanitizeNotes(body.innerHTML); });
+      const emailSync = () => { em.content = sanitizeNotes(body.innerHTML); };
+      body.addEventListener("input", emailSync);
+      body.addEventListener("blur", emailSync);
       body.addEventListener("paste", ev => { const cd = ev.clipboardData; if (!cd) return; const txt = cd.getData("text/plain"); if (txt == null) return; ev.preventDefault(); document.execCommand("insertText", false, txt); });
-      row.appendChild(body);
+      const emailTb = buildRteToolbar(body, emailSync, { compact: true });
+      bodyWrap.appendChild(emailTb); bodyWrap.appendChild(body);
+      row.appendChild(bodyWrap);
     }
     box.appendChild(row);
   });
@@ -7420,74 +7442,10 @@ function _renderOneFieldWrapper(f, cur) {
       // Link, Clear format (Tₓ). Active state reflects queryCommandState so toggling off is one click.
       const hidden = document.createElement("input"); hidden.type = "hidden"; hidden.dataset.field = f.name; hidden.value = cur || "";
       const box = document.createElement("div"); box.className = "rte-box";
-      const tb = document.createElement("div"); tb.className = "rte-tb";
       const ed = document.createElement("div"); ed.className = "rte-editor"; ed.contentEditable = "true"; ed.spellcheck = true; ed.innerHTML = sanitizeRichText(cur || "");
       ed.setAttribute("role", "textbox"); ed.setAttribute("aria-multiline", "true");
-      // Walk up from the current selection to find the nearest block-level ancestor still inside the editor.
-      const currentBlockTag = () => {
-        const sel = window.getSelection(); if (!sel || !sel.rangeCount) return "P";
-        let node = sel.getRangeAt(0).commonAncestorContainer;
-        while (node && node !== ed) {
-          if (node.nodeType === 1) { const t = node.tagName.toUpperCase(); if (["H1","H2","H3","H4","P","LI","BLOCKQUOTE"].includes(t)) return t; }
-          node = node.parentNode;
-        }
-        return "P";
-      };
-      let updateToolbarState = () => {}; // forward decl, set after buttons exist
-      const sync = () => { hidden.value = sanitizeRichText(ed.innerHTML); updateToolbarState(); };
-      const exec = (cmd, arg) => { ed.focus(); try { document.execCommand(cmd, false, arg); } catch (e) {} sync(); };
-      const mkBtn = (html, title, action) => {
-        const b = document.createElement("button"); b.type = "button"; b.className = "rte-tb-btn"; b.innerHTML = html; b.title = title;
-        b.addEventListener("mousedown", e => { e.preventDefault(); });
-        b.addEventListener("click", action);
-        return b;
-      };
-      const sep = () => { const s = document.createElement("div"); s.className = "rte-tb-sep"; return s; };
-      // Inline marks
-      const bBtn = mkBtn("<b>B</b>",      "Bold (Ctrl+B)",          () => exec("bold"));
-      const iBtn = mkBtn("<i>I</i>",      "Italic (Ctrl+I)",        () => exec("italic"));
-      const uBtn = mkBtn("<u>U</u>",      "Underline (Ctrl+U)",     () => exec("underline"));
-      const sBtn = mkBtn("<s>S</s>",      "Strikethrough",          () => exec("strikeThrough"));
-      tb.appendChild(bBtn); tb.appendChild(iBtn); tb.appendChild(uBtn); tb.appendChild(sBtn);
-      tb.appendChild(sep());
-      // Paragraph-style dropdown. Default is Normal (P); picking a Heading sets it, picking Normal again clears it.
-      const headSel = document.createElement("select"); headSel.className = "rte-tb-sel"; headSel.title = "Paragraph style";
-      [["P","Normal"],["H1","Heading 1"],["H2","Heading 2"],["H3","Heading 3"]].forEach(([v,l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; headSel.appendChild(o); });
-      headSel.addEventListener("mousedown", e => { /* keep editor selection */ });
-      headSel.addEventListener("change", () => { exec("formatBlock", headSel.value); });
-      tb.appendChild(headSel);
-      tb.appendChild(sep());
-      // Lists — execCommand toggles natively so a 2nd click returns to a plain paragraph
-      const ulBtn = mkBtn("•",            "Bulleted list",          () => exec("insertUnorderedList"));
-      const olBtn = mkBtn("1.",           "Numbered list",          () => exec("insertOrderedList"));
-      tb.appendChild(ulBtn); tb.appendChild(olBtn);
-      tb.appendChild(sep());
-      // Link + clear
-      tb.appendChild(mkBtn("🔗", "Insert / change link", () => {
-        const url = window.prompt("Link URL (leave blank to remove):", "");
-        if (url === null) return;
-        if (!url) { exec("unlink"); return; }
-        const safe = /^(https?:)?\/\//i.test(url) ? url : "https://" + url;
-        exec("createLink", safe);
-      }));
-      tb.appendChild(mkBtn("T<sub>x</sub>", "Clear formatting", () => {
-        // Strip inline marks, drop any link, and reset the current block to a plain paragraph — common across
-        // most RTEs (Docs, Notion, Confluence) as a one-shot "revert to normal".
-        exec("removeFormat"); exec("unlink"); exec("formatBlock", "P");
-      }));
-      // Reflect active marks + current block on every selection change so the toolbar always tells the truth.
-      updateToolbarState = () => {
-        try {
-          bBtn.classList.toggle("active", document.queryCommandState("bold"));
-          iBtn.classList.toggle("active", document.queryCommandState("italic"));
-          uBtn.classList.toggle("active", document.queryCommandState("underline"));
-          sBtn.classList.toggle("active", document.queryCommandState("strikeThrough"));
-          ulBtn.classList.toggle("active", document.queryCommandState("insertUnorderedList"));
-          olBtn.classList.toggle("active", document.queryCommandState("insertOrderedList"));
-          const tag = currentBlockTag();
-          headSel.value = ["H1","H2","H3","P"].includes(tag) ? tag : "P";
-        } catch(e) {}
-      };
+      const sync = () => { hidden.value = sanitizeRichText(ed.innerHTML); };
+      const tb = buildRteToolbar(ed, sync);
       // Intercept paste so Word/Docs HTML lands sanitized (strips style attrs, scripts, etc.).
       ed.addEventListener("paste", e => {
         const dt = e.clipboardData || window.clipboardData; if (!dt) return;
@@ -7497,8 +7455,6 @@ function _renderOneFieldWrapper(f, cur) {
       });
       ed.addEventListener("input", sync);
       ed.addEventListener("blur", sync);
-      ed.addEventListener("keyup", updateToolbarState);
-      ed.addEventListener("mouseup", updateToolbarState);
       box.appendChild(tb); box.appendChild(ed); box.appendChild(hidden);
       wrap.appendChild(box);
     } else if (f.type === "multi") {
@@ -7614,6 +7570,147 @@ async function handleCoverFile(file) {
   try { const dataUrl = await resizeImageToDataUrl(file, 900, 0.72); setModalCover(dataUrl); }
   catch (e) { toast("Couldn't read that image: " + (e && e.message || e)); }
 }
+// Reusable rich-text toolbar. Any long-text editor (custom rich fields, modal notes, modal email bodies) attaches
+// this toolbar so the format bar is the same everywhere. Highlight and emoji live here so they're never a mystery.
+const RTE_COMMON_EMOJIS = ["😀","😂","😊","😉","😍","🤔","😎","😢","😭","😡","🙄","👍","👎","👏","🙌","👀","💪","🙏","🎯","✅","❌","⚠️","🔥","⭐","✨","💡","📌","📝","📅","🕒","🚀","💰","💸","📈","📉","📊","🎉","🎁","☕","🍕","🐾","🐶","🐱","❤️","💔","🧠","🔗","📧","📞","🏠","🎨","🧵","🧪","🧹","🪄","🫶","🧃","🛒","💬","💭"];
+let _rteEmojiPop = null;
+function _rteCloseEmojiPop() { if (_rteEmojiPop) { _rteEmojiPop.remove(); _rteEmojiPop = null; } }
+function _rteOpenEmojiPop(anchor, onPick) {
+  _rteCloseEmojiPop();
+  const pop = document.createElement("div"); pop.className = "rte-emoji-pop";
+  pop.addEventListener("mousedown", e => e.preventDefault());
+  const search = document.createElement("input"); search.type = "text"; search.className = "rte-emoji-search"; search.placeholder = "Search…";
+  const grid = document.createElement("div"); grid.className = "rte-emoji-grid";
+  const build = (filter) => {
+    grid.innerHTML = "";
+    const q = (filter || "").trim().toLowerCase();
+    const list = q ? RTE_COMMON_EMOJIS.filter(em => em.includes(q)) : RTE_COMMON_EMOJIS;
+    list.forEach(em => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "rte-emoji-btn"; b.textContent = em; b.title = em;
+      b.addEventListener("mousedown", e => e.preventDefault());
+      b.onclick = () => { onPick(em); _rteCloseEmojiPop(); };
+      grid.appendChild(b);
+    });
+    if (!list.length) { const e = document.createElement("div"); e.className = "rte-emoji-empty"; e.textContent = "No matches."; grid.appendChild(e); }
+  };
+  search.addEventListener("input", () => build(search.value));
+  pop.appendChild(search); pop.appendChild(grid);
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(window.innerWidth - 268, r.left));
+  pop.style.left = left + "px"; pop.style.top = (r.bottom + 4) + "px";
+  build("");
+  setTimeout(() => search.focus(), 0);
+  _rteEmojiPop = pop;
+  setTimeout(() => {
+    const h = ev => { if (!pop.contains(ev.target) && ev.target !== anchor) { _rteCloseEmojiPop(); document.removeEventListener("mousedown", h, true); } };
+    document.addEventListener("mousedown", h, true);
+    pop._handler = h;
+  }, 0);
+}
+// Toggle <mark> on the current selection inside `editor`. Wrap if not highlighted; unwrap if the selection sits
+// entirely inside a single <mark>. Call syncFn after so the caller can persist / sanitize.
+function rteToggleHighlight(editor, syncFn) {
+  const sel = window.getSelection(); if (!sel || !sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return;
+  if (range.collapsed) return;
+  // If both ends live inside the same <mark>, unwrap it.
+  const inMark = node => { while (node && node !== editor) { if (node.nodeType === 1 && node.tagName === "MARK") return node; node = node.parentNode; } return null; };
+  const sMark = inMark(range.startContainer), eMark = inMark(range.endContainer);
+  if (sMark && sMark === eMark) {
+    const parent = sMark.parentNode;
+    while (sMark.firstChild) parent.insertBefore(sMark.firstChild, sMark);
+    parent.removeChild(sMark);
+  } else {
+    const mark = document.createElement("mark");
+    try { range.surroundContents(mark); }
+    catch (e) { const frag = range.extractContents(); mark.appendChild(frag); range.insertNode(mark); }
+  }
+  sel.removeAllRanges();
+  if (typeof syncFn === "function") syncFn();
+}
+// Build a toolbar DOM element bound to `editor`. `syncFn` is called after every format action to let the caller
+// persist (e.g. write to hidden input, update modalEmails/modalNoteEntries, etc.). opts.compact drops the block
+// headings dropdown (useful for small editors like notes rows).
+function buildRteToolbar(editor, syncFn, opts) {
+  opts = opts || {};
+  const tb = document.createElement("div"); tb.className = "rte-tb" + (opts.compact ? " rte-tb-compact" : "");
+  const exec = (cmd, arg) => { editor.focus(); try { document.execCommand(cmd, false, arg); } catch (e) {} if (typeof syncFn === "function") syncFn(); };
+  const mkBtn = (html, title, action) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "rte-tb-btn"; b.innerHTML = html; b.title = title;
+    b.addEventListener("mousedown", e => e.preventDefault());
+    b.addEventListener("click", action);
+    return b;
+  };
+  const sep = () => { const s = document.createElement("div"); s.className = "rte-tb-sep"; return s; };
+  const currentBlockTag = () => {
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount) return "P";
+    let node = sel.getRangeAt(0).commonAncestorContainer;
+    while (node && node !== editor) {
+      if (node.nodeType === 1) { const t = node.tagName.toUpperCase(); if (["H1","H2","H3","H4","P","LI","BLOCKQUOTE"].includes(t)) return t; }
+      node = node.parentNode;
+    }
+    return "P";
+  };
+  const bBtn = mkBtn("<b>B</b>", "Bold (Ctrl+B)", () => exec("bold"));
+  const iBtn = mkBtn("<i>I</i>", "Italic (Ctrl+I)", () => exec("italic"));
+  const uBtn = mkBtn("<u>U</u>", "Underline (Ctrl+U)", () => exec("underline"));
+  const sBtn = mkBtn("<s>S</s>", "Strikethrough", () => exec("strikeThrough"));
+  tb.appendChild(bBtn); tb.appendChild(iBtn); tb.appendChild(uBtn); tb.appendChild(sBtn);
+  tb.appendChild(sep());
+  let headSel = null;
+  if (!opts.compact) {
+    headSel = document.createElement("select"); headSel.className = "rte-tb-sel"; headSel.title = "Paragraph style";
+    [["P","Normal"],["H1","Heading 1"],["H2","Heading 2"],["H3","Heading 3"]].forEach(([v,l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; headSel.appendChild(o); });
+    headSel.addEventListener("change", () => { exec("formatBlock", headSel.value); });
+    tb.appendChild(headSel);
+    tb.appendChild(sep());
+  }
+  const ulBtn = mkBtn("•", "Bulleted list", () => exec("insertUnorderedList"));
+  const olBtn = mkBtn("1.", "Numbered list", () => exec("insertOrderedList"));
+  tb.appendChild(ulBtn); tb.appendChild(olBtn);
+  tb.appendChild(sep());
+  // Highlight (same yellow <mark> wrapping used by the floating ✨ pill) and emoji insertion.
+  const hlBtn = mkBtn("🖍", "Highlight selection (toggle)", () => { rteToggleHighlight(editor, syncFn); });
+  const emBtn = mkBtn("😀", "Insert emoji", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    // Save selection so the emoji lands where the caret was before the button stole focus.
+    const sel = window.getSelection(); let savedRange = null;
+    if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+    _rteOpenEmojiPop(emBtn, em => {
+      editor.focus();
+      if (savedRange) { const s2 = window.getSelection(); s2.removeAllRanges(); s2.addRange(savedRange); }
+      try { document.execCommand("insertText", false, em); } catch (err) {}
+      if (typeof syncFn === "function") syncFn();
+    });
+  });
+  tb.appendChild(hlBtn); tb.appendChild(emBtn);
+  tb.appendChild(sep());
+  tb.appendChild(mkBtn("🔗", "Insert / change link", () => {
+    const url = window.prompt("Link URL (leave blank to remove):", "");
+    if (url === null) return;
+    if (!url) { exec("unlink"); return; }
+    const safe = /^(https?:)?\/\//i.test(url) ? url : "https://" + url;
+    exec("createLink", safe);
+  }));
+  tb.appendChild(mkBtn("T<sub>x</sub>", "Clear formatting", () => { exec("removeFormat"); exec("unlink"); exec("formatBlock", "P"); }));
+  const updateToolbarState = () => {
+    try {
+      bBtn.classList.toggle("active", document.queryCommandState("bold"));
+      iBtn.classList.toggle("active", document.queryCommandState("italic"));
+      uBtn.classList.toggle("active", document.queryCommandState("underline"));
+      sBtn.classList.toggle("active", document.queryCommandState("strikeThrough"));
+      ulBtn.classList.toggle("active", document.queryCommandState("insertUnorderedList"));
+      olBtn.classList.toggle("active", document.queryCommandState("insertOrderedList"));
+      if (headSel) { const tag = currentBlockTag(); headSel.value = ["H1","H2","H3","P"].includes(tag) ? tag : "P"; }
+    } catch(e) {}
+  };
+  editor.addEventListener("keyup", updateToolbarState);
+  editor.addEventListener("mouseup", updateToolbarState);
+  editor.addEventListener("focus", updateToolbarState);
+  return tb;
+}
 // Structured notes editor — modalNoteEntries holds the working array of {id, date, text} rows. Rendered as
 // a scrollable list, newest first. Save persists to fields[NOTES_ENTRIES_KEY].
 let modalNoteEntries = [];
@@ -7627,20 +7724,23 @@ function renderModalNotes() {
     const row = document.createElement("div"); row.className = "note-row"; row.dataset.id = entry.id;
     const d = document.createElement("input"); d.type = "date"; d.value = entry.date || "";
     d.addEventListener("change", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) live.date = d.value; });
-    // Contenteditable instead of textarea so <mark> highlights render inline. Participates in the hl-container
-    // system via data attrs so the floating ✨ pill wraps selected text and saves on blur.
+    // Contenteditable with the shared RTE toolbar (so the format bar is the same as every other long-text field).
+    // Also stays an hl-container so the floating ✨ pill still works as an alternate highlight gesture.
+    const editorWrap = document.createElement("div"); editorWrap.className = "note-editor-wrap";
     const t = document.createElement("div"); t.className = "note-text hl-container";
     t.setAttribute("contenteditable", "true");
     t.dataset.hlKind = "note-modal"; t.dataset.hlCardId = cardId; t.dataset.hlEntryId = entry.id;
     t.innerHTML = sanitizeNotes(entry.text || "");
     const grabHtml = () => sanitizeNotes(t.innerHTML).replace(/<br\s*\/?>$/i, "").trim();
-    t.addEventListener("input", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) live.text = grabHtml(); });
+    const noteSync = () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) live.text = grabHtml(); };
+    t.addEventListener("input", noteSync);
     t.addEventListener("blur", () => { const live = modalNoteEntries.find(e => e.id === entry.id); if (live) { live.text = grabHtml(); t.innerHTML = sanitizeNotes(live.text || ""); } });
-    // Keep paste from importing weird formatting — treat as plain text; browser will insert at caret.
     t.addEventListener("paste", e => { const cd = e.clipboardData; if (!cd) return; const txt = cd.getData("text/plain"); if (txt == null) return; e.preventDefault(); document.execCommand("insertText", false, txt); });
+    const tb = buildRteToolbar(t, noteSync, { compact: true });
+    editorWrap.appendChild(tb); editorWrap.appendChild(t);
     const rm = document.createElement("button"); rm.type = "button"; rm.className = "note-rm"; rm.textContent = "✕"; rm.title = "Delete note";
     rm.onclick = () => { modalNoteEntries = modalNoteEntries.filter(e => e.id !== entry.id); renderModalNotes(); };
-    row.appendChild(d); row.appendChild(t); row.appendChild(rm);
+    row.appendChild(d); row.appendChild(editorWrap); row.appendChild(rm);
     if (entry.author) {
       const by = document.createElement("div"); by.className = "note-by"; by.textContent = "— " + entry.author;
       row.appendChild(by);
