@@ -158,8 +158,10 @@
   .title-emoji-btn { flex: none; padding: 6px 10px; font-size: 16px; line-height: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .title-emoji-btn:hover { border-color: var(--accent); }
   .emoji-picker { margin-top: 6px; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; max-height: 340px; display: flex; flex-direction: column; }
-  .emoji-search-row { flex: none; margin-bottom: 6px; }
-  .emoji-search-row input { width: 100%; padding: 6px 10px; font-size: 12px; }
+  .emoji-search-row { flex: none; margin-bottom: 6px; display: flex; gap: 6px; align-items: center; }
+  .emoji-search-row input { flex: 1; min-width: 0; padding: 6px 10px; font-size: 12px; }
+  .emoji-close { flex: none; width: 26px; height: 26px; padding: 0; background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; }
+  .emoji-close:hover { color: var(--danger); border-color: var(--danger); }
   .emoji-categories { flex: none; display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .emoji-cat-btn { padding: 2px 6px; font-size: 16px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
   .emoji-cat-btn:hover { background: var(--panel); border-color: var(--accent); }
@@ -1347,7 +1349,7 @@
         <button type="button" id="f_titleEmoji" class="title-emoji-btn" title="Insert an emoji">😀</button>
       </div>
       <div id="f_emojiPicker" class="emoji-picker" hidden>
-        <div class="emoji-search-row"><input type="text" id="f_emojiSearch" placeholder="Search emojis…" autocomplete="off" /></div>
+        <div class="emoji-search-row"><input type="text" id="f_emojiSearch" placeholder="Search emojis…" autocomplete="off" /><button type="button" id="f_emojiClose" class="emoji-close" title="Close (Esc)">✕</button></div>
         <div id="f_emojiCategories" class="emoji-categories"></div>
         <div id="f_emojiBody" class="emoji-body"></div>
       </div>
@@ -1628,8 +1630,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.84";
+const VERSION = "3.85";
 const CHANGELOG = [
+  "v3.85 — Title 😀 emoji picker: added an explicit ✕ close button inside the picker header AND an Escape-key handler, so there are now THREE independent ways to close it (toggle button, ✕, ESC). The toggle itself tested fine but the redundant affordances mean the picker can never be stuck open regardless of environment.",
   "v3.84 — RTE color picker (🖍 highlight + A̲ text) now has a custom-color row under the 21 preset swatches: a native color-wheel input and a hex text field that stay in sync, with Apply + Remove/Default-color buttons. Pressing Enter in the hex field applies it. Any color is reachable now, not just the presets.",
   "v3.83 — Title 😀 picker toggle: rewritten against a dedicated open-state flag instead of reading picker.hidden directly, so the second click always closes it. Outside-close handler now uses capture-phase + the flag + a closest() guard against both #f_titleEmoji and #f_emojiPicker, so no click can re-open or race it.",
   "v3.82 — Fix: subtask → deliverable conversion rendered the new link pill as \"deleted\" because createCard fires refetch() without awaiting (so bulk callers don't pay the round-trip), and the re-render happened before cards[] was populated. convertSubtaskToDeliverable now explicitly awaits refetch when the new id isn't visible yet — the pill renders with the real title + status on first paint.",
@@ -9253,6 +9256,12 @@ async function init() {
     e.preventDefault(); e.stopPropagation();
     setTitlePicker(!_titlePickerOpen);
   };
+  // Explicit ✕ close button inside the picker, so there's always a visible way out — redundant with the toggle and
+  // outside-click for environments where either fails.
+  const closeBtn = document.getElementById("f_emojiClose");
+  if (closeBtn) closeBtn.onclick = e => { e.preventDefault(); e.stopPropagation(); setTitlePicker(false); };
+  // ESC closes the picker whenever it's open (second line of defense).
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && _titlePickerOpen) { setTitlePicker(false); } });
   document.addEventListener("click", e => {
     if (!_titlePickerOpen) return;
     const t = e.target;
