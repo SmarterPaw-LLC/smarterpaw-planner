@@ -817,6 +817,12 @@
   .rte-emoji-btn { width: 32px; height: 32px; padding: 0; font-size: 18px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
   .rte-emoji-btn:hover { background: var(--panel-2); border-color: var(--accent); }
   .rte-emoji-empty { padding: 8px; font-size: 12px; color: var(--muted); text-align: center; }
+  /* Shared color-swatch popover for highlight + text-color buttons. Matches the emoji popover geometry/shadow. */
+  .rte-color-pop { position: fixed; z-index: 10001; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.45); display: grid; grid-template-columns: repeat(7, 22px); gap: 4px; }
+  .rte-color-sw { width: 22px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  .rte-color-sw:hover { border-color: var(--text); transform: scale(1.1); }
+  .rte-color-clear { grid-column: 1 / -1; padding: 4px 6px; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .rte-color-clear:hover { color: var(--text); border-color: var(--text); }
   /* Icon consistency: replace the native date picker indicator with the same 📅 glyph the subtask icons use. */
   input[type="date"]::-webkit-calendar-picker-indicator {
     color: transparent;
@@ -1613,8 +1619,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.80";
+const VERSION = "3.81";
 const CHANGELOG = [
+  "v3.81 — Rich-text color + title-picker toggle fix: (1) 🖍 Highlight is now a 21-swatch color picker (any color + Remove), replacing the yellow-only toggle. (2) New A̲ Text color button beside it with the same swatch picker. Both use execCommand with styleWithCSS forced on so output is <span style=\"…\">, and the note / rich-text sanitizers now preserve color + background-color style props specifically. (3) Title 😀 button toggles reliably again — handler bound in capture phase with explicit stopPropagation so it never races the outside-close handler.",
   "v3.80 — Three polishes to the v3.79 format bar + icons: (1) RTE 😀 emoji picker now shows the SAME full universe of emojis the title picker uses (search + category chips + scrollable sections), not a trimmed 60-emoji subset. (2) Title emoji button toggles on repeated click again — moved to mousedown so the outside-close handler sees the post-toggle state. (3) Icon consistency pass: all native <input type=\"date\"> calendar glyphs now render as 📅, matching the subtask date icon.",
   "v3.79 — Shared rich-text format bar across every long-text editor in the modal (custom rich-text fields, each Note row, each expanded Email body). New buttons on the bar: 🖍 Highlight (toggles yellow <mark> on the selected text, same wrapper the floating ✨ pill produces) and 😀 Emoji (opens a 60-emoji popover with search; inserts at the caret, keyboard-friendly). The custom-field RTE was refactored onto the shared builder, so all three editors stay in lockstep forever.",
   "v3.78 — Subtask due-date label turns red + bold under the 📅 icon when the date is past today and the subtask is still unchecked (checking it off clears the overdue styling). Clicking 👤 now opens the owner dropdown in one click (showPicker on the native select), matching the 📅 single-click behavior.",
@@ -2505,6 +2512,25 @@ function htmlToPlainText(html) {
 // Sanitize rich-text HTML before saving. Removes scripts/styles/iframes and strips any `on*=` event-handler
 // attributes. Also removes `style` attributes to keep stored content theme-safe. Permissive otherwise so paste
 // from Docs/Word still comes through as formatted content.
+// Keep only safe CSS properties (color, background-color) from a style attribute. Values must be hex / rgb(a) / named,
+// no url() or expressions. Returns a sanitized style string (may be empty).
+function _safeStyle(raw) {
+  if (!raw) return "";
+  const safe = ["color", "background-color"];
+  const ok = /^(#[0-9a-f]{3,8}|rgb\s*\([^)]+\)|rgba\s*\([^)]+\)|[a-z]+(?:-[a-z]+)*)$/i;
+  const parts = String(raw).split(";").map(s => s.trim()).filter(Boolean);
+  const kept = [];
+  for (const p of parts) {
+    const i = p.indexOf(":"); if (i < 0) continue;
+    const prop = p.slice(0, i).trim().toLowerCase();
+    const val = p.slice(i + 1).trim();
+    if (!safe.includes(prop)) continue;
+    if (!ok.test(val)) continue;
+    if (/url\s*\(/i.test(val) || /expression\s*\(/i.test(val)) continue;
+    kept.push(prop + ":" + val);
+  }
+  return kept.join("; ");
+}
 function sanitizeRichText(html) {
   if (!html) return "";
   const doc = new DOMParser().parseFromString("<div id=root>" + html + "</div>", "text/html");
@@ -2517,7 +2543,11 @@ function sanitizeRichText(html) {
         if (DROP.has(tag)) { ch.remove(); return; }
         [...ch.attributes].forEach(a => {
           const n = a.name.toLowerCase();
-          if (n.startsWith("on") || n === "style" || n === "class" || n === "srcset") ch.removeAttribute(a.name);
+          if (n.startsWith("on") || n === "class" || n === "srcset") ch.removeAttribute(a.name);
+          else if (n === "style") {
+            const safe = _safeStyle(a.value);
+            if (safe) ch.setAttribute("style", safe); else ch.removeAttribute("style");
+          }
           if (n === "href" && /^(javascript|data|vbscript):/i.test(a.value)) ch.removeAttribute(a.name);
           if (n === "src" && /^(javascript|data|vbscript):/i.test(a.value)) ch.removeAttribute(a.name);
         });
@@ -3936,6 +3966,11 @@ function sanitizeNotes(html) {
       const n = a.name.toLowerCase();
       if (el.tagName === "A" && n === "href") return;
       if (n === "class" && (el.tagName === "DIV" || el.tagName === "SPAN") && NOTE_CLASS_OK.test(a.value)) return;
+      if (n === "style") {
+        const safe = _safeStyle(a.value);
+        if (safe) { el.setAttribute("style", safe); } else { el.removeAttribute("style"); }
+        return;
+      }
       el.removeAttribute(a.name);
     });
     if (el.tagName === "A") { const href = el.getAttribute("href") || ""; if (!/^(https?:|mailto:)/i.test(href)) el.removeAttribute("href"); else { el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener noreferrer"); } }
@@ -7641,6 +7676,36 @@ function _rteOpenEmojiPop(anchor, onPick) {
     pop._handler = h;
   }, 0);
 }
+// Shared color swatch popover for highlight + text-color picks. onPick receives the chosen CSS color (or "" to clear).
+const RTE_COLORS = ["#ffeb3b","#ffc107","#ff9800","#f44336","#e91e63","#9c27b0","#673ab7","#3f51b5","#2196f3","#03a9f4","#00bcd4","#009688","#4caf50","#8bc34a","#cddc39","#795548","#607d8b","#9e9e9e","#000000","#ffffff","#6d5dfc"];
+let _rteColorPop = null;
+function _rteCloseColorPop() { if (_rteColorPop) { _rteColorPop.remove(); _rteColorPop = null; } }
+function _rteOpenColorPop(anchor, onPick, clearLabel) {
+  _rteCloseColorPop();
+  const pop = document.createElement("div"); pop.className = "rte-color-pop";
+  pop.addEventListener("mousedown", e => e.preventDefault());
+  RTE_COLORS.forEach(c => {
+    const sw = document.createElement("button"); sw.type = "button"; sw.className = "rte-color-sw"; sw.style.background = c; sw.title = c;
+    sw.addEventListener("mousedown", e => e.preventDefault());
+    sw.onclick = () => { onPick(c); _rteCloseColorPop(); };
+    pop.appendChild(sw);
+  });
+  const clr = document.createElement("button"); clr.type = "button"; clr.className = "rte-color-clear"; clr.textContent = clearLabel || "Remove";
+  clr.addEventListener("mousedown", e => e.preventDefault());
+  clr.onclick = () => { onPick(""); _rteCloseColorPop(); };
+  pop.appendChild(clr);
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  const w = 7 * 22 + 6 * 4 + 16;
+  pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
+  pop.style.top = (r.bottom + 4) + "px";
+  _rteColorPop = pop;
+  setTimeout(() => {
+    const h = ev => { if (!pop.contains(ev.target) && ev.target !== anchor) { _rteCloseColorPop(); document.removeEventListener("mousedown", h, true); } };
+    document.addEventListener("mousedown", h, true);
+    pop._handler = h;
+  }, 0);
+}
 // Toggle <mark> on the current selection inside `editor`. Wrap if not highlighted; unwrap if the selection sits
 // entirely inside a single <mark>. Call syncFn after so the caller can persist / sanitize.
 function rteToggleHighlight(editor, syncFn) {
@@ -7704,8 +7769,48 @@ function buildRteToolbar(editor, syncFn, opts) {
   const olBtn = mkBtn("1.", "Numbered list", () => exec("insertOrderedList"));
   tb.appendChild(ulBtn); tb.appendChild(olBtn);
   tb.appendChild(sep());
-  // Highlight (same yellow <mark> wrapping used by the floating ✨ pill) and emoji insertion.
-  const hlBtn = mkBtn("🖍", "Highlight selection (toggle)", () => { rteToggleHighlight(editor, syncFn); });
+  // Highlight color (any swatch) and text color (any swatch). Default click opens a swatch popover; a long-press
+  // keyboard shortcut would be nice later but the popover is fast enough. Clicking "Remove" strips the color.
+  // styleWithCSS forces execCommand to produce <span style="color:…"> instead of legacy <font color=…>, which keeps
+  // the output compatible with the note/rich-text sanitizers (they preserve style color + background-color only).
+  const applyHilite = color => {
+    editor.focus();
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+    try { document.execCommand("styleWithCSS", false, true); } catch (e) {}
+    try {
+      if (!color) { document.execCommand("hiliteColor", false, "transparent"); document.execCommand("backColor", false, "transparent"); }
+      else document.execCommand("hiliteColor", false, color);
+    } catch (e) {}
+    if (typeof syncFn === "function") syncFn();
+  };
+  const applyFore = color => {
+    editor.focus();
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+    try { document.execCommand("styleWithCSS", false, true); } catch (e) {}
+    try {
+      if (!color) document.execCommand("foreColor", false, "currentColor");
+      else document.execCommand("foreColor", false, color);
+    } catch (e) {}
+    if (typeof syncFn === "function") syncFn();
+  };
+  const hlBtn = mkBtn("🖍", "Highlight color (pick a swatch)", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const sel = window.getSelection(); let savedRange = null;
+    if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+    _rteOpenColorPop(hlBtn, color => {
+      if (savedRange) { editor.focus(); const s = window.getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
+      applyHilite(color);
+    }, "Remove highlight");
+  });
+  const fcBtn = mkBtn("<span style='text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px'>A</span>", "Text color (pick a swatch)", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const sel = window.getSelection(); let savedRange = null;
+    if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+    _rteOpenColorPop(fcBtn, color => {
+      if (savedRange) { editor.focus(); const s = window.getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
+      applyFore(color);
+    }, "Default color");
+  });
   const emBtn = mkBtn("😀", "Insert emoji", (e) => {
     e.preventDefault(); e.stopPropagation();
     // Save selection so the emoji lands where the caret was before the button stole focus.
@@ -7718,7 +7823,7 @@ function buildRteToolbar(editor, syncFn, opts) {
       if (typeof syncFn === "function") syncFn();
     });
   });
-  tb.appendChild(hlBtn); tb.appendChild(emBtn);
+  tb.appendChild(hlBtn); tb.appendChild(fcBtn); tb.appendChild(emBtn);
   tb.appendChild(sep());
   tb.appendChild(mkBtn("🔗", "Insert / change link", () => {
     const url = window.prompt("Link URL (leave blank to remove):", "");
@@ -9091,20 +9196,23 @@ async function init() {
     const pos = s + em.length; t.setSelectionRange(pos, pos); t.focus();
     autoResizeTitle();
   };
-  // Toggle. mousedown fires before any click bubble, so flipping hidden here guarantees the outside-click
-  // handler (which checks .hidden on click) sees the new state and doesn't immediately re-hide what we just opened
-  // or re-open what we just closed.
-  document.getElementById("f_titleEmoji").addEventListener("mousedown", e => {
+  // Toggle. Any click INSIDE either the button or the picker is handled by the button's own click handler (or is
+  // the user interacting with the picker) — the document-level outside-click handler early-returns for those via
+  // `closest(...)`. The button handler flips hidden unconditionally; stopPropagation keeps the outside handler
+  // from also firing on the same click.
+  const titleEmojiBtn = document.getElementById("f_titleEmoji");
+  titleEmojiBtn.addEventListener("click", e => {
     e.preventDefault(); e.stopPropagation();
     buildPicker();
     const willShow = pickerEl.hidden;
     pickerEl.hidden = !willShow;
     if (willShow) { searchEl.value = ""; renderEmojiBody(""); setTimeout(() => searchEl.focus(), 20); }
-  });
-  document.addEventListener("mousedown", e => {
+  }, true);
+  document.addEventListener("click", e => {
     if (pickerEl.hidden) return;
-    if (pickerEl.contains(e.target)) return;
-    if (e.target.closest && e.target.closest("#f_titleEmoji")) return;
+    const t = e.target;
+    if (pickerEl.contains(t)) return;
+    if (t.closest && (t.closest("#f_titleEmoji") || t.closest("#f_emojiPicker"))) return;
     pickerEl.hidden = true;
   });
   titleEl.addEventListener("paste", e => {
