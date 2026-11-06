@@ -804,14 +804,26 @@
   .rte-tb-compact { padding: 3px 5px; gap: 0; }
   .rte-tb-compact .rte-tb-btn { min-width: 24px; height: 22px; padding: 0 4px; font-size: 11px; }
   .rte-tb-compact .rte-tb-sep { height: 14px; margin: 0 2px; }
-  /* Reusable emoji popover anchored under the 😀 toolbar button. */
-  .rte-emoji-pop { position: fixed; z-index: 10001; width: 260px; max-height: 300px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; box-shadow: 0 8px 22px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 6px; }
-  .rte-emoji-search { padding: 5px 8px; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; outline: none; }
+  /* Reusable full emoji popover (same universe of emojis the title picker uses — search, category chips, scrollable sections). */
+  .rte-emoji-pop { position: fixed; z-index: 10001; width: 320px; max-height: 360px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 6px; }
+  .rte-emoji-search { padding: 6px 8px; font-size: 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; outline: none; }
   .rte-emoji-search:focus { border-color: var(--accent); }
-  .rte-emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 240px; overflow-y: auto; }
-  .rte-emoji-btn { width: 28px; height: 28px; padding: 0; font-size: 18px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+  .rte-emoji-cats { display: flex; gap: 2px; flex-wrap: wrap; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .rte-emoji-cat-btn { flex: 1 0 auto; height: 24px; min-width: 28px; padding: 0 4px; font-size: 14px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+  .rte-emoji-cat-btn:hover { background: var(--panel-2); border-color: var(--line); }
+  .rte-emoji-body { flex: 1; overflow-y: auto; min-height: 0; padding-right: 2px; }
+  .rte-emoji-cat-label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 6px 0 2px; }
+  .rte-emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+  .rte-emoji-btn { width: 32px; height: 32px; padding: 0; font-size: 18px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
   .rte-emoji-btn:hover { background: var(--panel-2); border-color: var(--accent); }
-  .rte-emoji-empty { grid-column: 1 / -1; padding: 8px; font-size: 12px; color: var(--muted); text-align: center; }
+  .rte-emoji-empty { padding: 8px; font-size: 12px; color: var(--muted); text-align: center; }
+  /* Icon consistency: replace the native date picker indicator with the same 📅 glyph the subtask icons use. */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    color: transparent;
+    opacity: 0.9;
+    background: transparent url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text x='0' y='13' font-size='13'>📅</text></svg>") no-repeat center / 14px 14px;
+    cursor: pointer;
+  }
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .field-link-open:hover { border-color: var(--accent); background: rgba(109,93,252,.06); }
   .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
@@ -1601,8 +1613,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.79";
+const VERSION = "3.80";
 const CHANGELOG = [
+  "v3.80 — Three polishes to the v3.79 format bar + icons: (1) RTE 😀 emoji picker now shows the SAME full universe of emojis the title picker uses (search + category chips + scrollable sections), not a trimmed 60-emoji subset. (2) Title emoji button toggles on repeated click again — moved to mousedown so the outside-close handler sees the post-toggle state. (3) Icon consistency pass: all native <input type=\"date\"> calendar glyphs now render as 📅, matching the subtask date icon.",
   "v3.79 — Shared rich-text format bar across every long-text editor in the modal (custom rich-text fields, each Note row, each expanded Email body). New buttons on the bar: 🖍 Highlight (toggles yellow <mark> on the selected text, same wrapper the floating ✨ pill produces) and 😀 Emoji (opens a 60-emoji popover with search; inserts at the caret, keyboard-friendly). The custom-field RTE was refactored onto the shared builder, so all three editors stay in lockstep forever.",
   "v3.78 — Subtask due-date label turns red + bold under the 📅 icon when the date is past today and the subtask is still unchecked (checking it off clears the overdue styling). Clicking 👤 now opens the owner dropdown in one click (showPicker on the native select), matching the 📅 single-click behavior.",
   "v3.77 — Subtask rows: 👤 and 📅 icons show the value as small text UNDER the icon (owner name, M/D date) and open a popover attached to the icon when clicked — no more full-width panel below the row, no wasted vertical space on every selection. The 📅 popover auto-opens the native date picker. The ⋯ expand toggle now lives in the bottom-right corner of the textarea itself (absolutely positioned inside it), so the empty pill in its own column is gone — the icon only appears when text overflows three lines.",
@@ -7572,34 +7585,54 @@ async function handleCoverFile(file) {
 }
 // Reusable rich-text toolbar. Any long-text editor (custom rich fields, modal notes, modal email bodies) attaches
 // this toolbar so the format bar is the same everywhere. Highlight and emoji live here so they're never a mystery.
-const RTE_COMMON_EMOJIS = ["😀","😂","😊","😉","😍","🤔","😎","😢","😭","😡","🙄","👍","👎","👏","🙌","👀","💪","🙏","🎯","✅","❌","⚠️","🔥","⭐","✨","💡","📌","📝","📅","🕒","🚀","💰","💸","📈","📉","📊","🎉","🎁","☕","🍕","🐾","🐶","🐱","❤️","💔","🧠","🔗","📧","📞","🏠","🎨","🧵","🧪","🧹","🪄","🫶","🧃","🛒","💬","💭"];
 let _rteEmojiPop = null;
 function _rteCloseEmojiPop() { if (_rteEmojiPop) { _rteEmojiPop.remove(); _rteEmojiPop = null; } }
+// Full emoji picker — reuses the same window._EMOJI_DATA that powers the title emoji picker so the RTE toolbar
+// picker is NEVER a trimmed-down copy of the title one. Same categories, same search, same universe of emojis.
 function _rteOpenEmojiPop(anchor, onPick) {
   _rteCloseEmojiPop();
+  const data = window._EMOJI_DATA || {};
   const pop = document.createElement("div"); pop.className = "rte-emoji-pop";
   pop.addEventListener("mousedown", e => e.preventDefault());
   const search = document.createElement("input"); search.type = "text"; search.className = "rte-emoji-search"; search.placeholder = "Search…";
-  const grid = document.createElement("div"); grid.className = "rte-emoji-grid";
-  const build = (filter) => {
-    grid.innerHTML = "";
-    const q = (filter || "").trim().toLowerCase();
-    const list = q ? RTE_COMMON_EMOJIS.filter(em => em.includes(q)) : RTE_COMMON_EMOJIS;
-    list.forEach(em => {
-      const b = document.createElement("button"); b.type = "button"; b.className = "rte-emoji-btn"; b.textContent = em; b.title = em;
-      b.addEventListener("mousedown", e => e.preventDefault());
-      b.onclick = () => { onPick(em); _rteCloseEmojiPop(); };
-      grid.appendChild(b);
-    });
-    if (!list.length) { const e = document.createElement("div"); e.className = "rte-emoji-empty"; e.textContent = "No matches."; grid.appendChild(e); }
+  const cats = document.createElement("div"); cats.className = "rte-emoji-cats";
+  const body = document.createElement("div"); body.className = "rte-emoji-body";
+  const catKey = cat => "rte-emoji-cat-" + cat.split(" ")[0].charCodeAt(0);
+  const mkBtn = em => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "rte-emoji-btn"; b.textContent = em; b.title = em;
+    b.addEventListener("mousedown", e => e.preventDefault());
+    b.onclick = () => { onPick(em); _rteCloseEmojiPop(); };
+    return b;
   };
-  search.addEventListener("input", () => build(search.value));
-  pop.appendChild(search); pop.appendChild(grid);
+  const render = (filter) => {
+    body.innerHTML = "";
+    const q = (filter || "").trim().toLowerCase();
+    Object.keys(data).forEach(cat => {
+      const items = data[cat].filter(([em, kw]) => !q || kw.includes(q) || em === q);
+      if (!items.length) return;
+      const hdr = document.createElement("div"); hdr.className = "rte-emoji-cat-label"; hdr.id = catKey(cat); hdr.textContent = cat;
+      body.appendChild(hdr);
+      const grid = document.createElement("div"); grid.className = "rte-emoji-grid";
+      items.forEach(([em]) => grid.appendChild(mkBtn(em)));
+      body.appendChild(grid);
+    });
+    if (!body.childNodes.length) { const e = document.createElement("div"); e.className = "rte-emoji-empty"; e.textContent = "No matches."; body.appendChild(e); }
+  };
+  Object.keys(data).forEach(cat => {
+    const glyph = cat.split(" ")[0];
+    const b = document.createElement("button"); b.type = "button"; b.className = "rte-emoji-cat-btn"; b.textContent = glyph; b.title = cat.slice(glyph.length + 1);
+    b.addEventListener("mousedown", e => e.preventDefault());
+    b.onclick = () => { const t = body.querySelector("#" + catKey(cat)); if (t) t.scrollIntoView({ block: "start" }); };
+    cats.appendChild(b);
+  });
+  search.addEventListener("input", () => render(search.value));
+  pop.appendChild(search); pop.appendChild(cats); pop.appendChild(body);
   document.body.appendChild(pop);
   const r = anchor.getBoundingClientRect();
-  const left = Math.max(8, Math.min(window.innerWidth - 268, r.left));
+  const w = 320;
+  const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left));
   pop.style.left = left + "px"; pop.style.top = (r.bottom + 4) + "px";
-  build("");
+  render("");
   setTimeout(() => search.focus(), 0);
   _rteEmojiPop = pop;
   setTimeout(() => {
@@ -9013,6 +9046,8 @@ async function init() {
     "❤️ Symbols": [["❤️","red heart"],["🧡","orange heart"],["💛","yellow heart"],["💚","green heart"],["💙","blue heart"],["💜","purple heart"],["🖤","black heart"],["🤍","white heart"],["🤎","brown heart"],["💔","broken heart"],["❣️","heart exclamation"],["💕","two hearts"],["💞","revolving hearts"],["💓","beating heart"],["💗","growing heart"],["💖","sparkling heart"],["💘","cupid heart arrow"],["💝","heart gift"],["💟","heart decoration"],["☮️","peace"],["✝️","cross"],["☪️","star crescent"],["🕉️","om"],["☸️","dharma"],["✡️","star of david"],["🔯","dotted star"],["🕎","menorah"],["☯️","yin yang"],["☦️","orthodox cross"],["🛐","worship"],["⛎","ophiuchus"],["♈","aries"],["♉","taurus"],["♊","gemini"],["♋","cancer"],["♌","leo"],["♍","virgo"],["♎","libra"],["♏","scorpio"],["♐","sagittarius"],["♑","capricorn"],["♒","aquarius"],["♓","pisces"],["🆔","id"],["⚛️","atom"],["🉑","accept"],["☢️","radioactive"],["☣️","biohazard"],["📴","phone off"],["📳","vibration"],["🈶","not free"],["🈚","free"],["🈸","application"],["🈺","open for business"],["🈷️","monthly amount"],["✴️","8 point star"],["🆚","versus"],["💮","white flower"],["🉐","bargain"],["㊙️","secret"],["㊗️","congrats"],["🈴","passing"],["🈵","no vacancy"],["🈹","discount"],["🈲","prohibited"],["🅰️","a blood"],["🅱️","b blood"],["🆎","ab blood"],["🆑","cl"],["🅾️","o blood"],["🆘","sos"],["❌","cross x"],["⭕","circle o"],["🛑","stop"],["⛔","no entry"],["📛","name badge"],["🚫","prohibited"],["💯","hundred"],["💢","anger"],["♨️","hot spring"],["🚷","no pedestrians"],["🚯","no littering"],["🚳","no bikes"],["🚱","non potable"],["🔞","no under 18"],["📵","no phones"],["🚭","no smoking"],["❗","exclamation"],["❕","white exclamation"],["❓","question"],["❔","white question"],["‼️","double exclamation"],["⁉️","exclamation question"],["🔅","dim"],["🔆","bright"],["〽️","alternation"],["⚠️","warning"],["🚸","children crossing"],["🔱","trident"],["⚜️","fleur"],["🔰","beginner"],["♻️","recycle"],["✅","check green"],["🈯","reserved"],["💹","chart yen up"],["❇️","sparkle"],["✳️","8 spoked asterisk"],["❎","cross button"],["🌐","globe network"],["💠","diamond dot"],["Ⓜ️","m circle"],["🌀","cyclone"],["💤","zzz sleep"],["🏧","atm"],["🚾","wc"],["♿","wheelchair"],["🅿️","parking"],["🈳","vacancy"],["🈂️","service"],["🛂","passport"],["🛃","customs"],["🛄","baggage claim"],["🛅","left luggage"],["🚹","men"],["🚺","women"],["🚼","baby"],["🚻","restroom"],["🚮","litter bin"],["🎦","cinema"],["📶","signal"],["🈁","here"],["🔣","input symbols"],["ℹ️","info"],["🔤","abc"],["🔡","abcd lower"],["🔠","abcd upper"],["🆖","ng"],["🆗","ok"],["🆙","up"],["🆒","cool"],["🆕","new"],["🆓","free"],["0️⃣","zero"],["1️⃣","one"],["2️⃣","two"],["3️⃣","three"],["4️⃣","four"],["5️⃣","five"],["6️⃣","six"],["7️⃣","seven"],["8️⃣","eight"],["9️⃣","nine"],["🔟","ten"],["🔢","numbers"],["#️⃣","hash"],["*️⃣","asterisk"],["⏏️","eject"],["▶️","play"],["⏸️","pause"],["⏯️","play pause"],["⏹️","stop"],["⏺️","record"],["⏭️","next"],["⏮️","previous"],["⏩","fast forward"],["⏪","rewind"],["⏫","fast up"],["⏬","fast down"],["◀️","reverse"],["🔼","up small"],["🔽","down small"],["➡️","right arrow"],["⬅️","left arrow"],["⬆️","up arrow"],["⬇️","down arrow"],["↗️","up right"],["↘️","down right"],["↙️","down left"],["↖️","up left"],["↕️","up down"],["↔️","left right"],["↪️","right hook"],["↩️","left hook"],["⤴️","curve up"],["⤵️","curve down"],["🔀","shuffle"],["🔁","repeat"],["🔂","repeat one"],["🔄","refresh"],["🔃","clockwise"],["🎵","music note"],["🎶","music notes"],["➕","plus"],["➖","minus"],["➗","divide"],["✖️","multiply"],["🟰","equals"],["♾️","infinity"],["💲","dollar"],["💱","currency exchange"],["™️","trademark"],["©️","copyright"],["®️","registered"],["👁️‍🗨️","eye speech"],["🔚","end"],["🔙","back"],["🔛","on arrow"],["🔝","top"],["🔜","soon"],["〰️","wavy dash"],["➰","curly loop"],["➿","double curly"],["✔️","check heavy"],["☑️","ballot check"],["🔘","radio"],["🔴","red circle"],["🟠","orange circle"],["🟡","yellow circle"],["🟢","green circle"],["🔵","blue circle"],["🟣","purple circle"],["⚫","black circle"],["⚪","white circle"],["🟤","brown circle"],["🔺","red triangle up"],["🔻","red triangle down"],["🔸","small orange diamond"],["🔹","small blue diamond"],["🔶","large orange diamond"],["🔷","large blue diamond"],["🔳","white square button"],["🔲","black square button"],["▪️","black small square"],["▫️","white small square"],["◾","black medium small"],["◽","white medium small"],["◼️","black medium"],["◻️","white medium"],["🟥","red square"],["🟧","orange square"],["🟨","yellow square"],["🟩","green square"],["🟦","blue square"],["🟪","purple square"],["⬛","black large square"],["⬜","white large square"],["🟫","brown square"],["🔈","speaker"],["🔇","muted"],["🔉","speaker soft"],["🔊","speaker loud"],["🔔","bell"],["🔕","no bell"],["📣","megaphone"],["📢","loudspeaker"],["👁️‍🗨️","eye speech"],["💬","speech bubble"],["💭","thought bubble"],["🗯️","angry bubble"],["♠️","spades"],["♣️","clubs"],["♥️","hearts"],["♦️","diamonds"],["🃏","joker"],["🎴","japanese card"],["🀄","mahjong"],["🕐","1 oclock"],["🕑","2 oclock"],["🕒","3 oclock"],["🕓","4 oclock"],["🕔","5 oclock"],["🕕","6 oclock"],["🕖","7 oclock"],["🕗","8 oclock"],["🕘","9 oclock"],["🕙","10 oclock"],["🕚","11 oclock"],["🕛","12 oclock"]],
     "🏳️ Flags": [["🏳️","white flag"],["🏴","black flag"],["🏁","chequered"],["🚩","triangular"],["🏳️‍🌈","rainbow pride"],["🏳️‍⚧️","trans"],["🏴‍☠️","pirate"],["🇺🇸","usa"],["🇬🇧","uk"],["🇨🇦","canada"],["🇦🇺","australia"],["🇲🇽","mexico"],["🇩🇪","germany"],["🇫🇷","france"],["🇮🇹","italy"],["🇪🇸","spain"],["🇯🇵","japan"],["🇨🇳","china"],["🇰🇷","korea"],["🇮🇳","india"],["🇧🇷","brazil"],["🇷🇺","russia"],["🇿🇦","south africa"],["🇳🇱","netherlands"],["🇸🇪","sweden"],["🇳🇴","norway"],["🇩🇰","denmark"],["🇫🇮","finland"],["🇮🇪","ireland"],["🇨🇭","switzerland"],["🇦🇹","austria"],["🇧🇪","belgium"],["🇵🇹","portugal"],["🇬🇷","greece"],["🇹🇷","turkey"],["🇮🇱","israel"],["🇦🇪","uae"],["🇸🇦","saudi arabia"],["🇸🇬","singapore"],["🇹🇭","thailand"],["🇵🇭","philippines"],["🇮🇩","indonesia"],["🇲🇾","malaysia"],["🇻🇳","vietnam"],["🇳🇿","new zealand"],["🇦🇷","argentina"],["🇨🇴","colombia"],["🇨🇱","chile"],["🇵🇪","peru"],["🇻🇪","venezuela"],["🇺🇾","uruguay"]],
   };
+  // Expose for reuse by any long-text emoji button (RTE toolbar in notes, email bodies, custom rich-text fields).
+  window._EMOJI_DATA = EMOJI_DATA;
   const pickerEl = document.getElementById("f_emojiPicker");
   const bodyEl = document.getElementById("f_emojiBody");
   const catsEl = document.getElementById("f_emojiCategories");
@@ -9056,14 +9091,20 @@ async function init() {
     const pos = s + em.length; t.setSelectionRange(pos, pos); t.focus();
     autoResizeTitle();
   };
-  document.getElementById("f_titleEmoji").onclick = e => {
-    e.stopPropagation(); buildPicker();
-    pickerEl.hidden = !pickerEl.hidden;
-    if (!pickerEl.hidden) { searchEl.value = ""; renderEmojiBody(""); setTimeout(() => searchEl.focus(), 20); }
-  };
-  document.addEventListener("click", e => {
+  // Toggle. mousedown fires before any click bubble, so flipping hidden here guarantees the outside-click
+  // handler (which checks .hidden on click) sees the new state and doesn't immediately re-hide what we just opened
+  // or re-open what we just closed.
+  document.getElementById("f_titleEmoji").addEventListener("mousedown", e => {
+    e.preventDefault(); e.stopPropagation();
+    buildPicker();
+    const willShow = pickerEl.hidden;
+    pickerEl.hidden = !willShow;
+    if (willShow) { searchEl.value = ""; renderEmojiBody(""); setTimeout(() => searchEl.focus(), 20); }
+  });
+  document.addEventListener("mousedown", e => {
     if (pickerEl.hidden) return;
-    if (pickerEl.contains(e.target) || e.target.id === "f_titleEmoji") return;
+    if (pickerEl.contains(e.target)) return;
+    if (e.target.closest && e.target.closest("#f_titleEmoji")) return;
     pickerEl.hidden = true;
   });
   titleEl.addEventListener("paste", e => {
