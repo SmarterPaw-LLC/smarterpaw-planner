@@ -1458,6 +1458,11 @@
       <div class="manage-list scroll-cap" id="managePromos"></div>
       <div class="hint">Add a promotion by typing it on a deliverable. Colors are assigned automatically by name.</div>
     </div>
+    <div class="manage-sec" id="manageAutologSec">
+      <span class="seclabel">Auto-log changes to notes</span>
+      <div class="hint">When you save a deliverable, any change to a checked field is appended as a single bulleted note entry authored by the current <b>You:</b> user. Skipped if no user is picked.</div>
+      <div class="manage-list" id="manageAutolog"></div>
+    </div>
     <div class="modal-actions"><div class="spacer"></div><button id="manageClose">Done</button></div>
     <div class="hint">Removing an item won't change cards that already use it — they keep the name.</div>
   </div>
@@ -1635,8 +1640,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.89";
+const VERSION = "3.90";
 const CHANGELOG = [
+  "v3.90 — Auto-log field changes to the notes feed. When you save a deliverable, any change to a watched detail field (title, brand, channel, owners, due/end dates, status, priority, promotion, sprint, custom fields) is appended as a single bulleted note entry, authored by the current You: user. Toggle individual fields on/off in Manage → 'Auto-log changes to notes'. Skipped when no You: user is set. New cards don't log (everything on them is 'new', not a change).",
   "v3.89 — Fix: Theme-channel cards (candy-stripe pattern) were collapsing to ~24px in constrained-height flex columns, hiding their own title/chips under the stripe pattern. The stripe overlay uses overflow:hidden to clip to the rounded corner; per the CSS spec, a flex item with overflow:hidden loses its implicit min-height:auto, so it shrinks past its content when the column runs out of vertical room. Added min-height:fit-content + flex-shrink:0 on all four Theme card renderers (card / planning-card / list-task / gallery-tile) so Theme cards always render at full content height.",
   "v3.88 — Removed the Close ✕ button from the title emoji picker header. With the backdrop click, ESC, and 😀 toggle all working reliably, the button was redundant visual noise.",
   "v3.87 — Title emoji picker rebuilt as a floating overlay with a full-viewport backdrop. Root cause of the lingering 'stuck' feel: every open rebuilt ~2000 emoji buttons (Chrome logged it as a 736ms click handler violation), so clicks on the 😀 button queued behind the lag and felt dead. Now the emoji grid is built once and cached, so re-opens are instant. Four ways to close: click the backdrop, the Close ✕ button (now large/red), ESC, or the 😀 button again. The picker no longer pushes other modal content down.",
@@ -2618,6 +2624,29 @@ function applyWorkspace() {
   const promoField = document.getElementById("f_promoField"); if (promoField) promoField.style.display = currentWorkspace === "innovation" ? "none" : "";
   syncSprintNavLabels();
 }
+// Auto-log to notes — when the user saves the modal, any changed field in this set is appended as a single
+// bulleted note entry authored by the current "You:" user. Defaults ON for the core detail fields; the Manage
+// overlay lets the user toggle each one. Skipped if no currentUser is set (nothing to author under).
+const AUTOLOG_LS_KEY = "planner-autolog-fields";
+const AUTOLOG_FIELD_DEFS = [
+  { key: "title",    label: "Title" },
+  { key: "brand",    label: "Brand" },
+  { key: "channel",  label: "Channel" },
+  { key: "owner",    label: "Owners" },
+  { key: "due",      label: "Due date" },
+  { key: "end",      label: "End date" },
+  { key: "status",   label: "Status" },
+  { key: "priority", label: "Priority" },
+  { key: "promo",    label: "Promotion" },
+  { key: "sprint",   label: "Sprint" },
+  { key: "customFields", label: "Custom fields" }
+];
+function loadAutologPrefs() {
+  try { const raw = localStorage.getItem(AUTOLOG_LS_KEY); if (raw) return new Set(JSON.parse(raw)); } catch (e) {}
+  return new Set(AUTOLOG_FIELD_DEFS.map(f => f.key));   // default ON for all
+}
+function saveAutologPrefs(set) { try { localStorage.setItem(AUTOLOG_LS_KEY, JSON.stringify([...set])); } catch (e) {} }
+let autologPrefs = loadAutologPrefs();
 // Innovation workspace uses YEAR buckets instead of ISO weeks. innovationYear is the center year for the
 // three nav buttons; left shifts it -1, right shifts +1, middle resets to current calendar year.
 const DEFAULT_INNOVATION_YEAR = 2027;
@@ -8273,10 +8302,21 @@ function saveModal() {
   const endShown = document.getElementById("f_endWrap").style.display !== "none";
   // Structured notes — persist entries + derive c.notes HTML snapshot for card previews. Drop empty-body rows.
   const cleanEntries = modalNoteEntries.map(e => { const o = { id: e.id || noteId(), date: e.date || ymd(new Date()), text: String(e.text || "").trim() }; if (e.author) o.author = e.author; return o; }).filter(e => e.text);
-  const notes = entriesToNotesHtml(cleanEntries);
-  if (cleanEntries.length) fields[NOTES_ENTRIES_KEY] = cleanEntries; else delete fields[NOTES_ENTRIES_KEY];
   // Stamp notes-updated when the entries changed since load.
   const existingCard = id ? cards.find(c => c.id === id) : null;
+  // Auto-log — if any watched field changed, prepend a single bulleted entry authored by the current user.
+  // Done BEFORE building the notes HTML so the new entry gets included in the persisted snapshot.
+  const _newData = { title,
+    brand: document.getElementById("f_brand").value,
+    channel: [...modalChannels].join(", "),
+    owner: [...modalOwners].join(", "),
+    due: document.getElementById("f_due").value,
+    end: endShown ? document.getElementById("f_end").value : "",
+    status: document.getElementById("f_status").value };
+  const _autoEntry = buildAutologEntry(existingCard, _newData, fields, modalSubs);
+  if (_autoEntry) cleanEntries.unshift(_autoEntry);
+  const notes = entriesToNotesHtml(cleanEntries);
+  if (cleanEntries.length) fields[NOTES_ENTRIES_KEY] = cleanEntries; else delete fields[NOTES_ENTRIES_KEY];
   const prevEntries = existingCard ? JSON.stringify(cardNoteEntries(existingCard).map(e => ({ date: e.date, text: e.text }))) : "[]";
   const nowEntries = JSON.stringify(cleanEntries.map(e => ({ date: e.date, text: e.text })));
   const prevStamp = existingCard && existingCard.fields && existingCard.fields[NOTES_UPDATED_KEY];
@@ -8366,6 +8406,62 @@ function renderManage() {
   fillManage("managePeople", peopleList, "person");
   updateFieldsSummary();
   fillManagePromos();
+  renderAutologSettings();
+}
+// Render the Auto-log settings — one checkbox per trackable field, plus the custom-fields catch-all. Changes
+// persist to localStorage via autologPrefs; no DB round-trip needed since this is a per-user UI preference.
+function renderAutologSettings() {
+  const box = document.getElementById("manageAutolog"); if (!box) return;
+  box.innerHTML = "";
+  AUTOLOG_FIELD_DEFS.forEach(def => {
+    const row = document.createElement("label"); row.className = "autolog-row"; row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = autologPrefs.has(def.key);
+    cb.onchange = () => {
+      if (cb.checked) autologPrefs.add(def.key); else autologPrefs.delete(def.key);
+      saveAutologPrefs(autologPrefs);
+    };
+    const name = document.createElement("span"); name.textContent = def.label; name.style.cssText = "font-size:13px;";
+    row.appendChild(cb); row.appendChild(name);
+    box.appendChild(row);
+  });
+}
+// Build a "field: old → new" bullet list for every autolog-enabled field that changed between the prior saved
+// card and the new values. Returns null when nothing meaningful changed. Values are stringified compactly.
+function buildAutologEntry(existingCard, newData, newFields, newSubs) {
+  if (!existingCard) return null;                     // never for brand-new cards
+  if (!currentUser) return null;                      // need an author
+  if (!autologPrefs || !autologPrefs.size) return null;
+  const prevFields = existingCard.fields || {};
+  const showVal = v => { if (v === null || v === undefined || v === "") return "—"; return String(v); };
+  const diffs = [];
+  const checkScalar = (key, label, prev, next) => {
+    if (!autologPrefs.has(key)) return;
+    const a = prev == null ? "" : String(prev), b = next == null ? "" : String(next);
+    if (a !== b) diffs.push(`${label}: ${showVal(a)} → ${showVal(b)}`);
+  };
+  checkScalar("title",   "Title",    existingCard.title,   newData.title);
+  checkScalar("brand",   "Brand",    existingCard.brand,   newData.brand);
+  checkScalar("channel", "Channel",  existingCard.channel, newData.channel);
+  checkScalar("owner",   "Owners",   existingCard.owner,   newData.owner);
+  checkScalar("due",     "Due date", existingCard.due,     newData.due);
+  checkScalar("end",     "End date", existingCard.end,     newData.end);
+  checkScalar("status",  "Status",   existingCard.status,  newData.status);
+  checkScalar("priority","Priority", prevFields[PRIORITY_KEY] || "", newFields[PRIORITY_KEY] || "");
+  checkScalar("promo",   "Promotion",prevFields[PROMO_KEY]    || "", newFields[PROMO_KEY]    || "");
+  checkScalar("sprint",  "Sprint",   prevFields[SPRINT_KEY]   || "", newFields[SPRINT_KEY]   || "");
+  if (autologPrefs.has("customFields")) {
+    const skip = new Set([PRIORITY_KEY, PROMO_KEY, SPRINT_KEY, SUBTASKS_KEY, EMAILS_KEY, SPRINTHIST_KEY, HIST_SPRINTS_KEY, NOTES_UPDATED_KEY, LINKS_KEY, COVER_KEY, GALLERY_KEY, NOTES_ENTRIES_KEY, ALERT_KEY, ALERT_NOTE_KEY, ALERT_OWNER_KEY, ALERT_DATE_KEY, THEME_BAR_KEY, THEME_BAR2_KEY, THEME_BAR_DIR_KEY, THEME_C1_KEY, THEME_C2_KEY]);
+    const keys = new Set([...Object.keys(prevFields), ...Object.keys(newFields)].filter(k => !skip.has(k) && !k.startsWith("__")));
+    keys.forEach(k => {
+      const a = prevFields[k], b = newFields[k];
+      const av = Array.isArray(a) ? a.join(", ") : (a == null ? "" : String(a));
+      const bv = Array.isArray(b) ? b.join(", ") : (b == null ? "" : String(b));
+      if (av !== bv) diffs.push(`${k}: ${showVal(av)} → ${showVal(bv)}`);
+    });
+  }
+  if (!diffs.length) return null;
+  const html = "<ul>" + diffs.map(d => `<li>${d.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</li>`).join("") + "</ul>";
+  return { id: noteId(), date: ymd(new Date()), text: html, author: currentUser };
 }
 function updateFieldsSummary() {
   const el = document.getElementById("fieldsSummary"); if (!el) return;
