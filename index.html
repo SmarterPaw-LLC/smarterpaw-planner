@@ -1458,11 +1458,6 @@
       <div class="manage-list scroll-cap" id="managePromos"></div>
       <div class="hint">Add a promotion by typing it on a deliverable. Colors are assigned automatically by name.</div>
     </div>
-    <div class="manage-sec" id="manageAutologSec">
-      <span class="seclabel">Auto-log changes to notes</span>
-      <div class="hint">When you save a deliverable, any change to a checked field is appended as a single bulleted note entry authored by the current <b>You:</b> user. Skipped if no user is picked.</div>
-      <div class="manage-list" id="manageAutolog"></div>
-    </div>
     <div class="modal-actions"><div class="spacer"></div><button id="manageClose">Done</button></div>
     <div class="hint">Removing an item won't change cards that already use it — they keep the name.</div>
   </div>
@@ -1541,6 +1536,12 @@
       <div class="field" style="margin-bottom:0"><label for="settingsInnovStart">Start year (hide planning columns before this)</label>
         <input type="number" id="settingsInnovStart" min="2000" max="2100" step="1" style="width:120px" />
       </div>
+    </div>
+    <div class="manage-sec" id="settingsAutologSec">
+      <span class="seclabel">Auto-log changes to notes <span class="menu-sec-hint">this browser</span></span>
+      <div class="hint">When you save a deliverable, any change to a checked field is appended as a single bulleted note entry authored by the current <b>You:</b> user. Skipped if no user is picked.</div>
+      <div class="manage-list" id="settingsAutolog"></div>
+      <div style="margin-top:8px"><button type="button" id="settingsAutologOpenFields" class="ghost" style="width:100%">✎ Manage custom field logging…</button></div>
     </div>
     <h3 style="margin:16px 0 6px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px">Data &amp; backup</h3>
     <div class="field"><button id="exportJsonBtn" style="width:100%">⬇ Export backup (.json)</button></div>
@@ -1640,8 +1641,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.90";
+const VERSION = "3.91";
 const CHANGELOG = [
+  "v3.91 — Auto-log settings moved from Manage to the ⋯ Settings menu (where per-browser prefs belong). Custom-field logging is now per-field: each custom field in the Custom fields editor has its own 'Log changes to this field in notes' checkbox, replacing the single catch-all toggle. A 'Manage custom field logging…' button in Settings opens the Custom fields editor so you can jump straight there.",
   "v3.90 — Auto-log field changes to the notes feed. When you save a deliverable, any change to a watched detail field (title, brand, channel, owners, due/end dates, status, priority, promotion, sprint, custom fields) is appended as a single bulleted note entry, authored by the current You: user. Toggle individual fields on/off in Manage → 'Auto-log changes to notes'. Skipped when no You: user is set. New cards don't log (everything on them is 'new', not a change).",
   "v3.89 — Fix: Theme-channel cards (candy-stripe pattern) were collapsing to ~24px in constrained-height flex columns, hiding their own title/chips under the stripe pattern. The stripe overlay uses overflow:hidden to clip to the rounded corner; per the CSS spec, a flex item with overflow:hidden loses its implicit min-height:auto, so it shrinks past its content when the column runs out of vertical room. Added min-height:fit-content + flex-shrink:0 on all four Theme card renderers (card / planning-card / list-task / gallery-tile) so Theme cards always render at full content height.",
   "v3.88 — Removed the Close ✕ button from the title emoji picker header. With the backdrop click, ESC, and 😀 toggle all working reliably, the button was redundant visual noise.",
@@ -2638,12 +2640,20 @@ const AUTOLOG_FIELD_DEFS = [
   { key: "status",   label: "Status" },
   { key: "priority", label: "Priority" },
   { key: "promo",    label: "Promotion" },
-  { key: "sprint",   label: "Sprint" },
-  { key: "customFields", label: "Custom fields" }
+  { key: "sprint",   label: "Sprint" }
 ];
+// Per-custom-field toggles use the "field:<name>" prefix inside the same Set — stored in the field itself's
+// autolog flag UI in the Custom fields editor. autologFieldEnabled(name) resolves the current state.
+function autologFieldKey(name) { return "field:" + name; }
+function autologFieldEnabled(name) { return autologPrefs.has(autologFieldKey(name)); }
+function setAutologField(name, on) {
+  const k = autologFieldKey(name);
+  if (on) autologPrefs.add(k); else autologPrefs.delete(k);
+  saveAutologPrefs(autologPrefs);
+}
 function loadAutologPrefs() {
   try { const raw = localStorage.getItem(AUTOLOG_LS_KEY); if (raw) return new Set(JSON.parse(raw)); } catch (e) {}
-  return new Set(AUTOLOG_FIELD_DEFS.map(f => f.key));   // default ON for all
+  return new Set(AUTOLOG_FIELD_DEFS.map(f => f.key));   // default ON for scalar fields; custom fields default OFF
 }
 function saveAutologPrefs(set) { try { localStorage.setItem(AUTOLOG_LS_KEY, JSON.stringify([...set])); } catch (e) {} }
 let autologPrefs = loadAutologPrefs();
@@ -8406,12 +8416,11 @@ function renderManage() {
   fillManage("managePeople", peopleList, "person");
   updateFieldsSummary();
   fillManagePromos();
-  renderAutologSettings();
 }
-// Render the Auto-log settings — one checkbox per trackable field, plus the custom-fields catch-all. Changes
-// persist to localStorage via autologPrefs; no DB round-trip needed since this is a per-user UI preference.
+// Render the Auto-log settings — one checkbox per scalar field. Custom fields are toggled per-field in the
+// Custom fields editor; the button below opens that. Persists to localStorage via autologPrefs.
 function renderAutologSettings() {
-  const box = document.getElementById("manageAutolog"); if (!box) return;
+  const box = document.getElementById("settingsAutolog"); if (!box) return;
   box.innerHTML = "";
   AUTOLOG_FIELD_DEFS.forEach(def => {
     const row = document.createElement("label"); row.className = "autolog-row"; row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;";
@@ -8449,16 +8458,16 @@ function buildAutologEntry(existingCard, newData, newFields, newSubs) {
   checkScalar("priority","Priority", prevFields[PRIORITY_KEY] || "", newFields[PRIORITY_KEY] || "");
   checkScalar("promo",   "Promotion",prevFields[PROMO_KEY]    || "", newFields[PROMO_KEY]    || "");
   checkScalar("sprint",  "Sprint",   prevFields[SPRINT_KEY]   || "", newFields[SPRINT_KEY]   || "");
-  if (autologPrefs.has("customFields")) {
-    const skip = new Set([PRIORITY_KEY, PROMO_KEY, SPRINT_KEY, SUBTASKS_KEY, EMAILS_KEY, SPRINTHIST_KEY, HIST_SPRINTS_KEY, NOTES_UPDATED_KEY, LINKS_KEY, COVER_KEY, GALLERY_KEY, NOTES_ENTRIES_KEY, ALERT_KEY, ALERT_NOTE_KEY, ALERT_OWNER_KEY, ALERT_DATE_KEY, THEME_BAR_KEY, THEME_BAR2_KEY, THEME_BAR_DIR_KEY, THEME_C1_KEY, THEME_C2_KEY]);
-    const keys = new Set([...Object.keys(prevFields), ...Object.keys(newFields)].filter(k => !skip.has(k) && !k.startsWith("__")));
-    keys.forEach(k => {
-      const a = prevFields[k], b = newFields[k];
-      const av = Array.isArray(a) ? a.join(", ") : (a == null ? "" : String(a));
-      const bv = Array.isArray(b) ? b.join(", ") : (b == null ? "" : String(b));
-      if (av !== bv) diffs.push(`${k}: ${showVal(av)} → ${showVal(bv)}`);
-    });
-  }
+  // Custom fields — only those explicitly toggled ON in the Custom fields editor (field:<name> in autologPrefs).
+  const skip = new Set([PRIORITY_KEY, PROMO_KEY, SPRINT_KEY, SUBTASKS_KEY, EMAILS_KEY, SPRINTHIST_KEY, HIST_SPRINTS_KEY, NOTES_UPDATED_KEY, LINKS_KEY, COVER_KEY, GALLERY_KEY, NOTES_ENTRIES_KEY, ALERT_KEY, ALERT_NOTE_KEY, ALERT_OWNER_KEY, ALERT_DATE_KEY, THEME_BAR_KEY, THEME_BAR2_KEY, THEME_BAR_DIR_KEY, THEME_C1_KEY, THEME_C2_KEY]);
+  const keys = new Set([...Object.keys(prevFields), ...Object.keys(newFields)].filter(k => !skip.has(k) && !k.startsWith("__")));
+  keys.forEach(k => {
+    if (!autologFieldEnabled(k)) return;
+    const a = prevFields[k], b = newFields[k];
+    const av = Array.isArray(a) ? a.join(", ") : (a == null ? "" : String(a));
+    const bv = Array.isArray(b) ? b.join(", ") : (b == null ? "" : String(b));
+    if (av !== bv) diffs.push(`${k}: ${showVal(av)} → ${showVal(bv)}`);
+  });
   if (!diffs.length) return null;
   const html = "<ul>" + diffs.map(d => `<li>${d.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</li>`).join("") + "</ul>";
   return { id: noteId(), date: ymd(new Date()), text: html, author: currentUser };
@@ -8586,6 +8595,13 @@ function fieldEditorCard(f, idx) {
   type.value = f.type || "text";
   const del = document.createElement("button"); del.className = "fe-del"; del.textContent = "Remove"; del.onclick = () => removeList("field", f);
   top.appendChild(name); top.appendChild(type); top.appendChild(del); card.appendChild(top);
+  // Per-field "log to notes" toggle — when ON, any change to this field's value is appended to the card's notes
+  // feed on save (alongside the scalar Settings → Auto-log changes). Stored in autologPrefs as "field:<name>".
+  const logRow = document.createElement("label"); logRow.className = "fe-autolog"; logRow.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 2px 2px;font-size:12px;color:var(--muted);cursor:pointer;";
+  const logCb = document.createElement("input"); logCb.type = "checkbox"; logCb.checked = autologFieldEnabled(f.name);
+  logCb.onchange = () => setAutologField(f.name, logCb.checked);
+  const logLab = document.createElement("span"); logLab.textContent = "Log changes to this field in notes";
+  logRow.appendChild(logCb); logRow.appendChild(logLab); card.appendChild(logRow);
 
   const opts = document.createElement("div"); opts.className = "fe-opts"; opts.style.display = fieldHasOptions(f) ? "" : "none";
   const lab = document.createElement("div"); lab.className = "fe-opts-lab"; lab.textContent = "Options";
@@ -9652,6 +9668,7 @@ async function init() {
   const menu = document.getElementById("menuOverlay");
   document.getElementById("menuBtn").onclick = () => {
     renderSettingsBrands();
+    renderAutologSettings();
     // Innovation workspace controls — only shown when the current workspace is Innovation (its one setting is
     // the global start-year floor for the Planning view).
     const innovSec = document.getElementById("settingsInnovationSec");
@@ -9660,6 +9677,8 @@ async function init() {
     if (inp) { inp.value = innovationStartYear ? String(innovationStartYear) : ""; inp.placeholder = "no floor"; inp.onchange = () => setInnovationStartYear(inp.value); }
     menu.classList.add("show");
   };
+  const alOpenFields = document.getElementById("settingsAutologOpenFields");
+  if (alOpenFields) alOpenFields.onclick = () => { menu.classList.remove("show"); openFields(); };
   document.getElementById("menuClose").onclick = () => menu.classList.remove("show");
   menu.onclick = e => { if (e.target.id === "menuOverlay") menu.classList.remove("show"); };
   document.getElementById("csvBtn").onclick = exportCSV;
