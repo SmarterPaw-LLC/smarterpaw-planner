@@ -153,15 +153,21 @@
   .field textarea { resize: vertical; min-height: 64px; }
   /* Title textarea: looks like a single-line input on desktop, but wraps + auto-grows so long titles are always fully visible (fixes mobile clipping). */
   #f_title { resize: none; min-height: 38px; height: auto; overflow: hidden; line-height: 1.35; flex: 1; }
-  /* Emoji picker for the deliverable title. Button sits inline with the textarea; picker floats below. */
+  /* Emoji picker for the deliverable title. Button sits inline with the textarea; picker is a FLOATING OVERLAY
+     anchored to the button via JS (position: fixed), with a full-viewport backdrop behind it so any click outside
+     closes the picker reliably — this replaced an inline picker that was slow (rebuilt 2000+ emoji buttons every
+     open, causing a 700ms click-handler violation that made the picker feel stuck). */
   .title-wrap { display: flex; gap: 6px; align-items: flex-start; }
   .title-emoji-btn { flex: none; padding: 6px 10px; font-size: 16px; line-height: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .title-emoji-btn:hover { border-color: var(--accent); }
-  .emoji-picker { margin-top: 6px; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; max-height: 340px; display: flex; flex-direction: column; }
+  .title-emoji-btn.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .emoji-backdrop { position: fixed; inset: 0; z-index: 10000; background: transparent; }
+  .emoji-picker { position: fixed; z-index: 10001; width: 360px; max-height: 440px; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+  .emoji-picker[hidden] { display: none; }
   .emoji-search-row { flex: none; margin-bottom: 6px; display: flex; gap: 6px; align-items: center; }
   .emoji-search-row input { flex: 1; min-width: 0; padding: 6px 10px; font-size: 12px; }
-  .emoji-close { flex: none; width: 26px; height: 26px; padding: 0; background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; }
-  .emoji-close:hover { color: var(--danger); border-color: var(--danger); }
+  .emoji-close { flex: none; min-width: 60px; height: 28px; padding: 0 10px; background: var(--danger, #c0392b); color: #fff; border: 1px solid var(--danger, #c0392b); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1; }
+  .emoji-close:hover { opacity: .9; }
   .emoji-categories { flex: none; display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .emoji-cat-btn { padding: 2px 6px; font-size: 16px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
   .emoji-cat-btn:hover { background: var(--panel); border-color: var(--accent); }
@@ -1348,8 +1354,9 @@
         <textarea id="f_title" rows="1" placeholder="e.g. July sale carousel"></textarea>
         <button type="button" id="f_titleEmoji" class="title-emoji-btn" title="Insert an emoji">😀</button>
       </div>
+      <div id="f_emojiBackdrop" class="emoji-backdrop" hidden></div>
       <div id="f_emojiPicker" class="emoji-picker" hidden>
-        <div class="emoji-search-row"><input type="text" id="f_emojiSearch" placeholder="Search emojis…" autocomplete="off" /><button type="button" id="f_emojiClose" class="emoji-close" title="Close (Esc)">✕</button></div>
+        <div class="emoji-search-row"><input type="text" id="f_emojiSearch" placeholder="Search emojis…" autocomplete="off" /><button type="button" id="f_emojiClose" class="emoji-close" title="Close (Esc)">Close ✕</button></div>
         <div id="f_emojiCategories" class="emoji-categories"></div>
         <div id="f_emojiBody" class="emoji-body"></div>
       </div>
@@ -1630,8 +1637,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.86";
+const VERSION = "3.87";
 const CHANGELOG = [
+  "v3.87 — Title emoji picker rebuilt as a floating overlay with a full-viewport backdrop. Root cause of the lingering 'stuck' feel: every open rebuilt ~2000 emoji buttons (Chrome logged it as a 736ms click handler violation), so clicks on the 😀 button queued behind the lag and felt dead. Now the emoji grid is built once and cached, so re-opens are instant. Four ways to close: click the backdrop, the Close ✕ button (now large/red), ESC, or the 😀 button again. The picker no longer pushes other modal content down.",
   "v3.86 — ROOT CAUSE for the 'emoji window is stuck' complaints: the RTE toolbar 😀 / 🖍 / A buttons in the Description + Notes format bars never toggled. Clicking them a second time silently rebuilt a fresh popover instead of closing — looked stuck because nothing visible changed. Fixed: clicking the same anchor again now closes the open picker. Also added an ESC-key handler to both the emoji and color popovers for a guaranteed way out.",
   "v3.85 — Title 😀 emoji picker: added an explicit ✕ close button inside the picker header AND an Escape-key handler, so there are now THREE independent ways to close it (toggle button, ✕, ESC). The toggle itself tested fine but the redundant affordances mean the picker can never be stuck open regardless of environment.",
   "v3.84 — RTE color picker (🖍 highlight + A̲ text) now has a custom-color row under the 21 preset swatches: a native color-wheel input and a hex text field that stay in sync, with Apply + Remove/Default-color buttons. Pressing Enter in the hex field applies it. Any color is reachable now, not just the presets.",
@@ -8128,7 +8136,7 @@ function openModal(card, prefill) {
     const edit = document.getElementById("f_alertBannerEdit");
     if (edit) edit.onclick = () => openAlertNoteDialog(alertBtn.dataset.note || "", alertBtn.dataset.owner || "", applyAlert);
   }
-  const _picker = document.getElementById("f_emojiPicker"); if (_picker) _picker.hidden = true;
+  if (typeof window._closeTitleEmojiPicker === "function") window._closeTitleEmojiPicker();
   rebuildBrandSelect();   // ensure the <select> reflects the current brandsList before we set its value
   const brandSel = document.getElementById("f_brand");
   const defaultBrand = (brandsList[0] && brandsList[0].name) || (BRANDS[0] && BRANDS[0].name) || "";
@@ -9243,7 +9251,8 @@ async function init() {
       catsEl.appendChild(b);
     });
     renderEmojiBody("");
-    searchEl.addEventListener("input", () => renderEmojiBody(searchEl.value));
+    searchEl.dataset.lastFilter = "";
+    searchEl.addEventListener("input", () => { renderEmojiBody(searchEl.value); searchEl.dataset.lastFilter = searchEl.value; });
   };
   const insertEmojiIntoTitle = em => {
     const t = titleEl; const s = t.selectionStart || 0, e = t.selectionEnd || 0;
@@ -9251,36 +9260,58 @@ async function init() {
     const pos = s + em.length; t.setSelectionRange(pos, pos); t.focus();
     autoResizeTitle();
   };
-  // Dedicated state flag for the title emoji picker — picker.hidden can be flipped by outside code or lose sync
-  // with user intent, which caused the "picker won't close on second click" bug. The flag is the single source of
-  // truth. The outside-close handler ONLY fires when it's genuinely clicking outside both the button and the picker.
+  // Title emoji picker — floating overlay anchored to the 😀 button with a transparent full-viewport backdrop
+  // behind it. Any click on the backdrop closes the picker. This is the primary close mechanism (plus Close
+  // button, ESC, and the toggle button). The emoji body is BUILT ONCE and reused across opens — before this
+  // change, every open rebuilt ~2000 emoji buttons which cost ~700ms and made the picker feel dead to clicks.
   const titleEmojiBtn = document.getElementById("f_titleEmoji");
+  const backdropEl = document.getElementById("f_emojiBackdrop");
   let _titlePickerOpen = false;
+  const positionTitlePicker = () => {
+    const r = titleEmojiBtn.getBoundingClientRect();
+    const w = 360;
+    const vw = window.innerWidth;
+    let left = r.right - w;
+    if (left < 8) left = 8;
+    if (left + w > vw - 8) left = vw - w - 8;
+    let top = r.bottom + 6;
+    const maxH = 440;
+    if (top + maxH > window.innerHeight - 8) top = Math.max(8, r.top - maxH - 6);
+    pickerEl.style.left = left + "px";
+    pickerEl.style.top = top + "px";
+  };
   const setTitlePicker = (open) => {
     _titlePickerOpen = !!open;
     pickerEl.hidden = !_titlePickerOpen;
+    backdropEl.hidden = !_titlePickerOpen;
+    titleEmojiBtn.classList.toggle("active", _titlePickerOpen);
     if (_titlePickerOpen) {
-      buildPicker();
-      searchEl.value = ""; renderEmojiBody("");
+      buildPicker();   // builds the body + categories ONCE, early-returns on subsequent opens
+      positionTitlePicker();
+      searchEl.value = "";
+      // Only re-render the body when the search field actually had a filter the last time it was used.
+      // On a clean reopen we leave the cached grid alone (instant).
+      if (searchEl.dataset.lastFilter) { renderEmojiBody(""); searchEl.dataset.lastFilter = ""; }
       setTimeout(() => searchEl.focus(), 20);
     }
   };
+  // Reposition on resize / scroll while open.
+  window.addEventListener("resize", () => { if (_titlePickerOpen) positionTitlePicker(); });
+  // Expose closer so other modules (openModal, saveModal) can force-close without the picker's internal state
+  // going out of sync with pickerEl.hidden.
+  window._closeTitleEmojiPicker = () => setTitlePicker(false);
+  // Toggle on button click.
   titleEmojiBtn.onclick = e => {
     e.preventDefault(); e.stopPropagation();
     setTitlePicker(!_titlePickerOpen);
   };
-  // Explicit ✕ close button inside the picker, so there's always a visible way out — redundant with the toggle and
-  // outside-click for environments where either fails.
+  // Backdrop click closes.
+  backdropEl.onclick = e => { e.preventDefault(); e.stopPropagation(); setTitlePicker(false); };
+  // Explicit Close button.
   const closeBtn = document.getElementById("f_emojiClose");
   if (closeBtn) closeBtn.onclick = e => { e.preventDefault(); e.stopPropagation(); setTitlePicker(false); };
-  // ESC closes the picker whenever it's open (second line of defense).
+  // ESC closes.
   document.addEventListener("keydown", e => { if (e.key === "Escape" && _titlePickerOpen) { setTitlePicker(false); } });
-  document.addEventListener("click", e => {
-    if (!_titlePickerOpen) return;
-    const t = e.target;
-    if (t.closest && (t.closest("#f_titleEmoji") || t.closest("#f_emojiPicker"))) return;
-    setTitlePicker(false);
-  }, true);
   titleEl.addEventListener("paste", e => {
     const cd = e.clipboardData || window.clipboardData; if (!cd) return;
     const txt = cd.getData("text/plain"); if (!/[\r\n]/.test(txt)) return;   // let normal paste through when there's nothing to strip
