@@ -166,8 +166,6 @@
   .emoji-picker[hidden] { display: none; }
   .emoji-search-row { flex: none; margin-bottom: 6px; display: flex; gap: 6px; align-items: center; }
   .emoji-search-row input { flex: 1; min-width: 0; padding: 6px 10px; font-size: 12px; }
-  .emoji-close { flex: none; min-width: 60px; height: 28px; padding: 0 10px; background: var(--danger, #c0392b); color: #fff; border: 1px solid var(--danger, #c0392b); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1; }
-  .emoji-close:hover { opacity: .9; }
   .emoji-categories { flex: none; display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .emoji-cat-btn { padding: 2px 6px; font-size: 16px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
   .emoji-cat-btn:hover { background: var(--panel); border-color: var(--accent); }
@@ -1356,7 +1354,7 @@
       </div>
       <div id="f_emojiBackdrop" class="emoji-backdrop" hidden></div>
       <div id="f_emojiPicker" class="emoji-picker" hidden>
-        <div class="emoji-search-row"><input type="text" id="f_emojiSearch" placeholder="Search emojis…" autocomplete="off" /><button type="button" id="f_emojiClose" class="emoji-close" title="Close (Esc)">Close ✕</button></div>
+        <div class="emoji-search-row"><input type="text" id="f_emojiSearch" placeholder="Search emojis…" autocomplete="off" /></div>
         <div id="f_emojiCategories" class="emoji-categories"></div>
         <div id="f_emojiBody" class="emoji-body"></div>
       </div>
@@ -1637,8 +1635,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.87";
+const VERSION = "3.88";
 const CHANGELOG = [
+  "v3.88 — Removed the Close ✕ button from the title emoji picker header. With the backdrop click, ESC, and 😀 toggle all working reliably, the button was redundant visual noise.",
   "v3.87 — Title emoji picker rebuilt as a floating overlay with a full-viewport backdrop. Root cause of the lingering 'stuck' feel: every open rebuilt ~2000 emoji buttons (Chrome logged it as a 736ms click handler violation), so clicks on the 😀 button queued behind the lag and felt dead. Now the emoji grid is built once and cached, so re-opens are instant. Four ways to close: click the backdrop, the Close ✕ button (now large/red), ESC, or the 😀 button again. The picker no longer pushes other modal content down.",
   "v3.86 — ROOT CAUSE for the 'emoji window is stuck' complaints: the RTE toolbar 😀 / 🖍 / A buttons in the Description + Notes format bars never toggled. Clicking them a second time silently rebuilt a fresh popover instead of closing — looked stuck because nothing visible changed. Fixed: clicking the same anchor again now closes the open picker. Also added an ESC-key handler to both the emoji and color popovers for a guaranteed way out.",
   "v3.85 — Title 😀 emoji picker: added an explicit ✕ close button inside the picker header AND an Escape-key handler, so there are now THREE independent ways to close it (toggle button, ✕, ESC). The toggle itself tested fine but the redundant affordances mean the picker can never be stuck open regardless of environment.",
@@ -9307,9 +9306,6 @@ async function init() {
   };
   // Backdrop click closes.
   backdropEl.onclick = e => { e.preventDefault(); e.stopPropagation(); setTitlePicker(false); };
-  // Explicit Close button.
-  const closeBtn = document.getElementById("f_emojiClose");
-  if (closeBtn) closeBtn.onclick = e => { e.preventDefault(); e.stopPropagation(); setTitlePicker(false); };
   // ESC closes.
   document.addEventListener("keydown", e => { if (e.key === "Escape" && _titlePickerOpen) { setTitlePicker(false); } });
   titleEl.addEventListener("paste", e => {
