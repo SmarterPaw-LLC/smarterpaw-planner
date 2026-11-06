@@ -1630,8 +1630,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.85";
+const VERSION = "3.86";
 const CHANGELOG = [
+  "v3.86 — ROOT CAUSE for the 'emoji window is stuck' complaints: the RTE toolbar 😀 / 🖍 / A buttons in the Description + Notes format bars never toggled. Clicking them a second time silently rebuilt a fresh popover instead of closing — looked stuck because nothing visible changed. Fixed: clicking the same anchor again now closes the open picker. Also added an ESC-key handler to both the emoji and color popovers for a guaranteed way out.",
   "v3.85 — Title 😀 emoji picker: added an explicit ✕ close button inside the picker header AND an Escape-key handler, so there are now THREE independent ways to close it (toggle button, ✕, ESC). The toggle itself tested fine but the redundant affordances mean the picker can never be stuck open regardless of environment.",
   "v3.84 — RTE color picker (🖍 highlight + A̲ text) now has a custom-color row under the 21 preset swatches: a native color-wheel input and a hex text field that stay in sync, with Apply + Remove/Default-color buttons. Pressing Enter in the hex field applies it. Any color is reachable now, not just the presets.",
   "v3.83 — Title 😀 picker toggle: rewritten against a dedicated open-state flag instead of reading picker.hidden directly, so the second click always closes it. Outside-close handler now uses capture-phase + the flag + a closest() guard against both #f_titleEmoji and #f_emojiPicker, so no click can re-open or race it.",
@@ -7640,10 +7641,13 @@ async function handleCoverFile(file) {
 // Reusable rich-text toolbar. Any long-text editor (custom rich fields, modal notes, modal email bodies) attaches
 // this toolbar so the format bar is the same everywhere. Highlight and emoji live here so they're never a mystery.
 let _rteEmojiPop = null;
-function _rteCloseEmojiPop() { if (_rteEmojiPop) { _rteEmojiPop.remove(); _rteEmojiPop = null; } }
+let _rteEmojiPopAnchor = null;
+function _rteCloseEmojiPop() { if (_rteEmojiPop) { _rteEmojiPop.remove(); _rteEmojiPop = null; _rteEmojiPopAnchor = null; } }
 // Full emoji picker — reuses the same window._EMOJI_DATA that powers the title emoji picker so the RTE toolbar
 // picker is NEVER a trimmed-down copy of the title one. Same categories, same search, same universe of emojis.
+// Clicking the SAME anchor again closes the open picker, so the button toggles instead of silently rebuilding.
 function _rteOpenEmojiPop(anchor, onPick) {
+  if (_rteEmojiPop && _rteEmojiPopAnchor === anchor) { _rteCloseEmojiPop(); return; }
   _rteCloseEmojiPop();
   const data = window._EMOJI_DATA || {};
   const pop = document.createElement("div"); pop.className = "rte-emoji-pop";
@@ -7689,17 +7693,23 @@ function _rteOpenEmojiPop(anchor, onPick) {
   render("");
   setTimeout(() => search.focus(), 0);
   _rteEmojiPop = pop;
+  _rteEmojiPopAnchor = anchor;
   setTimeout(() => {
     const h = ev => { if (!pop.contains(ev.target) && ev.target !== anchor) { _rteCloseEmojiPop(); document.removeEventListener("mousedown", h, true); } };
     document.addEventListener("mousedown", h, true);
     pop._handler = h;
   }, 0);
+  // ESC closes — guaranteed way out even if mousedown handler misbehaves.
+  const esc = ev => { if (ev.key === "Escape") { _rteCloseEmojiPop(); document.removeEventListener("keydown", esc, true); } };
+  document.addEventListener("keydown", esc, true);
 }
 // Shared color swatch popover for highlight + text-color picks. onPick receives the chosen CSS color (or "" to clear).
 const RTE_COLORS = ["#ffeb3b","#ffc107","#ff9800","#f44336","#e91e63","#9c27b0","#673ab7","#3f51b5","#2196f3","#03a9f4","#00bcd4","#009688","#4caf50","#8bc34a","#cddc39","#795548","#607d8b","#9e9e9e","#000000","#ffffff","#6d5dfc"];
 let _rteColorPop = null;
-function _rteCloseColorPop() { if (_rteColorPop) { _rteColorPop.remove(); _rteColorPop = null; } }
+let _rteColorPopAnchor = null;
+function _rteCloseColorPop() { if (_rteColorPop) { _rteColorPop.remove(); _rteColorPop = null; _rteColorPopAnchor = null; } }
 function _rteOpenColorPop(anchor, onPick, clearLabel) {
+  if (_rteColorPop && _rteColorPopAnchor === anchor) { _rteCloseColorPop(); return; }
   _rteCloseColorPop();
   const pop = document.createElement("div"); pop.className = "rte-color-pop";
   pop.addEventListener("mousedown", e => e.preventDefault());
@@ -7742,11 +7752,14 @@ function _rteOpenColorPop(anchor, onPick, clearLabel) {
   pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
   pop.style.top = (r.bottom + 4) + "px";
   _rteColorPop = pop;
+  _rteColorPopAnchor = anchor;
   setTimeout(() => {
     const h = ev => { if (!pop.contains(ev.target) && ev.target !== anchor) { _rteCloseColorPop(); document.removeEventListener("mousedown", h, true); } };
     document.addEventListener("mousedown", h, true);
     pop._handler = h;
   }, 0);
+  const esc = ev => { if (ev.key === "Escape") { _rteCloseColorPop(); document.removeEventListener("keydown", esc, true); } };
+  document.addEventListener("keydown", esc, true);
 }
 // Toggle <mark> on the current selection inside `editor`. Wrap if not highlighted; unwrap if the selection sits
 // entirely inside a single <mark>. Call syncFn after so the caller can persist / sanitize.
