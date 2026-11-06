@@ -1619,8 +1619,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.81";
+const VERSION = "3.82";
 const CHANGELOG = [
+  "v3.82 — Fix: subtask → deliverable conversion rendered the new link pill as \"deleted\" because createCard fires refetch() without awaiting (so bulk callers don't pay the round-trip), and the re-render happened before cards[] was populated. convertSubtaskToDeliverable now explicitly awaits refetch when the new id isn't visible yet — the pill renders with the real title + status on first paint.",
   "v3.81 — Rich-text color + title-picker toggle fix: (1) 🖍 Highlight is now a 21-swatch color picker (any color + Remove), replacing the yellow-only toggle. (2) New A̲ Text color button beside it with the same swatch picker. Both use execCommand with styleWithCSS forced on so output is <span style=\"…\">, and the note / rich-text sanitizers now preserve color + background-color style props specifically. (3) Title 😀 button toggles reliably again — handler bound in capture phase with explicit stopPropagation so it never races the outside-close handler.",
   "v3.80 — Three polishes to the v3.79 format bar + icons: (1) RTE 😀 emoji picker now shows the SAME full universe of emojis the title picker uses (search + category chips + scrollable sections), not a trimmed 60-emoji subset. (2) Title emoji button toggles on repeated click again — moved to mousedown so the outside-close handler sees the post-toggle state. (3) Icon consistency pass: all native <input type=\"date\"> calendar glyphs now render as 📅, matching the subtask date icon.",
   "v3.79 — Shared rich-text format bar across every long-text editor in the modal (custom rich-text fields, each Note row, each expanded Email body). New buttons on the bar: 🖍 Highlight (toggles yellow <mark> on the selected text, same wrapper the floating ✨ pill produces) and 😀 Emoji (opens a 60-emoji popover with search; inserts at the caret, keyboard-friendly). The custom-field RTE was refactored onto the shared builder, so all three editors stay in lockstep forever.",
@@ -7114,6 +7115,10 @@ async function convertSubtaskToDeliverable(s) {
     due: s.due || "", end: "", status: statusList[0] ? statusList[0].name : "Backlog", notes: "", fields,
   });
   if (!newId) return;   // createCard already toasted the error
+  // createCard fires refetch() without awaiting (so bulk callers don't pay for the round-trip); when we render the
+  // link pill immediately, `cards` won't contain the new row yet and the pill shows "deleted". Await the refetch
+  // explicitly so the pill renders with the real title + status.
+  if (ONLINE && !cards.find(c => c.id === newId)) { await refetch(); }
   // Replace the subtask in place with a link to the new card — text/owner/due kept as a fallback snapshot.
   s.linkedCardId = newId;
   renderSubsEdit();
