@@ -818,10 +818,19 @@
   .rte-emoji-btn:hover { background: var(--panel-2); border-color: var(--accent); }
   .rte-emoji-empty { padding: 8px; font-size: 12px; color: var(--muted); text-align: center; }
   /* Shared color-swatch popover for highlight + text-color buttons. Matches the emoji popover geometry/shadow. */
-  .rte-color-pop { position: fixed; z-index: 10001; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.45); display: grid; grid-template-columns: repeat(7, 22px); gap: 4px; }
+  .rte-color-pop { position: fixed; z-index: 10001; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 6px; }
+  .rte-color-grid { display: grid; grid-template-columns: repeat(7, 22px); gap: 4px; }
   .rte-color-sw { width: 22px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
   .rte-color-sw:hover { border-color: var(--text); transform: scale(1.1); }
-  .rte-color-clear { grid-column: 1 / -1; padding: 4px 6px; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .rte-color-custom { display: flex; gap: 4px; align-items: center; padding-top: 4px; border-top: 1px solid var(--line); }
+  .rte-color-wheel { width: 28px; height: 28px; padding: 0; background: transparent; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  .rte-color-wheel::-webkit-color-swatch-wrapper { padding: 2px; }
+  .rte-color-wheel::-webkit-color-swatch { border: none; border-radius: 3px; }
+  .rte-color-hex { flex: 1; min-width: 0; padding: 4px 6px; font-size: 12px; font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; outline: none; }
+  .rte-color-hex:focus { border-color: var(--accent); }
+  .rte-color-apply { padding: 4px 10px; font-size: 11px; font-weight: 600; background: var(--accent); color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  .rte-color-apply:hover { filter: brightness(1.1); }
+  .rte-color-clear { padding: 4px 6px; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 11px; }
   .rte-color-clear:hover { color: var(--text); border-color: var(--text); }
   /* Icon consistency: replace the native date picker indicator with the same 📅 glyph the subtask icons use. */
   input[type="date"]::-webkit-calendar-picker-indicator {
@@ -1619,8 +1628,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.83";
+const VERSION = "3.84";
 const CHANGELOG = [
+  "v3.84 — RTE color picker (🖍 highlight + A̲ text) now has a custom-color row under the 21 preset swatches: a native color-wheel input and a hex text field that stay in sync, with Apply + Remove/Default-color buttons. Pressing Enter in the hex field applies it. Any color is reachable now, not just the presets.",
   "v3.83 — Title 😀 picker toggle: rewritten against a dedicated open-state flag instead of reading picker.hidden directly, so the second click always closes it. Outside-close handler now uses capture-phase + the flag + a closest() guard against both #f_titleEmoji and #f_emojiPicker, so no click can re-open or race it.",
   "v3.82 — Fix: subtask → deliverable conversion rendered the new link pill as \"deleted\" because createCard fires refetch() without awaiting (so bulk callers don't pay the round-trip), and the re-render happened before cards[] was populated. convertSubtaskToDeliverable now explicitly awaits refetch when the new id isn't visible yet — the pill renders with the real title + status on first paint.",
   "v3.81 — Rich-text color + title-picker toggle fix: (1) 🖍 Highlight is now a 21-swatch color picker (any color + Remove), replacing the yellow-only toggle. (2) New A̲ Text color button beside it with the same swatch picker. Both use execCommand with styleWithCSS forced on so output is <span style=\"…\">, and the note / rich-text sanitizers now preserve color + background-color style props specifically. (3) Title 😀 button toggles reliably again — handler bound in capture phase with explicit stopPropagation so it never races the outside-close handler.",
@@ -7690,16 +7700,39 @@ function _rteOpenColorPop(anchor, onPick, clearLabel) {
   _rteCloseColorPop();
   const pop = document.createElement("div"); pop.className = "rte-color-pop";
   pop.addEventListener("mousedown", e => e.preventDefault());
+  // Swatch grid — 21 common presets.
+  const grid = document.createElement("div"); grid.className = "rte-color-grid";
   RTE_COLORS.forEach(c => {
     const sw = document.createElement("button"); sw.type = "button"; sw.className = "rte-color-sw"; sw.style.background = c; sw.title = c;
     sw.addEventListener("mousedown", e => e.preventDefault());
     sw.onclick = () => { onPick(c); _rteCloseColorPop(); };
-    pop.appendChild(sw);
+    grid.appendChild(sw);
   });
+  pop.appendChild(grid);
+  // Custom row — native color wheel + hex text input + Apply + Clear. The wheel opens the OS color picker;
+  // typing a hex (#rrggbb or rrggbb) and pressing Enter / Apply commits. The two stay in sync as the user types.
+  const custom = document.createElement("div"); custom.className = "rte-color-custom";
+  const wheel = document.createElement("input"); wheel.type = "color"; wheel.className = "rte-color-wheel"; wheel.title = "Pick from a color wheel";
+  const hex = document.createElement("input"); hex.type = "text"; hex.className = "rte-color-hex"; hex.placeholder = "#rrggbb"; hex.spellcheck = false; hex.maxLength = 7;
+  const norm = v => {
+    const s = String(v || "").trim();
+    const m = /^#?([0-9a-f]{6})$/i.exec(s) || /^#?([0-9a-f]{3})$/i.exec(s);
+    if (!m) return null;
+    const hx = m[1].length === 3 ? m[1].split("").map(c => c + c).join("") : m[1];
+    return "#" + hx.toLowerCase();
+  };
+  wheel.value = "#000000"; hex.value = "";
+  wheel.addEventListener("input", () => { hex.value = wheel.value; });
+  hex.addEventListener("input", () => { const n = norm(hex.value); if (n) wheel.value = n; });
+  const apply = document.createElement("button"); apply.type = "button"; apply.className = "rte-color-apply"; apply.textContent = "Apply";
+  apply.addEventListener("mousedown", e => e.preventDefault());
+  apply.onclick = () => { const n = norm(hex.value) || wheel.value; onPick(n); _rteCloseColorPop(); };
+  hex.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); apply.click(); } });
   const clr = document.createElement("button"); clr.type = "button"; clr.className = "rte-color-clear"; clr.textContent = clearLabel || "Remove";
   clr.addEventListener("mousedown", e => e.preventDefault());
   clr.onclick = () => { onPick(""); _rteCloseColorPop(); };
-  pop.appendChild(clr);
+  custom.appendChild(wheel); custom.appendChild(hex); custom.appendChild(apply); custom.appendChild(clr);
+  pop.appendChild(custom);
   document.body.appendChild(pop);
   const r = anchor.getBoundingClientRect();
   const w = 7 * 22 + 6 * 4 + 16;
