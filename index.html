@@ -941,8 +941,6 @@
   .notes-entry-alert { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; margin-left: auto; background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; max-width: 60%; }
   .notes-entry-alert .nea-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; font-weight: 500; }
   .notes-entry-alert .nea-owner { opacity: .85; font-size: 10px; }
-  .af-push { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 4px 13px; background: transparent; }
-  .af-push:hover { background: var(--accent); color: #fff; }
   #userOverlayChoices button { display: block; width: 100%; padding: 12px 14px; text-align: left; font-size: 14px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; color: var(--text); }
   #userOverlayChoices button:hover { border-color: var(--accent); background: rgba(109,93,252,.08); }
   #userOverlayChoices button.on { border-color: var(--accent); background: rgba(109,93,252,.15); }
@@ -1641,8 +1639,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.92";
+const VERSION = "3.93";
 const CHANGELOG = [
+  "v3.93 — Removed the '⇒ Push N → next sprint' bulk button from the active-filters bar. Push-forward lives on the Planning page now; the old global button in the chip row was an easy foot-gun. Also dropped the dead pushVisibleToNextSprint() function and its CSS.",
   "v3.92 — Fix: auto-log entries were stored as HTML (<ul><li>…</li></ul>), which the card-preview snapshot runs through esc() — so the markup showed as literal '<ul><li>' text on the card. Switched new entries to plain 'bullet' text with newlines. Also added a notesPreviewText() helper that rewrites any HTML list markup in existing entries to bullets for the preview, so already-saved cards clean up on next render without needing migration.",
   "v3.91 — Auto-log settings moved from Manage to the ⋯ Settings menu (where per-browser prefs belong). Custom-field logging is now per-field: each custom field in the Custom fields editor has its own 'Log changes to this field in notes' checkbox, replacing the single catch-all toggle. A 'Manage custom field logging…' button in Settings opens the Custom fields editor so you can jump straight there.",
   "v3.90 — Auto-log field changes to the notes feed. When you save a deliverable, any change to a watched detail field (title, brand, channel, owners, due/end dates, status, priority, promotion, sprint, custom fields) is appended as a single bulleted note entry, authored by the current You: user. Toggle individual fields on/off in Manage → 'Auto-log changes to notes'. Skipped when no You: user is set. New cards don't log (everything on them is 'new', not a change).",
@@ -4413,17 +4412,6 @@ function renderActiveFilters() {
     updateFilterBtn(); render();
   };
   bar.appendChild(clear);
-  // Push-all action: bulk-shift every visible card's sprint forward by one week (due, end, and manual SPRINT_KEY
-  // each get +7 days). Only shown when at least one filter is active — otherwise it's a foot-gun. Hidden on
-  // Innovation since products aren't on a weekly rhythm (year-scoped, strategic).
-  const bl = effBacklogLane();
-  const nCards = visibleCards().filter(c => !bl || c.status !== bl).length;
-  if (nCards && !isInnovation()) {
-    const push = document.createElement("button"); push.className = "af-push"; push.textContent = "⇒ Push " + nCards + " → next sprint";
-    push.title = "Move every visible card forward by 1 week (due, end, and planning sprint each +7 days). Skips Backlog-lane cards, asks separately about Complete-lane cards.";
-    push.onclick = pushVisibleToNextSprint;
-    bar.appendChild(push);
-  }
 }
 // Shift each visible card's sprint by exactly one week — updates due date, end date (if present), and the
 // manual sprint override. Used from the active-filters bar for sprint-planning meetings: filter to what didn't
@@ -4713,78 +4701,6 @@ async function moveCardToSprint(cardId, targetWk) {
   if ("fields" in patch) dbPatch.fields = patch.fields;
   const { error } = await db.from("deliverables").update(dbPatch).eq("id", cardId);
   if (error) toast("Move failed: " + error.message); else refetch();
-}
-let _pushInFlight = false;
-async function pushVisibleToNextSprint() {
-  // Guard: prevent a single click from firing the push twice while the DB round-trip is in flight (double-click,
-  // fast retriggers). Cleared in the finally below.
-  if (_pushInFlight) return;
-  const raw = visibleCards().slice();
-  if (!raw.length) return;
-  // Cards on the Backlog lane aren't in a sprint at all — pushing them makes no sense; drop them silently.
-  const bl = effBacklogLane();
-  const skippedBacklog = bl ? raw.filter(c => c.status === bl) : [];
-  const all = bl ? raw.filter(c => c.status !== bl) : raw;
-  if (!all.length) { toast("Nothing to push — all visible cards are on the “" + bl + "” lane."); return; }
-  // Cards on the Complete lane usually SHOULDN'T be pushed — they mark work that shipped and belong in the sprint
-  // they landed on. If any are present, split them out and ask the user separately.
-  const cl = completeLane;
-  const complete = cl ? all.filter(c => c.status === cl) : [];
-  const rest = cl ? all.filter(c => c.status !== cl) : all;
-  let targets;
-  if (complete.length && rest.length) {
-    if (!confirm("Move " + rest.length + " visible card" + (rest.length === 1 ? "" : "s") + " forward by 1 week?\n\nDue dates, end dates, and manual sprint overrides all shift +7 days.")) return;
-    const includeDone = confirm(complete.length + " of the visible cards are on the “" + cl + "” lane.\n\nOK — also push those forward.\nCancel — leave them in their current sprint (recommended).");
-    targets = includeDone ? all : rest;
-  } else if (complete.length && !rest.length) {
-    if (!confirm("All " + complete.length + " visible card" + (complete.length === 1 ? "" : "s") + " are on the “" + cl + "” lane. These usually stay in the sprint they were completed in.\n\nPush them forward by 1 week anyway?")) return;
-    targets = complete;
-  } else {
-    if (!confirm("Move " + rest.length + " visible card" + (rest.length === 1 ? "" : "s") + " forward by 1 week?\n\nDue dates, end dates, and manual sprint overrides all shift +7 days.")) return;
-    targets = rest;
-  }
-  if (!targets.length) return;
-  const shift = (ymdStr) => { if (!ymdStr) return ""; const d = new Date(ymdStr + "T00:00:00"); d.setDate(d.getDate() + 7); return ymd(d); };
-  const shiftWeek = (w) => { if (!w) return ""; const mon = isoWeekStart(w); if (!mon) return w; mon.setUTCDate(mon.getUTCDate() + 7); return isoWeek(ymdUTC(mon)); };
-  // Future-target confirmation. Each card is shifting +7 days, so compute where each will land relative to
-  // "next week from today." If any card's post-push sprint is beyond next-week, that means it was already
-  // scheduled past this coming sprint — pushing again would send it further out. Show which week each one
-  // lands in and get explicit confirmation.
-  const nextWk = isoWeek(ymd(addDays(new Date(), 7)));
-  const preview = targets.map(c => {
-    // Highest current sprint (date-derived or manual) → next week is that + 1.
-    const cs = cardSprints(c).sort();
-    const cur = cs[cs.length - 1] || nextWk;
-    return { c, target: shiftWeek(cur) };
-  });
-  const beyond = preview.filter(p => p.target > nextWk);
-  if (beyond.length) {
-    // Group by target-week so the prompt is compact even for large batches.
-    const byWk = {}; beyond.forEach(p => { (byWk[p.target] = byWk[p.target] || []).push(p.c.title); });
-    const lines = Object.keys(byWk).sort().map(w => "  • " + byWk[w].length + " → " + fmtSprintFull(w));
-    const msg = beyond.length + " of the " + targets.length + " card" + (targets.length === 1 ? "" : "s") + " are already scheduled past next week (" + fmtSprintFull(nextWk) + "). Pushing will land them here:\n\n" + lines.join("\n") + "\n\nContinue?";
-    if (!confirm(msg)) return;
-  }
-  _pushInFlight = true;
-  try {
-    const jobs = targets.map(async c => {
-      const patch = {};
-      if (c.due) { c.due = shift(c.due); patch.due = c.due; }
-      if (c.end) { c.end = shift(c.end); patch.end = c.end; }
-      const manual = c.fields && c.fields[SPRINT_KEY];
-      if (manual) {
-        const nw = shiftWeek(manual);
-        c.fields = Object.assign({}, c.fields); c.fields[SPRINT_KEY] = nw;
-        patch.fields = c.fields;
-      }
-      if (!Object.keys(patch).length) return;
-      if (!ONLINE) { saveLocal(); return; }
-      const { error } = await db.from("deliverables").update(patch).eq("id", c.id);
-      if (error) toast("Push failed for " + c.title + ": " + error.message);
-    });
-    await Promise.all(jobs);
-    render(); toast("Pushed " + targets.length + " card" + (targets.length === 1 ? "" : "s") + " forward 1 week.");
-  } finally { _pushInFlight = false; }
 }
 function render() {
   writeUrl(); renderQuickFilters(); renderActiveFilters();
