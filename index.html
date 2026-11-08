@@ -1641,8 +1641,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.91";
+const VERSION = "3.92";
 const CHANGELOG = [
+  "v3.92 — Fix: auto-log entries were stored as HTML (<ul><li>…</li></ul>), which the card-preview snapshot runs through esc() — so the markup showed as literal '<ul><li>' text on the card. Switched new entries to plain 'bullet' text with newlines. Also added a notesPreviewText() helper that rewrites any HTML list markup in existing entries to bullets for the preview, so already-saved cards clean up on next render without needing migration.",
   "v3.91 — Auto-log settings moved from Manage to the ⋯ Settings menu (where per-browser prefs belong). Custom-field logging is now per-field: each custom field in the Custom fields editor has its own 'Log changes to this field in notes' checkbox, replacing the single catch-all toggle. A 'Manage custom field logging…' button in Settings opens the Custom fields editor so you can jump straight there.",
   "v3.90 — Auto-log field changes to the notes feed. When you save a deliverable, any change to a watched detail field (title, brand, channel, owners, due/end dates, status, priority, promotion, sprint, custom fields) is appended as a single bulleted note entry, authored by the current You: user. Toggle individual fields on/off in Manage → 'Auto-log changes to notes'. Skipped when no You: user is set. New cards don't log (everything on them is 'new', not a change).",
   "v3.89 — Fix: Theme-channel cards (candy-stripe pattern) were collapsing to ~24px in constrained-height flex columns, hiding their own title/chips under the stripe pattern. The stripe overlay uses overflow:hidden to clip to the rounded corner; per the CSS spec, a flex item with overflow:hidden loses its implicit min-height:auto, so it shrinks past its content when the column runs out of vertical room. Added min-height:fit-content + flex-shrink:0 on all four Theme card renderers (card / planning-card / list-task / gallery-tile) so Theme cards always render at full content height.",
@@ -2163,8 +2164,24 @@ function entriesToNotesHtml(entries) {
   return entries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(e => {
     const dateStr = e.date ? fmtMMDDYY(e.date) : "";
     const prefix = dateStr ? dateStr + " - " : "";
-    return "<p>" + esc(prefix + (e.text || "")).replace(/\n/g, "<br>") + "</p>";
+    return "<p>" + esc(prefix + notesPreviewText(e.text || "")).replace(/\n/g, "<br>") + "</p>";
   }).join("");
+}
+// Converts an entry's rich text into a plain, preview-safe form. Rewrites <ul>/<ol>/<li> as "• " bullets with
+// newlines (so the card-preview snapshot reads naturally when escaped), strips other HTML tags, decodes common
+// entities. Used ONLY for the derived c.notes snapshot — the structured notes feed uses the raw sanitized HTML.
+function notesPreviewText(html) {
+  if (!html) return "";
+  let s = String(html);
+  s = s.replace(/<\s*br\s*\/?\s*>/gi, "\n");
+  s = s.replace(/<\s*\/?(ul|ol)\b[^>]*>/gi, "\n");
+  s = s.replace(/<\s*li\b[^>]*>/gi, "• ");
+  s = s.replace(/<\s*\/\s*li\s*>/gi, "\n");
+  s = s.replace(/<\s*\/?(p|div|h[1-6])\b[^>]*>/gi, "\n");
+  s = s.replace(/<[^>]+>/g, "");
+  s = s.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  s = s.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
+  return s;
 }
 function fmtMMDDYY(ymdStr) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymdStr || ""); if (!m) return ymdStr || "";
@@ -8469,8 +8486,11 @@ function buildAutologEntry(existingCard, newData, newFields, newSubs) {
     if (av !== bv) diffs.push(`${k}: ${showVal(av)} → ${showVal(bv)}`);
   });
   if (!diffs.length) return null;
-  const html = "<ul>" + diffs.map(d => `<li>${d.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</li>`).join("") + "</ul>";
-  return { id: noteId(), date: ymd(new Date()), text: html, author: currentUser };
+  // Plain text with "• " bullets — entriesToNotesHtml runs the text through esc() for the card-preview snapshot,
+  // so HTML markup (like <ul><li>) would render as literal angle brackets in the preview. Plain bullets stay
+  // readable in both the notes feed and the card preview.
+  const text = diffs.map(d => "• " + d).join("\n");
+  return { id: noteId(), date: ymd(new Date()), text, author: currentUser };
 }
 function updateFieldsSummary() {
   const el = document.getElementById("fieldsSummary"); if (!el) return;
