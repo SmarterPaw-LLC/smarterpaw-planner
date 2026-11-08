@@ -1639,8 +1639,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.93";
+const VERSION = "3.94";
 const CHANGELOG = [
+  "v3.94 — Workspace switch is now resilient to transient Supabase statement timeouts. refetch() and loadLists() (the two queries that fire on workspace switch) retry up to 3 times with 400ms/800ms backoff before giving up. Innovation's bigger payload was tripping the server-side 8s timeout on one-shot queries and leaving the switch stuck; the auto-retry usually clears it without the user having to click the retry chip.",
   "v3.93 — Removed the '⇒ Push N → next sprint' bulk button from the active-filters bar. Push-forward lives on the Planning page now; the old global button in the chip row was an easy foot-gun. Also dropped the dead pushVisibleToNextSprint() function and its CSS.",
   "v3.92 — Fix: auto-log entries were stored as HTML (<ul><li>…</li></ul>), which the card-preview snapshot runs through esc() — so the markup showed as literal '<ul><li>' text on the card. Switched new entries to plain 'bullet' text with newlines. Also added a notesPreviewText() helper that rewrites any HTML list markup in existing entries to bullets for the preview, so already-saved cards clean up on next render without needing migration.",
   "v3.91 — Auto-log settings moved from Manage to the ⋯ Settings menu (where per-browser prefs belong). Custom-field logging is now per-field: each custom field in the Custom fields editor has its own 'Log changes to this field in notes' checkbox, replacing the single catch-all toggle. A 'Manage custom field logging…' button in Settings opens the Custom fields editor so you can jump straight there.",
@@ -3184,13 +3185,29 @@ function saveLocal() { localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
 // Last error from refetch/loadLists. switchWorkspace reads this after its awaits so it can surface a visible
 // "Load failed" state on the sync dot (not just a transient toast that auto-dismisses before the user looks).
 let _lastLoadError = null;
+// Retry a transient Supabase error (statement timeout, gateway, network) up to `attempts` times with a short
+// backoff. Returns the final { data, error } unchanged — permanent errors (schema, perms) fall through on the
+// first try so we don't waste time retrying something that will never succeed.
+async function _withRetry(fn, attempts) {
+  const transientRe = /timeout|canceling statement|upstream|gateway|network|fetch|503|502|504/i;
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    const res = await fn();
+    if (!res.error) return res;
+    const msg = (res.error.message || "") + " " + (res.error.code || "");
+    if (!transientRe.test(msg)) return res;             // permanent — don't retry
+    last = res;
+    if (i < attempts - 1) await new Promise(r => setTimeout(r, 400 * (i + 1)));
+  }
+  return last;
+}
 async function refetch() {
   if (!ONLINE) { cards = loadLocal(); render(); return; }
-  let { data, error } = await wsEq(db.from("deliverables").select("*")).order("created_at", { ascending: true });
+  let { data, error } = await _withRetry(() => wsEq(db.from("deliverables").select("*")).order("created_at", { ascending: true }), 3);
   if (error && isColumnMissingError(error)) {
     WS_COL_MISSING = true;
     toast("Run supabase/migrations/0007_workspaces.sql — workspaces are degraded until then.");
-    ({ data, error } = await db.from("deliverables").select("*").order("created_at", { ascending: true }));
+    ({ data, error } = await _withRetry(() => db.from("deliverables").select("*").order("created_at", { ascending: true }), 3));
   }
   if (error) {
     _lastLoadError = error;
@@ -3348,10 +3365,10 @@ async function loadLists() {
     }
     return;
   }
-  let { data, error } = await wsEq(db.from("lists").select("*")).order("position", { ascending: true });
+  let { data, error } = await _withRetry(() => wsEq(db.from("lists").select("*")).order("position", { ascending: true }), 3);
   if (error && isColumnMissingError(error)) {
     WS_COL_MISSING = true;
-    ({ data, error } = await db.from("lists").select("*").order("position", { ascending: true }));
+    ({ data, error } = await _withRetry(() => db.from("lists").select("*").order("position", { ascending: true }), 3));
   }
   if (error) {
     _lastLoadError = error;
