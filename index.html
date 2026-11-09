@@ -1069,11 +1069,13 @@
   .ev-bar .barbrand { flex: 0 0 auto; display: inline-flex; align-items: center; }
   .ev-bar .bardims { flex: 0 100 auto; min-width: 0; overflow: hidden; display: inline-flex; align-items: center; white-space: nowrap; }
   .ev-bar .barbrand .dchip, .ev-bar .bardims .dchip:first-child { margin-left: 0; }
-  /* Larger calendar items: stack the title over its dimension chips so more detail is visible. */
-  .ev-bar.stacked { flex-direction: column; align-items: stretch; justify-content: flex-start; padding: 4px 7px; line-height: 1.25; gap: 3px; }
-  .ev-bar.stacked .bt { flex: 0 0 auto; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Larger calendar items: row stays horizontal so the ✓ sits INLINE with the title (not on its own line).
+     Title wraps up to N lines next to the check; dimension chips wrap to the next row via flex-wrap. */
+  .ev-bar.stacked { align-items: flex-start; justify-content: flex-start; padding: 4px 7px; line-height: 1.25; gap: 5px; flex-wrap: wrap; }
+  .ev-bar.stacked .bt { flex: 1 1 auto; min-width: 0; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: clip; }
+  .ev-bar.stacked.spacious .bt { -webkit-line-clamp: 3; }   /* give spacious a 3rd line */
   .ev-bar.stacked .barbrand { display: none; }   /* the bar color already encodes the color-by dimension */
-  .ev-bar.stacked .bardims { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 4px; overflow: hidden; white-space: normal; min-width: 0; align-content: flex-start; }
+  .ev-bar.stacked .bardims { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 4px; overflow: hidden; white-space: normal; min-width: 0; align-content: flex-start; }
   .dchip { display: inline-flex; align-items: center; font-size: 10px; line-height: 1; padding: 2px 8px; border-radius: 999px;
     background: rgba(0,0,0,.30); border: 1px solid rgba(255,255,255,.6); color: #fff; margin-left: 6px; vertical-align: middle;
     font-weight: 600; white-space: nowrap; }
@@ -1263,6 +1265,11 @@
     <div class="cal-label" id="calLabel"></div>
     <select id="calAnchorSel" class="cal-anchor-sel" title="Which date field drives the calendar"></select>
     <button id="calContinuousBtn" title="Toggle continuous scrolling (Month view): render neighboring months in one scrollable stream with sticky month headers.">↕ Continuous</button>
+    <select id="calBarSize" class="cal-anchor-sel" title="Height of event bars">
+      <option value="compact">▬ Compact</option>
+      <option value="comfortable">▭ Comfortable</option>
+      <option value="spacious">▢ Spacious</option>
+    </select>
     <button id="trayToggle" class="tray-toggle"></button>
   </div>
   <div class="cal-main">
@@ -1639,8 +1646,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.95";
+const VERSION = "3.96";
 const CHANGELOG = [
+  "v3.96 — Calendar event bars: (1) Bar-height picker (Compact / Comfortable / Spacious) is now a dropdown in the Calendar toolbar, next to '↕ Continuous' — no more digging in ⚏ Display. Syncs both ways with the Display setting. (2) Fixed the ✓ check badge wrapping the title onto its own row in the Comfortable / Spacious sizes: it now sits inline left of the title (like Compact), and the title wraps up to 2 lines (Comfortable) or 3 lines (Spacious) next to it, instead of the check taking a full row and shoving the title down.",
   "v3.95 — Workspace is now always written to the URL (?ws=planner or ?ws=innovation), not just when it's not Planner. Previous behavior kept Planner URLs bare for back-compat, but that meant a Planner URL refreshed would fall back to localStorage, which could still be Innovation from a prior tab, so refresh felt like it kept flipping to Innovation. Loading a bare URL (no ws param) still works — localStorage remains the fallback — so old bookmarks don't break.",
   "v3.94 — Workspace switch is now resilient to transient Supabase statement timeouts. refetch() and loadLists() (the two queries that fire on workspace switch) retry up to 3 times with 400ms/800ms backoff before giving up. Innovation's bigger payload was tripping the server-side 8s timeout on one-shot queries and leaving the switch stuck; the auto-retry usually clears it without the user having to click the retry chip.",
   "v3.93 — Removed the '⇒ Push N → next sprint' bulk button from the active-filters bar. Push-forward lives on the Planning page now; the old global button in the chip row was an easy foot-gun. Also dropped the dead pushVisibleToNextSprint() function and its CSS.",
@@ -6436,7 +6444,7 @@ function weekRow(weekStart, monthIdx, todayKey, mode) {
   const stacked = size !== "compact";
   placed.forEach(p => {
     const bar = barEl(p.c);
-    if (stacked) { bar.classList.add("stacked"); bar.style.height = (barH - 4) + "px"; }
+    if (stacked) { bar.classList.add("stacked"); if (size === "spacious") bar.classList.add("spacious"); bar.style.height = (barH - 4) + "px"; }
     bar.style.left = `calc(${(p.s / 7 * 100).toFixed(4)}% + 3px)`;
     bar.style.width = `calc(${((p.e - p.s + 1) / 7 * 100).toFixed(4)}% - 6px)`;
     bar.style.top = (WEEK_HEAD_H + p.lane * barH) + "px";
@@ -6530,6 +6538,8 @@ function renderCalendar() {
   // Reflect continuous toggle in the button state (Month view only).
   const contBtn = document.getElementById("calContinuousBtn");
   if (contBtn) { contBtn.classList.toggle("active", calContinuous); contBtn.style.display = calMode === "month" ? "" : "none"; }
+  const barSizeSel = document.getElementById("calBarSize");
+  if (barSizeSel) barSizeSel.value = displaySettings.calendar.eventSize || "compact";
   // Populate the anchor picker with core "Due date" + every date-type custom field. Only shown when there's
   // at least one date-type field to pick from (otherwise it'd just be "Due date" always).
   const anchorSel = document.getElementById("calAnchorSel");
@@ -9182,6 +9192,7 @@ async function init() {
   document.getElementById("calNext").onclick = () => calNav(1);
   document.getElementById("calToday").onclick = () => { calRef = new Date(); render(); };
   document.getElementById("calContinuousBtn").onclick = () => { calContinuous = !calContinuous; localStorage.setItem("planner-cal-continuous", calContinuous ? "1" : "0"); renderCalendar(); };
+  document.getElementById("calBarSize").onchange = e => { displaySettings.calendar.eventSize = e.target.value; saveDisplay(); renderCalendar(); };
   document.getElementById("calAnchorSel").onchange = e => { calendarAnchor = e.target.value; localStorage.setItem(wsKey("planner-cal-anchor"), calendarAnchor); renderCalendar(); };
   document.getElementById("trayToggle").onclick = () => { showTray = !showTray; localStorage.setItem("planner-tray", showTray ? "1" : "0"); renderCalendar(); };
   document.getElementById("headerCollapse").onclick = () => { const c = document.body.classList.toggle("hdr-collapsed"); document.getElementById("headerCollapse").textContent = c ? "⌄ Controls" : "⌃ Controls"; };
