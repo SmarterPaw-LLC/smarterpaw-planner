@@ -1639,8 +1639,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.94";
+const VERSION = "3.95";
 const CHANGELOG = [
+  "v3.95 — Workspace is now always written to the URL (?ws=planner or ?ws=innovation), not just when it's not Planner. Previous behavior kept Planner URLs bare for back-compat, but that meant a Planner URL refreshed would fall back to localStorage, which could still be Innovation from a prior tab, so refresh felt like it kept flipping to Innovation. Loading a bare URL (no ws param) still works — localStorage remains the fallback — so old bookmarks don't break.",
   "v3.94 — Workspace switch is now resilient to transient Supabase statement timeouts. refetch() and loadLists() (the two queries that fire on workspace switch) retry up to 3 times with 400ms/800ms backoff before giving up. Innovation's bigger payload was tripping the server-side 8s timeout on one-shot queries and leaving the switch stuck; the auto-retry usually clears it without the user having to click the retry chip.",
   "v3.93 — Removed the '⇒ Push N → next sprint' bulk button from the active-filters bar. Push-forward lives on the Planning page now; the old global button in the chip row was an easy foot-gun. Also dropped the dead pushVisibleToNextSprint() function and its CSS.",
   "v3.92 — Fix: auto-log entries were stored as HTML (<ul><li>…</li></ul>), which the card-preview snapshot runs through esc() — so the markup showed as literal '<ul><li>' text on the card. Switched new entries to plain 'bullet' text with newlines. Also added a notesPreviewText() helper that rewrites any HTML list markup in existing entries to bullets for the preview, so already-saved cards clean up on next render without needing migration.",
@@ -8966,8 +8967,9 @@ function renderChangelog() {
 const VIEW_KEYS = ["board", "calendar", "grid", "list", "gallery", "notes", "planning"];
 function currentParams() {
   const p = new URLSearchParams();
-  // Workspace rides at the front — `planner` stays bare for back-compat with existing bookmarks.
-  if (currentWorkspace !== "planner") p.set("ws", currentWorkspace);
+  // Workspace rides at the front. Always written so a refresh respects the current workspace instead of
+  // falling back to whatever was last in localStorage (which could be the other workspace from a prior tab).
+  p.set("ws", currentWorkspace);
   if (view !== "board") p.set("view", view);
   if (colorBy !== "brand") p.set("color", colorBy);
   if (searchText.trim()) p.set("q", searchText.trim());
