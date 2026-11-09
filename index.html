@@ -1646,8 +1646,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.96";
+const VERSION = "3.97";
 const CHANGELOG = [
+  "v3.97 — Fix: ➜ Convert on a subtask only mutated the modal's local state — if you closed the card without clicking Save, the new deliverable survived (sitting in Backlog) but the subtask on the parent card reverted to a plain text row on next open. Convert now persists the subtask array to the parent card IMMEDIATELY, so the link pill sticks whether you save the modal or just close it.",
   "v3.96 — Calendar event bars: (1) Bar-height picker (Compact / Comfortable / Spacious) is now a dropdown in the Calendar toolbar, next to '↕ Continuous' — no more digging in ⚏ Display. Syncs both ways with the Display setting. (2) Fixed the ✓ check badge wrapping the title onto its own row in the Comfortable / Spacious sizes: it now sits inline left of the title (like Compact), and the title wraps up to 2 lines (Comfortable) or 3 lines (Spacious) next to it, instead of the check taking a full row and shoving the title down.",
   "v3.95 — Workspace is now always written to the URL (?ws=planner or ?ws=innovation), not just when it's not Planner. Previous behavior kept Planner URLs bare for back-compat, but that meant a Planner URL refreshed would fall back to localStorage, which could still be Innovation from a prior tab, so refresh felt like it kept flipping to Innovation. Loading a bare URL (no ws param) still works — localStorage remains the fallback — so old bookmarks don't break.",
   "v3.94 — Workspace switch is now resilient to transient Supabase statement timeouts. refetch() and loadLists() (the two queries that fire on workspace switch) retry up to 3 times with 400ms/800ms backoff before giving up. Innovation's bigger payload was tripping the server-side 8s timeout on one-shot queries and leaving the switch stuck; the auto-retry usually clears it without the user having to click the retry chip.",
@@ -7145,7 +7146,32 @@ async function convertSubtaskToDeliverable(s) {
   // Replace the subtask in place with a link to the new card — text/owner/due kept as a fallback snapshot.
   s.linkedCardId = newId;
   renderSubsEdit();
+  // Persist the subtask array to the parent IMMEDIATELY (not just when the modal saves) — otherwise closing the
+  // card without Save leaves the parent out of sync: the new deliverable sits in Backlog but the old subtask
+  // row reappears on reopen.
+  await persistModalSubtasks();
   toast(`Converted "${text}" to a new deliverable.`);
+}
+// Write the current modalSubs array back to the modal's parent card right now (same shape saveModal would write).
+// Used by inline operations that need to survive a close-without-save (e.g. convert-to-deliverable).
+async function persistModalSubtasks() {
+  if (!_modalCardId) return;
+  const parent = cards.find(c => c.id === _modalCardId); if (!parent) return;
+  const subs = modalSubs.map(x => {
+    const o = { id: x.id, text: (x.text || "").trim(), done: !!x.done };
+    if (x.owner) o.owner = x.owner;
+    if (x.due) o.due = x.due;
+    if (x.linkedCardId) o.linkedCardId = x.linkedCardId;
+    if (x.addedAt) o.addedAt = x.addedAt;
+    if (x.type) o.type = x.type;
+    return o;
+  }).filter(x => x.text || x.linkedCardId);
+  const fields = Object.assign({}, parent.fields || {});
+  if (subs.length) fields[SUBTASKS_KEY] = subs; else delete fields[SUBTASKS_KEY];
+  parent.fields = fields;
+  if (!ONLINE) { saveLocal(); return; }
+  const { error } = await db.from("deliverables").update({ fields }).eq("id", _modalCardId);
+  if (error) toast("Save failed: " + error.message);
 }
 // Render the collapsible list of emails attached to the current card. Each row shows a compact "From · subject · when
 // added" summary; clicking expands the full formatted email block; ✕ removes it. Body clicks don't propagate.
