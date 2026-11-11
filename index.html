@@ -1646,8 +1646,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.97";
+const VERSION = "3.98";
 const CHANGELOG = [
+  "v3.98 — Fix: switching workspaces fast after a cold page load used to require a manual refresh — the symptom was the new workspace's chrome appearing with the old workspace's cards still on screen. Cause: init() and switchWorkspace() both fire refetch() / loadLists(), and init's queries (which were already in flight against workspace A) could resolve AFTER you switched to B, overwriting B's cards. refetch() and loadLists() now capture currentWorkspace at call time and discard the response if the workspace changed mid-flight, so init's late reply can't clobber the switch.",
   "v3.97 — Fix: ➜ Convert on a subtask only mutated the modal's local state — if you closed the card without clicking Save, the new deliverable survived (sitting in Backlog) but the subtask on the parent card reverted to a plain text row on next open. Convert now persists the subtask array to the parent card IMMEDIATELY, so the link pill sticks whether you save the modal or just close it.",
   "v3.96 — Calendar event bars: (1) Bar-height picker (Compact / Comfortable / Spacious) is now a dropdown in the Calendar toolbar, next to '↕ Continuous' — no more digging in ⚏ Display. Syncs both ways with the Display setting. (2) Fixed the ✓ check badge wrapping the title onto its own row in the Comfortable / Spacious sizes: it now sits inline left of the title (like Compact), and the title wraps up to 2 lines (Comfortable) or 3 lines (Spacious) next to it, instead of the check taking a full row and shoving the title down.",
   "v3.95 — Workspace is now always written to the URL (?ws=planner or ?ws=innovation), not just when it's not Planner. Previous behavior kept Planner URLs bare for back-compat, but that meant a Planner URL refreshed would fall back to localStorage, which could still be Innovation from a prior tab, so refresh felt like it kept flipping to Innovation. Loading a bare URL (no ws param) still works — localStorage remains the fallback — so old bookmarks don't break.",
@@ -3213,11 +3214,14 @@ async function _withRetry(fn, attempts) {
 }
 async function refetch() {
   if (!ONLINE) { cards = loadLocal(); render(); return; }
+  const wsAtCall = currentWorkspace;
   let { data, error } = await _withRetry(() => wsEq(db.from("deliverables").select("*")).order("created_at", { ascending: true }), 3);
+  if (wsAtCall !== currentWorkspace) return;   // workspace switched mid-flight — discard stale response
   if (error && isColumnMissingError(error)) {
     WS_COL_MISSING = true;
     toast("Run supabase/migrations/0007_workspaces.sql — workspaces are degraded until then.");
     ({ data, error } = await _withRetry(() => db.from("deliverables").select("*").order("created_at", { ascending: true }), 3));
+    if (wsAtCall !== currentWorkspace) return;
   }
   if (error) {
     _lastLoadError = error;
@@ -3375,10 +3379,13 @@ async function loadLists() {
     }
     return;
   }
+  const wsAtCall = currentWorkspace;
   let { data, error } = await _withRetry(() => wsEq(db.from("lists").select("*")).order("position", { ascending: true }), 3);
+  if (wsAtCall !== currentWorkspace) return;   // workspace switched mid-flight — discard stale lists
   if (error && isColumnMissingError(error)) {
     WS_COL_MISSING = true;
     ({ data, error } = await _withRetry(() => db.from("lists").select("*").order("position", { ascending: true }), 3));
+    if (wsAtCall !== currentWorkspace) return;
   }
   if (error) {
     _lastLoadError = error;
