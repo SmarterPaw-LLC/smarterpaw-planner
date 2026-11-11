@@ -1421,6 +1421,9 @@
       <button class="ghost" id="deleteBtn" style="color:var(--danger);border-color:var(--danger)">Delete</button>
       <button class="ghost" id="duplicateBtn">⧉ Duplicate</button>
       <button class="ghost" id="copyLinkBtn" title="Copy a shareable link that opens this card">🔗 Copy link</button>
+      <label id="wsMoveLabel" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted)">Workspace
+        <select id="wsMoveSel" class="ghost" style="padding:5px 8px;font-size:12px" title="Move this card to a different workspace"></select>
+      </label>
       <div class="spacer"></div>
       <button id="cancelBtn">Cancel</button>
       <button class="primary" id="saveBtn">Save</button>
@@ -1646,8 +1649,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "3.98";
+const VERSION = "3.99";
 const CHANGELOG = [
+  "v3.99 — Card modal now has a Workspace picker in the action row (between 🔗 Copy link and Cancel). Pick the other workspace, confirm, and the card's `workspace` column flips in the DB — it drops off this board and reappears on the other. Options are pulled from the WORKSPACES array so adding a third workspace to that array auto-adds it to this picker. Previously the only way to move a mis-placed card was delete+recreate on the other side.",
   "v3.98 — Fix: switching workspaces fast after a cold page load used to require a manual refresh — the symptom was the new workspace's chrome appearing with the old workspace's cards still on screen. Cause: init() and switchWorkspace() both fire refetch() / loadLists(), and init's queries (which were already in flight against workspace A) could resolve AFTER you switched to B, overwriting B's cards. refetch() and loadLists() now capture currentWorkspace at call time and discard the response if the workspace changed mid-flight, so init's late reply can't clobber the switch.",
   "v3.97 — Fix: ➜ Convert on a subtask only mutated the modal's local state — if you closed the card without clicking Save, the new deliverable survived (sitting in Backlog) but the subtask on the parent card reverted to a plain text row on next open. Convert now persists the subtask array to the parent card IMMEDIATELY, so the link pill sticks whether you save the modal or just close it.",
   "v3.96 — Calendar event bars: (1) Bar-height picker (Compact / Comfortable / Spacious) is now a dropdown in the Calendar toolbar, next to '↕ Continuous' — no more digging in ⚏ Display. Syncs both ways with the Display setting. (2) Fixed the ✓ check badge wrapping the title onto its own row in the Comfortable / Spacious sizes: it now sits inline left of the title (like Compact), and the title wraps up to 2 lines (Comfortable) or 3 lines (Spacious) next to it, instead of the check taking a full row and shoving the title down.",
@@ -8249,6 +8253,21 @@ function openModal(card, prefill) {
   document.getElementById("deleteBtn").style.display = card ? "" : "none";
   document.getElementById("duplicateBtn").style.display = card ? "" : "none";   // only existing cards can be duplicated
   document.getElementById("copyLinkBtn").style.display = card ? "" : "none";   // same: no stable link until the card has an id
+  // Workspace picker — only shown for existing cards + only when multi-workspace is in play. Populated from the
+  // WORKSPACES array, so adding a workspace there also adds it here. Reads current scope from currentWorkspace
+  // (that's where the row lives because the board query is scoped to it); on change the row's workspace column
+  // is flipped and the card drops off this board / appears on the other.
+  const wsLbl = document.getElementById("wsMoveLabel"); const wsSel = document.getElementById("wsMoveSel");
+  if (wsLbl && wsSel) {
+    const show = !!card && !WS_COL_MISSING && WORKSPACES.length > 1;
+    wsLbl.style.display = show ? "inline-flex" : "none";
+    if (show) {
+      wsSel.innerHTML = "";
+      WORKSPACES.forEach(w => { const o = document.createElement("option"); o.value = w.id; o.textContent = w.icon + " " + w.label; wsSel.appendChild(o); });
+      wsSel.value = currentWorkspace;
+      wsSel.dataset.original = currentWorkspace;
+    }
+  }
   document.getElementById("overlay").classList.add("show");
   requestAnimationFrame(autoResizeTitle);   // only measurable once the modal is visible; before that, scrollHeight is 0 and would collapse the field
   if (!card) document.getElementById("f_title").focus();   // only auto-focus when creating; editing just opens the card
@@ -8385,6 +8404,25 @@ async function copyCardLink() {
   const url = location.origin + location.pathname + "?" + p.toString();
   try { await navigator.clipboard.writeText(url); toast("Link copied — share it to open this card directly."); }
   catch (e) { window.prompt("Copy this link:", url); }
+}
+// Move the open card to a different workspace (flips its `workspace` column). The row drops off this board
+// (next refetch excludes it) and appears on the target workspace's board. Status lane is likely invalid in the
+// target (lanes are per-workspace) — the user can fix that once they switch over. Confirms before acting.
+async function moveCardToWorkspace(e) {
+  const sel = e.target;
+  const id = document.getElementById("f_id").value;
+  const target = sel.value;
+  const original = sel.dataset.original || currentWorkspace;
+  if (!id || target === original) return;
+  const targetDef = WORKSPACES.find(w => w.id === target); if (!targetDef) { sel.value = original; return; }
+  const card = cards.find(c => c.id === id); if (!card) { sel.value = original; return; }
+  if (!confirm(`Move "${card.title}" to ${targetDef.label}? It'll drop off this board and appear on the ${targetDef.label} board.`)) { sel.value = original; return; }
+  if (!ONLINE) { toast("Can't move cards while offline."); sel.value = original; return; }
+  const { error } = await db.from("deliverables").update({ workspace: target }).eq("id", id);
+  if (error) { toast("Move failed: " + error.message); sel.value = original; return; }
+  toast(`Moved to ${targetDef.label}.`);
+  closeModal();
+  await refetch();   // card is gone from this board now
 }
 // Duplicate the open deliverable as a new card (title gets " (copy)"; subtasks get fresh ids).
 function duplicateCard() {
@@ -9236,6 +9274,7 @@ async function init() {
   document.getElementById("deleteBtn").onclick = deleteCard;
   document.getElementById("duplicateBtn").onclick = duplicateCard;
   document.getElementById("copyLinkBtn").onclick = copyCardLink;
+  document.getElementById("wsMoveSel").onchange = moveCardToWorkspace;
   // Title textarea: auto-resize on input, and treat Enter as save (not newline) so it behaves like the old <input>.
   const titleEl = document.getElementById("f_title");
   titleEl.addEventListener("input", autoResizeTitle);
