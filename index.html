@@ -744,7 +744,9 @@
   .gallery-item .gi-rm:hover { background: rgba(0,0,0,.85); }
   .gallery-item .gi-dl { position: absolute; top: 4px; left: 4px; width: 22px; height: 22px; padding: 0; line-height: 1; font-size: 12px; background: rgba(0,0,0,.6); color: #fff; border: none; border-radius: 999px; cursor: pointer; }
   .gallery-item .gi-dl:hover { background: rgba(0,0,0,.85); }
-  .gallery-item .gi-cover { position: absolute; bottom: 4px; left: 4px; font-size: 10px; background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 600; letter-spacing: .3px; }
+  .gallery-item .gi-cover { position: absolute; bottom: 4px; left: 4px; font-size: 10px; background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 600; letter-spacing: .3px; display: flex; align-items: center; gap: 3px; }
+  .gallery-item .gi-star { position: absolute; bottom: 4px; right: 4px; height: 22px; padding: 0 8px; line-height: 1; font-size: 11px; font-weight: 600; letter-spacing: .3px; background: rgba(0,0,0,.6); color: #fff; border: none; border-radius: 999px; cursor: pointer; display: flex; align-items: center; gap: 3px; }
+  .gallery-item .gi-star:hover { background: rgba(0,0,0,.85); }
   .gallery-tools { display: flex; gap: 8px; margin-top: 8px; }
   .gallery-add { padding: 6px 12px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); cursor: pointer; font-weight: 600; }
   .gallery-add:hover { border-color: var(--accent); }
@@ -1650,6 +1652,7 @@ const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
 const VERSION = "4.00";
 const CHANGELOG = [
+  "v4.01 — Gallery images now have a ☆ Make cover button in the bottom-right corner. Click it to promote any gallery image to the card's cover — no more having to clear the current cover first and reorder the gallery. The current cover (whether it's an explicit upload or the auto gallery[0] fallback) shows a ★ COVER chip; the ☆ Make cover button appears on every other gallery item. Fixes the usability gap where swapping covers wasn't discoverable once an explicit cover was set.",
   "v4.00 — Workspace picker moved off the modal action bar and into the ⚙ card settings popover (bottom row). Same behavior (pick a workspace, confirm, row's workspace column flips), just lives with the other per-card cross-cutting controls instead of adding another button to the Save/Cancel row.",
   "v3.99 — Card modal now has a Workspace picker in the action row (between 🔗 Copy link and Cancel). Pick the other workspace, confirm, and the card's `workspace` column flips in the DB — it drops off this board and reappears on the other. Options are pulled from the WORKSPACES array so adding a third workspace to that array auto-adds it to this picker. Previously the only way to move a mis-placed card was delete+recreate on the other side.",
   "v3.98 — Fix: switching workspaces fast after a cold page load used to require a manual refresh — the symptom was the new workspace's chrome appearing with the old workspace's cards still on screen. Cause: init() and switchWorkspace() both fire refetch() / loadLists(), and init's queries (which were already in flight against workspace A) could resolve AFTER you switched to B, overwriting B's cards. refetch() and loadLists() now capture currentWorkspace at call time and discard the response if the workspace changed mid-flight, so init's late reply can't clobber the switch.",
@@ -8005,9 +8008,13 @@ let modalGallery = [];
 function renderGalleryEdit() {
   const host = document.getElementById("f_gallery"); if (!host) return;
   host.innerHTML = "";
-  const noExplicitCover = !(document.getElementById("f_coverUrl").value || "").trim();
+  const explicitCoverUrl = (document.getElementById("f_coverUrl").value || "").trim();
+  const noExplicitCover = !explicitCoverUrl;
   modalGallery.forEach((entry, idx) => {
     const url = entry.url;
+    // This item is the current cover if it matches the explicit cover URL, OR (when there's no explicit cover)
+    // it's gallery[0] — the auto-cover fallback. Either way we show COVER on this one and hide "Make cover".
+    const isCover = explicitCoverUrl ? (url === explicitCoverUrl) : (idx === 0);
     const item = document.createElement("div"); item.className = "gallery-item"; item.draggable = true; item.dataset.idx = String(idx);
     const img = document.createElement("img"); img.src = url; img.alt = ""; img.loading = "lazy"; img.draggable = false;
     img.onerror = () => { item.style.opacity = ".3"; img.alt = "Image failed to load"; };
@@ -8042,7 +8049,13 @@ function renderGalleryEdit() {
       if (noExplicitCover) setModalCover("", (modalGallery[0] && modalGallery[0].url) || "");
     });
     item.appendChild(img); item.appendChild(dl); item.appendChild(rm);
-    if (noExplicitCover && idx === 0) { const cb = document.createElement("span"); cb.className = "gi-cover"; cb.textContent = "COVER"; item.appendChild(cb); }
+    if (isCover) {
+      const cb = document.createElement("span"); cb.className = "gi-cover"; cb.textContent = "★ COVER"; item.appendChild(cb);
+    } else {
+      const mk = document.createElement("button"); mk.type = "button"; mk.className = "gi-star"; mk.innerHTML = "☆ Make cover"; mk.title = "Use this image as the cover photo";
+      mk.onclick = (e) => { e.stopPropagation(); setModalCover(url); renderGalleryEdit(); };
+      item.appendChild(mk);
+    }
     host.appendChild(item);
   });
 }
