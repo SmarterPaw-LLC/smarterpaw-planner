@@ -750,6 +750,17 @@
   .gallery-item .gi-cover { position: absolute; bottom: 4px; left: 4px; font-size: 10px; background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 600; letter-spacing: .3px; display: flex; align-items: center; gap: 3px; }
   .gallery-item .gi-star { position: absolute; bottom: 4px; right: 4px; height: 22px; padding: 0 8px; line-height: 1; font-size: 11px; font-weight: 600; letter-spacing: .3px; background: rgba(0,0,0,.6); color: #fff; border: none; border-radius: 999px; cursor: pointer; display: flex; align-items: center; gap: 3px; }
   .gallery-item .gi-star:hover { background: rgba(0,0,0,.85); }
+  .gallery-item.file-item { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 8px; gap: 6px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); text-align: center; }
+  .gallery-item.file-item .gi-icon { font-size: 36px; line-height: 1; opacity: .85; }
+  .gallery-item.file-item .gi-name { font-size: 11px; font-weight: 600; color: var(--text); word-break: break-word; max-width: 100%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
+  .gallery-item.file-item .gi-size { font-size: 10px; color: var(--muted); letter-spacing: .3px; }
+  .gallery-item.file-item .gi-open { position: absolute; inset: 0; cursor: pointer; }
+  /* Board card file-cover tile: shown when a card has no image but has at least one attachment. */
+  .card-filecover { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: -11px -11px 8px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border-radius: 8px 8px 0 0; border-bottom: 1px solid var(--line); }
+  .card-filecover .fc-icon { font-size: 22px; line-height: 1; flex: 0 0 auto; }
+  .card-filecover .fc-meta { min-width: 0; flex: 1 1 auto; }
+  .card-filecover .fc-name { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-filecover .fc-sub { font-size: 10px; color: var(--muted); letter-spacing: .3px; margin-top: 1px; }
   .gallery-tools { display: flex; gap: 8px; margin-top: 8px; }
   .gallery-add { padding: 6px 12px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); cursor: pointer; font-weight: 600; }
   .gallery-add:hover { border-color: var(--accent); }
@@ -1350,14 +1361,15 @@
       <input type="file" id="f_coverFile" accept="image/*" style="display:none" />
       <input type="hidden" id="f_coverUrl" />
     </div>
-    <!-- Image gallery — multiple photos per card. First image is used as the auto cover when no explicit cover is set. -->
+    <!-- Images + attachments. Drop/paste images or any file (PDF, spreadsheet, doc, etc.). Images are embedded
+         in the card row; non-image files upload to the card-attachments Storage bucket and show as file tiles. -->
     <div class="field gallery-field" data-sec="gallery">
-      <label>Image gallery <span class="opt">— drop or paste multiple; first image serves as the auto cover</span></label>
+      <label>Images &amp; attachments <span class="opt">— drop or paste; images, PDFs, spreadsheets, docs</span></label>
       <div id="f_gallery" class="gallery-wrap"></div>
       <div class="gallery-tools">
-        <button type="button" id="f_galleryAdd" class="gallery-add">＋ Add images</button>
+        <button type="button" id="f_galleryAdd" class="gallery-add">＋ Add files</button>
       </div>
-      <input type="file" id="f_galleryFile" accept="image/*" multiple style="display:none" />
+      <input type="file" id="f_galleryFile" multiple style="display:none" />
     </div>
     <div class="field" data-sec="title"><label>Title</label>
       <div class="title-wrap">
@@ -1655,6 +1667,7 @@ const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
 const VERSION = "4.00";
 const CHANGELOG = [
+  "v4.02 — File attachments on cards. Drop/paste/pick PDFs, spreadsheets, docs, zips, videos (any non-image, up to 25 MB) into the same gallery zone as cover images. Non-image files upload to a Supabase Storage bucket (`card-attachments`) instead of inlining into the row, so attachments don't bloat the DB. They render as icon tiles inside the gallery (📕 📊 📝 📎) with filename + size, click to open in a new tab, ⬇ to download, ✕ to remove (also deletes the Storage object). The ☆ Make cover button works on file tiles too, and on board cards without an image cover, the first file now renders as a cover tile (icon + name) instead of nothing. Requires running supabase/migrations/0009_card_attachments_bucket.sql to create the bucket + anon RLS policies.",
   "v4.01 — Gallery images now have a ☆ Make cover button in the bottom-right corner. Click it to promote any gallery image to the card's cover — no more having to clear the current cover first and reorder the gallery. The current cover (whether it's an explicit upload or the auto gallery[0] fallback) shows a ★ COVER chip; the ☆ Make cover button appears on every other gallery item. Fixes the usability gap where swapping covers wasn't discoverable once an explicit cover was set.",
   "v4.00 — Workspace picker moved off the modal action bar and into the ⚙ card settings popover (bottom row). Same behavior (pick a workspace, confirm, row's workspace column flips), just lives with the other per-card cross-cutting controls instead of adding another button to the Save/Cancel row.",
   "v3.99 — Card modal now has a Workspace picker in the action row (between 🔗 Copy link and Cancel). Pick the other workspace, confirm, and the card's `workspace` column flips in the DB — it drops off this board and reappears on the other. Options are pulled from the WORKSPACES array so adding a third workspace to that array auto-adds it to this picker. Previously the only way to move a mis-placed card was delete+recreate on the other side.",
@@ -2217,7 +2230,8 @@ function cardGallery(c) {
   if (!Array.isArray(g)) return [];
   return g.map(x => typeof x === "string" ? { url: x } : x).filter(x => x && x.url);
 }
-function cardGalleryUrls(c) { return cardGallery(c).map(g => g.url).filter(Boolean); }
+function cardGalleryUrls(c) { return cardGallery(c).filter(g => g.kind !== "file").map(g => g.url).filter(Boolean); }
+function cardAttachments(c) { return cardGallery(c).filter(g => g.kind === "file"); }
 function _galleryId() { return "img" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function isRenderableImageUrl(u) { return !!u && /^(https?:|data:)/i.test(u) && !/drive\.google|docs\.google|sharepoint/i.test(u); }
 function coverSrcOf(c) {
@@ -2226,6 +2240,17 @@ function coverSrcOf(c) {
   const first = cardGalleryUrls(c).find(isRenderableImageUrl); if (first) return first;
   const legacy = c.fields["Latest Sample Image URL"];
   return isRenderableImageUrl(legacy) ? legacy : "";
+}
+// For renderers that want to fall back to an attachment tile when no image cover exists.
+// Returns {kind:"image", src} | {kind:"file", entry} | null.
+function cardCoverTile(c) {
+  const img = coverSrcOf(c); if (img) return { kind: "image", src: img };
+  const explicitUrl = (c && c.fields && c.fields[COVER_KEY]) || "";
+  const g = cardGallery(c);
+  const match = explicitUrl ? g.find(x => x.url === explicitUrl) : null;
+  if (match && match.kind === "file") return { kind: "file", entry: match };
+  const firstFile = g.find(x => x.kind === "file");
+  return firstFile ? { kind: "file", entry: firstFile } : null;
 }
 // ISO-8601 week string ("2026-W24") for a yyyy-mm-dd date.
 function isoWeek(ymdStr) {
@@ -5764,7 +5789,15 @@ function cardEl(c) {
   // Google Drive / SharePoint links or dead URLs that return HTML, not an image — those render as broken img
   // icons. Hide any that fail to load via onerror so a 403/404 doesn't leave a broken placeholder in the card.
   const looksRenderable = coverSrc && /^(https?:|data:)/i.test(coverSrc) && !/drive\.google|docs\.google|sharepoint/i.test(coverSrc);
-  const coverHtml = looksRenderable ? `<img class="card-cover" src="${esc(coverSrc)}" alt="" loading="lazy" onerror="this.remove()" />` : "";
+  let coverHtml = looksRenderable ? `<img class="card-cover" src="${esc(coverSrc)}" alt="" loading="lazy" onerror="this.remove()" />` : "";
+  if (!coverHtml) {
+    const tile = cardCoverTile(c);
+    if (tile && tile.kind === "file") {
+      const icon = _iconForFile(tile.entry);
+      const sub = _fmtBytes(tile.entry.size) || (tile.entry.type || "File");
+      coverHtml = `<div class="card-filecover"><div class="fc-icon">${icon}</div><div class="fc-meta"><div class="fc-name">${esc(tile.entry.name || "Attachment")}</div><div class="fc-sub">${esc(sub)}</div></div></div>`;
+    }
+  }
   el.innerHTML = coverHtml +
     `<h3>${done}${schedBadge(c) + reviewBadge(c)}${esc(c.title)}</h3>` +
     (badges ? `<div class="dimrow${curDisp().badge ? "" : " text"}">${badges}</div>` : "") +
@@ -8005,30 +8038,69 @@ function _addModalNoteNow() {
   const first = document.querySelector("#f_notesList .note-row .note-text");
   if (first) first.focus();
 }
-// Image gallery — modalGallery is the working array of image URLs (data URLs for uploads, http(s) URLs for
-// pasted/dropped links). Rendered as a thumbnail grid; first item marked as the cover when no explicit cover set.
+// Gallery holds images (data URLs) AND file attachments (Supabase Storage URLs with kind:"file").
+// File items render as icon tiles instead of thumbnails; cover resolution prefers images, falls back to files.
 let modalGallery = [];
+function _isFileItem(entry) { return !!(entry && entry.kind === "file"); }
+function _iconForFile(entry) {
+  const name = (entry.name || "").toLowerCase();
+  const type = (entry.type || "").toLowerCase();
+  if (/\.pdf$/.test(name) || type === "application/pdf") return "📕";
+  if (/\.(xlsx?|csv|numbers|ods)$/.test(name) || /sheet|excel|csv/.test(type)) return "📊";
+  if (/\.(docx?|rtf|odt|pages)$/.test(name) || /word|document/.test(type)) return "📝";
+  if (/\.(pptx?|keynote|odp)$/.test(name) || /presentation|powerpoint/.test(type)) return "📽";
+  if (/\.(zip|rar|7z|tar|gz)$/.test(name) || /zip|archive|compressed/.test(type)) return "🗜";
+  if (/\.(mp4|mov|avi|webm|mkv)$/.test(name) || /^video\//.test(type)) return "🎬";
+  if (/\.(mp3|wav|m4a|flac|ogg)$/.test(name) || /^audio\//.test(type)) return "🎵";
+  if (/\.(txt|md|log)$/.test(name) || /^text\//.test(type)) return "📄";
+  return "📎";
+}
+function _fmtBytes(n) {
+  if (!n && n !== 0) return "";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  return (n / (1024 * 1024)).toFixed(1) + " MB";
+}
 function renderGalleryEdit() {
   const host = document.getElementById("f_gallery"); if (!host) return;
   host.innerHTML = "";
   const explicitCoverUrl = (document.getElementById("f_coverUrl").value || "").trim();
-  const noExplicitCover = !explicitCoverUrl;
+  const firstImageIdx = modalGallery.findIndex(x => !_isFileItem(x));
+  const firstFileIdx = modalGallery.findIndex(_isFileItem);
+  // Auto-cover resolution when no explicit cover: first image, else first file (shown as icon tile).
+  const autoCoverIdx = firstImageIdx >= 0 ? firstImageIdx : firstFileIdx;
   modalGallery.forEach((entry, idx) => {
     const url = entry.url;
-    // This item is the current cover if it matches the explicit cover URL, OR (when there's no explicit cover)
-    // it's gallery[0] — the auto-cover fallback. Either way we show COVER on this one and hide "Make cover".
-    const isCover = explicitCoverUrl ? (url === explicitCoverUrl) : (idx === 0);
-    const item = document.createElement("div"); item.className = "gallery-item"; item.draggable = true; item.dataset.idx = String(idx);
-    const img = document.createElement("img"); img.src = url; img.alt = ""; img.loading = "lazy"; img.draggable = false;
-    img.onerror = () => { item.style.opacity = ".3"; img.alt = "Image failed to load"; };
+    const isCover = explicitCoverUrl ? (url === explicitCoverUrl) : (idx === autoCoverIdx);
+    const isFile = _isFileItem(entry);
+    const item = document.createElement("div");
+    item.className = "gallery-item" + (isFile ? " file-item" : "");
+    item.draggable = true; item.dataset.idx = String(idx);
     const titleHint = (document.getElementById("f_title") || {}).value || "image";
-    img.onclick = (e) => { e.stopPropagation(); openImageViewer(modalGallery.map(x => x.url), idx, titleHint); };
-    const rm = document.createElement("button"); rm.type = "button"; rm.className = "gi-rm"; rm.textContent = "✕"; rm.title = "Remove from gallery";
-    rm.onclick = (e) => { e.stopPropagation(); modalGallery.splice(idx, 1); renderGalleryEdit(); if (noExplicitCover) setModalCover("", (modalGallery[0] && modalGallery[0].url) || ""); };
-    const dl = document.createElement("button"); dl.type = "button"; dl.className = "gi-dl"; dl.textContent = "⬇"; dl.title = "Download image";
-    dl.onclick = (e) => { e.stopPropagation(); downloadImage(url, titleHint + "-" + (idx + 1)); };
-    // Drag-to-reorder: dragstart tags with the source index + a sentinel so the outer gallery drop handler
-    // can ignore this move (otherwise it would re-add the dragged image as a new item).
+    if (isFile) {
+      const icon = document.createElement("div"); icon.className = "gi-icon"; icon.textContent = _iconForFile(entry);
+      const name = document.createElement("div"); name.className = "gi-name"; name.textContent = entry.name || "Attachment"; name.title = entry.name || "";
+      const size = document.createElement("div"); size.className = "gi-size"; size.textContent = _fmtBytes(entry.size);
+      const open = document.createElement("a"); open.className = "gi-open"; open.href = url; open.target = "_blank"; open.rel = "noopener"; open.title = "Open " + (entry.name || "file");
+      item.appendChild(icon); item.appendChild(name); item.appendChild(size); item.appendChild(open);
+    } else {
+      const img = document.createElement("img"); img.src = url; img.alt = ""; img.loading = "lazy"; img.draggable = false;
+      img.onerror = () => { item.style.opacity = ".3"; img.alt = "Image failed to load"; };
+      img.onclick = (e) => { e.stopPropagation(); openImageViewer(modalGallery.filter(x => !_isFileItem(x)).map(x => x.url), modalGallery.filter(x => !_isFileItem(x)).findIndex(x => x.url === url), titleHint); };
+      item.appendChild(img);
+    }
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "gi-rm"; rm.textContent = "✕"; rm.title = isFile ? "Remove attachment" : "Remove from gallery";
+    rm.onclick = async (e) => {
+      e.stopPropagation();
+      if (isFile && entry.storagePath && ONLINE) {
+        try { await db.storage.from("card-attachments").remove([entry.storagePath]); } catch (_) {}
+      }
+      modalGallery.splice(idx, 1);
+      renderGalleryEdit();
+      if (!explicitCoverUrl) { const next = modalGallery.find(x => !_isFileItem(x)) || modalGallery[0]; setModalCover("", (next && next.url) || ""); }
+    };
+    const dl = document.createElement("button"); dl.type = "button"; dl.className = "gi-dl"; dl.textContent = "⬇"; dl.title = isFile ? ("Download " + (entry.name || "file")) : "Download image";
+    dl.onclick = (e) => { e.stopPropagation(); downloadImage(url, isFile ? (entry.name || titleHint) : (titleHint + "-" + (idx + 1))); };
     item.addEventListener("dragstart", e => {
       e.dataTransfer.setData("application/x-gallery-reorder", String(idx));
       e.dataTransfer.effectAllowed = "move";
@@ -8049,13 +8121,13 @@ function renderGalleryEdit() {
       const [moved] = modalGallery.splice(from, 1);
       modalGallery.splice(to, 0, moved);
       renderGalleryEdit();
-      if (noExplicitCover) setModalCover("", (modalGallery[0] && modalGallery[0].url) || "");
+      if (!explicitCoverUrl) { const next = modalGallery.find(x => !_isFileItem(x)) || modalGallery[0]; setModalCover("", (next && next.url) || ""); }
     });
-    item.appendChild(img); item.appendChild(dl); item.appendChild(rm);
+    item.appendChild(dl); item.appendChild(rm);
     if (isCover) {
       const cb = document.createElement("span"); cb.className = "gi-cover"; cb.textContent = "★ COVER"; item.appendChild(cb);
     } else {
-      const mk = document.createElement("button"); mk.type = "button"; mk.className = "gi-star"; mk.innerHTML = "☆ Make cover"; mk.title = "Use this image as the cover photo";
+      const mk = document.createElement("button"); mk.type = "button"; mk.className = "gi-star"; mk.innerHTML = "☆ Make cover"; mk.title = isFile ? "Use this file as the card cover" : "Use this image as the cover photo";
       mk.onclick = (e) => { e.stopPropagation(); setModalCover(url); renderGalleryEdit(); };
       item.appendChild(mk);
     }
@@ -8063,17 +8135,35 @@ function renderGalleryEdit() {
   });
 }
 async function handleGalleryFiles(files) {
-  const list = Array.from(files || []).filter(f => /^image\//.test(f.type));
+  const list = Array.from(files || []);
   if (!list.length) return;
   const noExplicitCoverBefore = !(document.getElementById("f_coverUrl").value || "").trim();
   const stamp = nowIso();
   for (const f of list) {
-    try { const dataUrl = await resizeImageToDataUrl(f, 700, 0.68); modalGallery.push({ id: _galleryId(), url: dataUrl, addedAt: stamp }); }
-    catch (e) { toast("Skipped “" + (f.name || "image") + "”: " + (e && e.message || e)); }
+    if (/^image\//.test(f.type)) {
+      try { const dataUrl = await resizeImageToDataUrl(f, 700, 0.68); modalGallery.push({ id: _galleryId(), url: dataUrl, addedAt: stamp }); }
+      catch (e) { toast("Skipped “" + (f.name || "image") + "”: " + (e && e.message || e)); }
+    } else {
+      try { await _uploadAttachment(f, stamp); }
+      catch (e) { toast("Upload failed for “" + (f.name || "file") + "”: " + (e && e.message || e)); }
+    }
   }
   renderGalleryEdit();
-  // If no explicit cover is set, nudge the modal cover preview to the gallery's new first image.
-  if (noExplicitCoverBefore) setModalCover("", (modalGallery[0] && modalGallery[0].url) || "");
+  if (noExplicitCoverBefore) { const first = modalGallery.find(x => !_isFileItem(x)) || modalGallery[0]; setModalCover("", (first && first.url) || ""); }
+}
+// Upload a non-image file to the card-attachments Supabase Storage bucket and push it onto modalGallery.
+// Offline mode is explicitly refused — attachments need a live backend because they live outside the row.
+async function _uploadAttachment(file, stamp) {
+  if (!ONLINE) { toast("Can't upload attachments while offline."); return; }
+  if (file.size > 25 * 1024 * 1024) { toast("“" + (file.name || "file") + "” is over 25 MB — too large to attach."); return; }
+  const id = _galleryId();
+  const safeName = (file.name || "file").replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120);
+  const cardIdForPath = _modalCardId || "new";
+  const storagePath = cardIdForPath + "/" + Date.now().toString(36) + "-" + safeName;
+  const { error } = await db.storage.from("card-attachments").upload(storagePath, file, { cacheControl: "3600", upsert: false, contentType: file.type || "application/octet-stream" });
+  if (error) throw error;
+  const { data: pub } = db.storage.from("card-attachments").getPublicUrl(storagePath);
+  modalGallery.push({ id, kind: "file", url: pub.publicUrl, storagePath, name: file.name || safeName, size: file.size || 0, type: file.type || "", addedAt: stamp });
 }
 // Downscale an image file to a reasonable size and return a JPEG data URL. Keeps aspect ratio; skips resize
 // when the source is already under the target width. Falls back to the original file's own data URL for
@@ -8259,7 +8349,11 @@ function openModal(card, prefill) {
   const explicitCover = isRenderableImageUrl(rawExplicit) ? rawExplicit : "";
   setModalCover(explicitCover, card ? coverSrcOf(card) : "");
   // Image gallery — multiple photos per card. First image serves as the auto cover when no explicit cover is set.
-  modalGallery = card ? cardGallery(card).map(g => ({ id: g.id || _galleryId(), url: g.url, addedAt: g.addedAt || "" })) : [];
+  modalGallery = card ? cardGallery(card).map(g => {
+    const o = { id: g.id || _galleryId(), url: g.url, addedAt: g.addedAt || "" };
+    if (g.kind === "file") { o.kind = "file"; if (g.name) o.name = g.name; if (g.size) o.size = g.size; if (g.type) o.type = g.type; if (g.storagePath) o.storagePath = g.storagePath; }
+    return o;
+  }) : [];
   renderGalleryEdit();
   // "Last updated" hint next to the Notes label — only shows when we have a stamp (set on save going forward).
   const nu = document.getElementById("f_notesUpdated");
@@ -8363,7 +8457,11 @@ function saveModal() {
   if (notesStamp) fields[NOTES_UPDATED_KEY] = notesStamp; else delete fields[NOTES_UPDATED_KEY];
   const coverVal = (document.getElementById("f_coverUrl").value || "").trim();
   if (coverVal) fields[COVER_KEY] = coverVal; else delete fields[COVER_KEY];
-  if (modalGallery && modalGallery.length) fields[GALLERY_KEY] = modalGallery.map(g => ({ id: g.id || _galleryId(), url: g.url, addedAt: g.addedAt || "" })); else delete fields[GALLERY_KEY];
+  if (modalGallery && modalGallery.length) fields[GALLERY_KEY] = modalGallery.map(g => {
+    const o = { id: g.id || _galleryId(), url: g.url, addedAt: g.addedAt || "" };
+    if (g.kind === "file") { o.kind = "file"; if (g.name) o.name = g.name; if (g.size) o.size = g.size; if (g.type) o.type = g.type; if (g.storagePath) o.storagePath = g.storagePath; }
+    return o;
+  }); else delete fields[GALLERY_KEY];
   // Red-alert flag — persist boolean + note + owner. Only write keys when true so no-alert cards stay clean.
   const _alertBtn = document.getElementById("f_alert");
   if (_alertBtn && _alertBtn.dataset.on === "1") {
@@ -9340,8 +9438,8 @@ async function init() {
   });
   galleryWrap.addEventListener("paste", e => {
     const cd = e.clipboardData; if (!cd) return;
-    const imgs = []; for (const item of cd.items || []) { if (/^image\//.test(item.type)) { const b = item.getAsFile(); if (b) imgs.push(b); } }
-    if (imgs.length) { e.preventDefault(); handleGalleryFiles(imgs); return; }
+    const files = []; for (const item of cd.items || []) { if (item.kind === "file") { const b = item.getAsFile(); if (b) files.push(b); } }
+    if (files.length) { e.preventDefault(); handleGalleryFiles(files); return; }
     const text = cd.getData("text/plain");
     if (text && /^https?:\/\//i.test(text)) {
       e.preventDefault();
