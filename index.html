@@ -217,6 +217,13 @@
     border: 1px solid var(--line); border-radius: 8px; line-height: 1.5; }
   .rte:focus { outline: none; border-color: var(--accent); }
   .rte:empty::before { content: attr(data-ph); color: var(--muted); pointer-events: none; }
+  /* Legacy highlighted spans (pre-v4.03) that only carry a background-color need a dark text color so
+     they stay readable in dark mode. Inline color always wins the cascade, so new highlights that already
+     ship their own color: declaration aren't affected by this rule. */
+  .rte [style*="background-color"],
+  .card .notes [style*="background-color"],
+  .note-text [style*="background-color"],
+  .email-item-body [style*="background-color"] { color: #111; }
   .rte ul, .rte ol { margin: 4px 0; padding-left: 22px; }
   /* Links inside notes (editor + card preview): accent color and a pointer cursor (overrides the text cursor that contenteditable uses by default). */
   .card .notes a, .rte a { color: var(--accent); cursor: pointer; }
@@ -740,7 +747,7 @@
   /* Image gallery — thumbnail grid in the modal, drag-and-drop zone, add button. */
   .gallery-wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; min-height: 48px; padding: 8px; background: var(--panel-2); border: 1.5px dashed var(--line); border-radius: 10px; }
   .gallery-wrap.drop-over { border-color: var(--accent); background: rgba(109,93,252,.08); }
-  .gallery-wrap:empty::before { content: "No images yet"; color: var(--muted); font-size: 12px; grid-column: 1 / -1; padding: 10px; text-align: center; }
+  .gallery-wrap:empty::before { content: "No files yet"; color: var(--muted); font-size: 12px; grid-column: 1 / -1; padding: 10px; text-align: center; }
   .gallery-item { position: relative; aspect-ratio: 1 / 1; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .gallery-item img { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--panel); }
   .gallery-item .gi-rm { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; line-height: 1; font-size: 12px; background: rgba(0,0,0,.6); color: #fff; border: none; border-radius: 999px; cursor: pointer; }
@@ -1667,6 +1674,7 @@ const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
 const VERSION = "4.00";
 const CHANGELOG = [
+  "v4.03 — RTE highlights now auto-contrast their text color. Picking a highlight swatch now also sets the selection's text color to black-on-light or white-on-dark based on the swatch's luminance, so dark-mode highlights are legible instead of white-on-yellow. Added a CSS safety net that gives dark text to any pre-existing highlighted span that only carries a background-color (so old notes don't need to be re-highlighted). Also: empty-state text on the images zone now reads \"No files yet\" since it holds attachments too.",
   "v4.02 — File attachments on cards. Drop/paste/pick PDFs, spreadsheets, docs, zips, videos (any non-image, up to 25 MB) into the same gallery zone as cover images. Non-image files upload to a Supabase Storage bucket (`card-attachments`) instead of inlining into the row, so attachments don't bloat the DB. They render as icon tiles inside the gallery (📕 📊 📝 📎) with filename + size, click to open in a new tab, ⬇ to download, ✕ to remove (also deletes the Storage object). The ☆ Make cover button works on file tiles too, and on board cards without an image cover, the first file now renders as a cover tile (icon + name) instead of nothing. Requires running supabase/migrations/0009_card_attachments_bucket.sql to create the bucket + anon RLS policies.",
   "v4.01 — Gallery images now have a ☆ Make cover button in the bottom-right corner. Click it to promote any gallery image to the card's cover — no more having to clear the current cover first and reorder the gallery. The current cover (whether it's an explicit upload or the auto gallery[0] fallback) shows a ★ COVER chip; the ☆ Make cover button appears on every other gallery item. Fixes the usability gap where swapping covers wasn't discoverable once an explicit cover was set.",
   "v4.00 — Workspace picker moved off the modal action bar and into the ⚙ card settings popover (bottom row). Same behavior (pick a workspace, confirm, row's workspace column flips), just lives with the other per-card cross-cutting controls instead of adding another button to the Save/Cancel row.",
@@ -7787,6 +7795,23 @@ function _rteOpenEmojiPop(anchor, onPick) {
   const esc = ev => { if (ev.key === "Escape") { _rteCloseEmojiPop(); document.removeEventListener("keydown", esc, true); } };
   document.addEventListener("keydown", esc, true);
 }
+// Pick a readable foreground for any CSS color string (hex, rgb, rgba). Uses relative luminance:
+// light highlights → black text, dark highlights → white text. Returns "" for unparseable inputs.
+function _contrastFor(c) {
+  if (!c) return "";
+  let r, g, b;
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim());
+  if (hex) {
+    let h = hex[1]; if (h.length === 3) h = h.split("").map(x => x + x).join("");
+    r = parseInt(h.slice(0, 2), 16); g = parseInt(h.slice(2, 4), 16); b = parseInt(h.slice(4, 6), 16);
+  } else {
+    const m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(c);
+    if (!m) return "";
+    r = +m[1]; g = +m[2]; b = +m[3];
+  }
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.55 ? "#111111" : "#ffffff";
+}
 // Shared color swatch popover for highlight + text-color picks. onPick receives the chosen CSS color (or "" to clear).
 const RTE_COLORS = ["#ffeb3b","#ffc107","#ff9800","#f44336","#e91e63","#9c27b0","#673ab7","#3f51b5","#2196f3","#03a9f4","#00bcd4","#009688","#4caf50","#8bc34a","#cddc39","#795548","#607d8b","#9e9e9e","#000000","#ffffff","#6d5dfc"];
 let _rteColorPop = null;
@@ -7917,8 +7942,14 @@ function buildRteToolbar(editor, syncFn, opts) {
     const sel = window.getSelection(); if (!sel || !sel.rangeCount || sel.isCollapsed) return;
     try { document.execCommand("styleWithCSS", false, true); } catch (e) {}
     try {
-      if (!color) { document.execCommand("hiliteColor", false, "transparent"); document.execCommand("backColor", false, "transparent"); }
-      else document.execCommand("hiliteColor", false, color);
+      if (!color) { document.execCommand("hiliteColor", false, "transparent"); document.execCommand("backColor", false, "transparent"); document.execCommand("foreColor", false, "currentColor"); }
+      else {
+        document.execCommand("hiliteColor", false, color);
+        // Auto-contrast the text color so the highlighted text stays readable in dark mode too. Luminance on
+        // the bg color picks white text on dark highlights, black text on light ones.
+        const fg = _contrastFor(color);
+        if (fg) document.execCommand("foreColor", false, fg);
+      }
     } catch (e) {}
     if (typeof syncFn === "function") syncFn();
   };
