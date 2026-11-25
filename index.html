@@ -977,8 +977,11 @@
     font-size: 11px; z-index: 3; pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
   .card.launch-channel > *, .planning-card.launch-channel > *,
   .list-task.launch-channel > *, .gallery-tile.launch-channel > * { position: relative; z-index: 1; }
-  /* Calendar bars are tight — tone the glow + shrink the badge so it doesn't swallow the title. */
-  .ev.launch-channel::before, .ev-bar.launch-channel::before { box-shadow: inset 0 0 0 1.5px var(--launch-c1, #ff6b35); animation: none; opacity: .9; }
+  /* Calendar bars are tight — gentler inset + subtle outer bloom, keep the pulse so you can see it.
+     ev-bar's base rule sets overflow:hidden; unclip it on launch-only bars so the outer glow escapes.
+     (Theme-channel bars keep their overflow:hidden so the candy stripes stay inside.) */
+  .ev.launch-channel:not(.theme-channel), .ev-bar.launch-channel:not(.theme-channel) { overflow: visible; }
+  .ev.launch-channel::before, .ev-bar.launch-channel::before { box-shadow: inset 0 0 0 1.5px var(--launch-c1, #ff6b35), 0 0 6px var(--launch-c1, #ff6b35); animation: launch-pulse 2.6s ease-in-out infinite; }
   .ev.launch-channel .launch-badge, .ev-bar.launch-channel .launch-badge { width: 14px; height: 14px; font-size: 8px; top: 2px; right: 2px; }
   /* Modal alert button — top-right, next to ✕ Close. Lights up red when toggled on. */
   .modal-alert { position: absolute; top: 10px; right: 48px; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
@@ -1748,8 +1751,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "4.14";
+const VERSION = "4.15";
 const CHANGELOG = [
+  "v4.15 — 🚀 Launch glow is now actually visible on calendar bars. The animated pulse was being suppressed and the outer bloom was clipped by the bar's overflow:hidden; restored the pulse, added a 6px outer glow, and unclipped launch-only bars so the glow can escape. Theme+Launch bars stay clipped (candy stripes still contained).",
   "v4.14 — New 🚀 Launch channel role + appearance controls now self-hide. (1) Channel role dropdown in Manage gains a second option: 🚀 Launch. Any channel assigned the Launch role decorates its cards with a pulsing glow border and a 🚀 badge in the top-right corner — a lively complement to Theme's static candy stripes. (2) The ⚙ card appearance popover's Stripe 1 / Stripe 2 rows only appear when the card has a Theme-role channel on it, and the new 🚀 Launch glow row only appears when the card has a Launch-role channel. Cards with neither role get a clean popover (card color + gradient only). (3) Launch glow color is configurable per-card in that popover; default is a fiery orange.",
   "v4.13 — Tighter Manage rows: single-line layout that doesn't wrap. Name truncates with ellipsis instead of pushing controls onto a second row, role dropdown capped at 150px, ↑↓/✎ buttons compact, Remove button small-caps so the whole row fits regardless of width.",
   "v4.12 — Removed the 'Groups now live in Manage → Groups' hint from the Custom fields overlay.",
