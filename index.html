@@ -1554,7 +1554,6 @@
     <div class="hint">Fields show on every deliverable and as a column in Grid/List. <b>Dropdown</b> picks one option; <b>Multi-select</b> picks several.</div>
     <div id="fieldsEditor" class="fields-editor"></div>
     <div class="add-row"><input id="fAddField" placeholder="New field name (e.g. Priority, Budget)…" autocomplete="off" /><button class="primary" id="fAddFieldBtn">Add field</button></div>
-    <div class="hint" style="margin-top:14px;">Groups now live in <b>Manage → Groups</b> — bundle fields (and card-identity sections) with per-section color and width.</div>
     <div class="modal-actions"><div class="spacer"></div><button id="fieldsDone">Done</button></div>
   </div>
 </div>
@@ -1721,8 +1720,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "4.11";
+const VERSION = "4.12";
 const CHANGELOG = [
+  "v4.12 — Removed the 'Groups now live in Manage → Groups' hint from the Custom fields overlay.",
   "v4.11 — Person avatars. Each person in Manage → People gets an avatar well (click the circle to upload a JPG/PNG — resized client-side to 128px). When a card has owners, badge-mode views (Board, Calendar bars, Gallery, Planning) render the owners as a stacked avatar row (overlapping circles, +N when there are more than 4). Owner chips in the card modal picker also show the avatar next to the name. Text-mode List/Grid keeps the comma-joined names so tabular layouts stay scannable. Fallback for anyone without an uploaded avatar: a colored initials disc (stable hue per name).",
   "v4.10 — Channel roles: every channel in Manage → Channels now has a role dropdown (— role — / 🎨 Theme). The Theme role controls the candy-stripe decoration on cards. You can reassign Theme to any channel (or clear it entirely). Default stays as the channel literally named 'Theme' for back-compat when no channel has been explicitly assigned. Role migrates when a channel is renamed and clears when it's removed.",
   "v4.09 — Manage overlay cleanup: (1) title changed from 'Manage board' to 'Manage' since it applies to every view. (2) Each section (Lanes, Channels, People, Custom fields, Groups, Promotions) is now a collapsible card with a count pill — click the header to open/close, persisted per section in localStorage. Lanes stays open by default, the rest collapsed so the overlay isn't a wall of text. (3) The Groups editor moved from inside the Custom fields overlay to its own top-level section in Manage. The Custom fields overlay now just points to Manage → Groups.",
