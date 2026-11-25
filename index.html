@@ -247,6 +247,24 @@
   .owner-chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   .owner-chip.add { border-style: dashed; color: var(--muted); }
   .owner-chips .none { color: var(--muted); font-size: 12px; }
+  /* Avatar used in owner chips, stacked badges on cards, and the Manage > People row. Round, consistent across contexts. */
+  .pavi { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--panel-2); color: var(--text); font-weight: 700; font-size: 10px; letter-spacing: .2px; overflow: hidden; flex: none; }
+  .pavi img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pavi.sz-16 { width: 16px; height: 16px; font-size: 8px; }
+  .pavi.sz-18 { width: 18px; height: 18px; font-size: 9px; }
+  .pavi.sz-22 { width: 22px; height: 22px; font-size: 10px; }
+  .pavi.sz-28 { width: 28px; height: 28px; font-size: 11px; }
+  .pavi-stack { display: inline-flex; align-items: center; vertical-align: middle; }
+  .pavi-stack .pavi { border: 2px solid var(--panel); margin-left: -6px; }
+  .pavi-stack .pavi:first-child { margin-left: 0; }
+  .pavi-stack .pavi-more { padding: 0 6px; min-width: 20px; }
+  .owner-chip .pavi { margin-right: 6px; }
+  /* Manage > People avatar cell */
+  .person-av-cell { display: flex; align-items: center; gap: 8px; }
+  .person-av-cell .pavi { cursor: pointer; border: 1px dashed var(--line); }
+  .person-av-cell .pavi:hover { border-color: var(--accent); }
+  .person-av-cell .pavi-clear { color: var(--muted); font-size: 11px; cursor: pointer; background: transparent; border: none; padding: 0 4px; }
+  .person-av-cell .pavi-clear:hover { color: var(--danger); }
   .manage-sec { margin-bottom: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
   .manage-sec > .sec-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; user-select: none; background: var(--panel-2); }
   .manage-sec > .sec-head:hover { background: rgba(109,93,252,.08); }
@@ -1703,8 +1721,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "4.10";
+const VERSION = "4.11";
 const CHANGELOG = [
+  "v4.11 — Person avatars. Each person in Manage → People gets an avatar well (click the circle to upload a JPG/PNG — resized client-side to 128px). When a card has owners, badge-mode views (Board, Calendar bars, Gallery, Planning) render the owners as a stacked avatar row (overlapping circles, +N when there are more than 4). Owner chips in the card modal picker also show the avatar next to the name. Text-mode List/Grid keeps the comma-joined names so tabular layouts stay scannable. Fallback for anyone without an uploaded avatar: a colored initials disc (stable hue per name).",
   "v4.10 — Channel roles: every channel in Manage → Channels now has a role dropdown (— role — / 🎨 Theme). The Theme role controls the candy-stripe decoration on cards. You can reassign Theme to any channel (or clear it entirely). Default stays as the channel literally named 'Theme' for back-compat when no channel has been explicitly assigned. Role migrates when a channel is renamed and clears when it's removed.",
   "v4.09 — Manage overlay cleanup: (1) title changed from 'Manage board' to 'Manage' since it applies to every view. (2) Each section (Lanes, Channels, People, Custom fields, Groups, Promotions) is now a collapsible card with a count pill — click the header to open/close, persisted per section in localStorage. Lanes stays open by default, the rest collapsed so the overlay isn't a wall of text. (3) The Groups editor moved from inside the Custom fields overlay to its own top-level section in Manage. The Custom fields overlay now just points to Manage → Groups.",
   "v4.08 — Groups editor simplified: the two separate Add-chip rows (custom fields + card identity sections) collapsed into one Add dropdown with both kinds of entries. Built-in sections are the first optgroup, custom fields the second with a ✎ marker. A field already in another group shows '— in: GroupName' in its label and still picks (moving it over). Also flipped the ON-chip icon: custom entries now carry ✎, built-ins are plain (matches the dropdown convention).",
@@ -2623,6 +2642,13 @@ function dimInfo(c, key) {
 }
 function dimChipHtml(c, k) {
   const ds = curDisp(); const over = isOverdue(c);
+  // Owners render as stacked avatars when the display is in badge mode (chips) — reads the people at a glance
+  // on crowded cards. Text-mode List/Grid keeps the comma-joined names for scanability in tabular layouts.
+  if (k === "owners") {
+    const names = splitOwners(c.owner);
+    if (!names.length) return "";
+    if (ds.badge) return stackedAvatarsHtml(names, 22);
+  }
   const d = dimInfo(c, k); if (!d.text) return "";
   const od = (k === "dates" && over) ? " overdue" : "";
   if (!ds.badge) return `<span class="dtext${od}">${esc(d.text)}</span>`;
@@ -4135,6 +4161,47 @@ async function setComplete(item) {
   await reloadListsAndUI();
 }
 function splitOwners(s) { return (s || "").split(",").map(x => x.trim()).filter(Boolean); }
+// Person avatar helpers. `color` on a person row holds JSON { avatar: "data:..." } when set; legacy rows have "".
+function _personCfg(name) { const p = peopleList.find(x => x.name === name); if (!p || !p.color) return {}; try { return JSON.parse(p.color) || {}; } catch (e) { return {}; } }
+function personAvatar(name) { return _personCfg(name).avatar || ""; }
+function _initialsFor(name) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+// Stable, pleasant color for the initials-fallback avatar — seeded by name so Jason is always the same hue.
+function _hueForName(name) { let h = 0; for (const c of (name || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
+function avatarHtml(name, size) {
+  const sz = size || 22;
+  const av = personAvatar(name);
+  const cls = "pavi sz-" + sz;
+  const title = ` title="${esc(name || "")}" aria-label="${esc(name || "")}"`;
+  if (av) return `<span class="${cls}"${title}><img src="${esc(av)}" alt=""></span>`;
+  const h = _hueForName(name); const bg = `hsl(${h} 55% 48%)`;
+  return `<span class="${cls}" style="background:${bg};color:#fff"${title}>${esc(_initialsFor(name))}</span>`;
+}
+function stackedAvatarsHtml(names, size, cap) {
+  const list = (names || []).filter(Boolean);
+  const C = cap || 4;
+  const sz = size || 22;
+  const shown = list.slice(0, C);
+  const extra = list.length - shown.length;
+  const more = extra > 0 ? `<span class="pavi pavi-more sz-${sz}" title="+${extra} more">+${extra}</span>` : "";
+  return `<span class="pavi-stack">${shown.map(n => avatarHtml(n, sz)).join("")}${more}</span>`;
+}
+async function setPersonAvatar(name, dataUrl) {
+  const p = peopleList.find(x => x.name === name); if (!p) return;
+  const cfg = _personCfg(name); if (dataUrl) cfg.avatar = dataUrl; else delete cfg.avatar;
+  const payload = Object.keys(cfg).length ? JSON.stringify(cfg) : "";
+  if (!ONLINE) { p.color = payload || undefined; saveListsLocal(); afterListsChanged(); render(); return; }
+  if (!p.id) { toast("Can't save avatar — person row has no DB id yet."); return; }
+  const { error } = await db.from("lists").update({ color: payload }).eq("id", p.id);
+  if (error) { toast("Avatar save failed: " + error.message); return; }
+  p.color = payload || undefined;
+  afterListsChanged(); render(); renderManage();
+  if (modalOpen) { renderOwnerChips(); }
+}
 function splitChannels(s) { return (s || "").split(",").map(x => x.trim()).filter(Boolean); }   // same shape as owners — comma-joined string in c.channel
 function cascadeRenameLocal(kind, old, neu) {
   cards.forEach(c => {
@@ -6910,7 +6977,7 @@ function renderOwnerChips() {
   peopleList.forEach(p => {
     const chip = document.createElement("span");
     chip.className = "owner-chip" + (modalOwners.has(p.name) ? " sel" : "");
-    chip.textContent = p.name;
+    chip.innerHTML = avatarHtml(p.name, 18) + esc(p.name);
     chip.onclick = () => { if (modalOwners.has(p.name)) modalOwners.delete(p.name); else modalOwners.add(p.name); renderOwnerChips(); };
     box.appendChild(chip);
   });
@@ -9159,6 +9226,27 @@ function manageRow(kind, item, idx) {
   if (kind === "channel" || kind === "status") {
     const eff = kind === "channel" ? channelColorOf(item.name) : statusColor(item.name);
     left.appendChild(makeColorPicker(eff, "Color", (hex) => setColor(item, hex)));
+  }
+  if (kind === "person") {
+    const cell = document.createElement("span"); cell.className = "person-av-cell";
+    const av = document.createElement("span");
+    av.innerHTML = avatarHtml(item.name, 28);
+    const avSpan = av.firstChild; avSpan.title = "Click to upload an avatar (JPG/PNG)";
+    const hidden = document.createElement("input"); hidden.type = "file"; hidden.accept = "image/*"; hidden.style.display = "none";
+    avSpan.onclick = () => hidden.click();
+    hidden.onchange = async (e) => {
+      const f = e.target.files && e.target.files[0]; e.target.value = "";
+      if (!f) return;
+      try { const dataUrl = await resizeImageToDataUrl(f, 128, 0.82); await setPersonAvatar(item.name, dataUrl); }
+      catch (err) { toast("Couldn't read that image: " + (err && err.message || err)); }
+    };
+    cell.appendChild(avSpan); cell.appendChild(hidden);
+    if (personAvatar(item.name)) {
+      const clr = document.createElement("button"); clr.type = "button"; clr.className = "pavi-clear"; clr.textContent = "Clear"; clr.title = "Remove avatar";
+      clr.onclick = () => setPersonAvatar(item.name, "");
+      cell.appendChild(clr);
+    }
+    left.appendChild(cell);
   }
   left.appendChild(document.createTextNode(item.name));
   const ctrls = document.createElement("span"); ctrls.className = "row-ctrls";
