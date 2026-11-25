@@ -1344,6 +1344,8 @@
       <div class="mcs-sub">Stripes only render on cards with the <b>Theme</b> channel on.</div>
       <div class="mcs-row" id="wsMoveRow" style="display:none"><span class="mcs-lab">Workspace</span><select id="wsMoveSel" class="mcs-dir" title="Move this card to a different workspace"></select></div>
       <div class="mcs-sub" id="wsMoveHint" style="display:none">Moves this card to the other board.</div>
+      <div class="mcs-row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:4px;"><span class="mcs-lab">Board setup</span><button type="button" id="f_openManageFromCard" class="mcs-dir" style="cursor:pointer;text-align:left;padding:7px 10px;">⚙ Open Manage…</button></div>
+      <div class="mcs-sub">Lanes, brands, channels, custom fields, groups.</div>
     </div>
     <h2 id="modalTitle">New deliverable</h2>
     <!-- Alert banner — rendered inside the modal body when the flag is on. Shows the note + owner the alerter
@@ -1676,6 +1678,7 @@ const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
 const VERSION = "4.00";
 const CHANGELOG = [
+  "v4.06 — Quick link to Manage from the card ⚙ settings popover. New \"Board setup → ⚙ Open Manage…\" row at the bottom closes the card modal and opens the full Manage editor (lanes, brands, channels, custom fields, groups). No need to Cancel back to the board header first.",
   "v4.05 — Subtask → deliverable conversion now opens a dialog with inheritance checkboxes: Due date, Owners, and every Link-type custom field on the parent. Defaults match Jason's rule — pre-check Due and Owners only when the subtask has none of its own (so subtask-level overrides aren't clobbered), pre-check every parent link URL. Cancel / Esc / click-outside aborts; Convert creates the new card inheriting whichever boxes are checked plus the existing brand/channel/promo. Replaces the plain yes/no confirm.",
   "v4.04 — Link custom fields show a type preview chip (icon + label) next to the 🔗 Open button. Detects Google Sheets / Doc / Slides / Drive, SharePoint, Dropbox, Figma, Notion, Airtable, YouTube / Vimeo / Loom, GitHub, Canva, Miro, plus file extensions (.pdf, .xlsx, .docx, .pptx, .zip, .mp4, images). Falls back to a plain 🔗 + hostname when it's an unknown service. The chip updates as you type and disappears when the field is empty.",
   "v4.03 — RTE highlights now auto-contrast their text color. Picking a highlight swatch now also sets the selection's text color to black-on-light or white-on-dark based on the swatch's luminance, so dark-mode highlights are legible instead of white-on-yellow. Added a CSS safety net that gives dark text to any pre-existing highlighted span that only carries a background-color (so old notes don't need to be re-highlighted). Also: empty-state text on the images zone now reads \"No files yet\" since it holds attachments too.",
@@ -6922,6 +6925,8 @@ function initThemeColorsPicker(card) {
       });
     }
     if (closeBtn && popover) closeBtn.addEventListener("click", () => { popover.hidden = true; });
+    const openManageBtn = document.getElementById("f_openManageFromCard");
+    if (openManageBtn && popover) openManageBtn.addEventListener("click", () => { popover.hidden = true; closeModal(); openManage(); });
     barInp.dataset.wired = "1"; bar2Inp.dataset.wired = "1"; c1Inp.dataset.wired = "1"; c2Inp.dataset.wired = "1";
   }
 }
