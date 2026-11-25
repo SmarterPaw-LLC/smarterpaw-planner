@@ -247,7 +247,15 @@
   .owner-chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   .owner-chip.add { border-style: dashed; color: var(--muted); }
   .owner-chips .none { color: var(--muted); font-size: 12px; }
-  .manage-sec { margin-bottom: 18px; }
+  .manage-sec { margin-bottom: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+  .manage-sec > .sec-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; user-select: none; background: var(--panel-2); }
+  .manage-sec > .sec-head:hover { background: rgba(109,93,252,.08); }
+  .manage-sec > .sec-head .sec-tri { font-size: 10px; color: var(--muted); transition: transform .15s; display: inline-block; width: 10px; }
+  .manage-sec.collapsed > .sec-head .sec-tri { transform: rotate(-90deg); }
+  .manage-sec > .sec-head .sec-title { flex: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--muted); font-weight: 700; }
+  .manage-sec > .sec-head .sec-count { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .manage-sec > .sec-body { padding: 10px 12px 12px; }
+  .manage-sec.collapsed > .sec-body { display: none; }
   .manage-list { display: flex; flex-direction: column; gap: 6px; }
   .manage-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
     background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px 6px 12px; }
@@ -1464,37 +1472,56 @@
 <!-- Manage channels & people -->
 <div class="overlay" id="manageOverlay">
   <div class="modal">
-    <h2>Manage board</h2>
-    <div class="manage-sec">
-      <span class="seclabel">Board lanes (drag order with ↑ ↓) <button type="button" id="mEditRolesBtn" class="role-edit-link">✎ Edit role labels</button></span>
-      <div class="manage-list" id="manageStatuses"></div>
-      <div class="add-row"><input id="mAddStatus" placeholder="New lane…" /><button class="primary" id="mAddStatusBtn">Add</button></div>
-      <div id="mRoleEditor" class="role-editor" style="display:none">
-        <div class="role-editor-title">Role labels &amp; icons for this workspace</div>
-        <div id="mRoleRows"></div>
-        <div class="role-editor-actions"><button type="button" id="mRolesAdd" class="ghost">+ Add role</button><div class="spacer"></div><button type="button" id="mRolesReset" class="ghost">Reset to defaults</button><button type="button" id="mRolesSave" class="primary">Save</button></div>
+    <h2>Manage</h2>
+    <div class="manage-sec" data-sec-key="lanes">
+      <div class="sec-head"><span class="sec-tri">▾</span><span class="sec-title">Board lanes</span><span class="sec-count" id="mCountLanes"></span></div>
+      <div class="sec-body">
+        <div class="hint" style="margin-bottom:8px;">Drag order with ↑ ↓. <button type="button" id="mEditRolesBtn" class="role-edit-link">✎ Edit role labels</button></div>
+        <div class="manage-list" id="manageStatuses"></div>
+        <div class="add-row"><input id="mAddStatus" placeholder="New lane…" /><button class="primary" id="mAddStatusBtn">Add</button></div>
+        <div id="mRoleEditor" class="role-editor" style="display:none">
+          <div class="role-editor-title">Role labels &amp; icons for this workspace</div>
+          <div id="mRoleRows"></div>
+          <div class="role-editor-actions"><button type="button" id="mRolesAdd" class="ghost">+ Add role</button><div class="spacer"></div><button type="button" id="mRolesReset" class="ghost">Reset to defaults</button><button type="button" id="mRolesSave" class="primary">Save</button></div>
+        </div>
       </div>
     </div>
-    <div class="manage-sec">
-      <span class="seclabel">Channels</span>
-      <div class="manage-list" id="manageChannels"></div>
-      <div class="add-row"><input id="mAddChannel" placeholder="New channel…" /><button class="primary" id="mAddChannelBtn">Add</button></div>
+    <div class="manage-sec collapsed" data-sec-key="channels">
+      <div class="sec-head"><span class="sec-tri">▾</span><span class="sec-title">Channels</span><span class="sec-count" id="mCountChannels"></span></div>
+      <div class="sec-body">
+        <div class="manage-list" id="manageChannels"></div>
+        <div class="add-row"><input id="mAddChannel" placeholder="New channel…" /><button class="primary" id="mAddChannelBtn">Add</button></div>
+      </div>
     </div>
-    <div class="manage-sec">
-      <span class="seclabel">People</span>
-      <div class="manage-list" id="managePeople"></div>
-      <div class="add-row"><input id="mAddPerson" placeholder="New person…" /><button class="primary" id="mAddPersonBtn">Add</button></div>
+    <div class="manage-sec collapsed" data-sec-key="people">
+      <div class="sec-head"><span class="sec-tri">▾</span><span class="sec-title">People</span><span class="sec-count" id="mCountPeople"></span></div>
+      <div class="sec-body">
+        <div class="manage-list" id="managePeople"></div>
+        <div class="add-row"><input id="mAddPerson" placeholder="New person…" /><button class="primary" id="mAddPersonBtn">Add</button></div>
+      </div>
     </div>
-    <div class="manage-sec">
-      <span class="seclabel">Custom fields</span>
-      <div class="hint" id="fieldsSummary" style="margin-bottom:8px"></div>
-      <button id="openFieldsBtn" style="width:100%">✎ Edit custom fields…</button>
+    <div class="manage-sec collapsed" data-sec-key="fields">
+      <div class="sec-head"><span class="sec-tri">▾</span><span class="sec-title">Custom fields</span><span class="sec-count" id="mCountFields"></span></div>
+      <div class="sec-body">
+        <div class="hint" id="fieldsSummary" style="margin-bottom:8px"></div>
+        <button id="openFieldsBtn" style="width:100%">✎ Edit custom fields…</button>
+      </div>
     </div>
-    <div class="manage-sec" id="managePromoSec">
-      <span class="seclabel">Promotions</span>
-      <input id="mPromoSearch" class="sec-search" placeholder="Filter promotions…" autocomplete="off" />
-      <div class="manage-list scroll-cap" id="managePromos"></div>
-      <div class="hint">Add a promotion by typing it on a deliverable. Colors are assigned automatically by name.</div>
+    <div class="manage-sec collapsed" data-sec-key="groups">
+      <div class="sec-head"><span class="sec-tri">▾</span><span class="sec-title">Groups</span><span class="sec-count" id="mCountGroups"></span></div>
+      <div class="sec-body">
+        <div class="hint" style="margin-bottom:8px;">Bundle custom fields and card-identity sections (Owners, Due date, etc.) under a labeled section with its own color + width.</div>
+        <div id="fieldGroupsEditor" class="fields-groups"></div>
+        <div class="add-row"><input id="fAddGroup" placeholder="New group name (e.g. Product configuration)…" autocomplete="off" /><button class="primary" id="fAddGroupBtn">Add group</button></div>
+      </div>
+    </div>
+    <div class="manage-sec collapsed" data-sec-key="promos" id="managePromoSec">
+      <div class="sec-head"><span class="sec-tri">▾</span><span class="sec-title">Promotions</span><span class="sec-count" id="mCountPromos"></span></div>
+      <div class="sec-body">
+        <input id="mPromoSearch" class="sec-search" placeholder="Filter promotions…" autocomplete="off" />
+        <div class="manage-list scroll-cap" id="managePromos"></div>
+        <div class="hint">Add a promotion by typing it on a deliverable. Colors are assigned automatically by name.</div>
+      </div>
     </div>
     <div class="modal-actions"><div class="spacer"></div><button id="manageClose">Done</button></div>
     <div class="hint">Removing an item won't change cards that already use it — they keep the name.</div>
@@ -1509,10 +1536,7 @@
     <div class="hint">Fields show on every deliverable and as a column in Grid/List. <b>Dropdown</b> picks one option; <b>Multi-select</b> picks several.</div>
     <div id="fieldsEditor" class="fields-editor"></div>
     <div class="add-row"><input id="fAddField" placeholder="New field name (e.g. Priority, Budget)…" autocomplete="off" /><button class="primary" id="fAddFieldBtn">Add field</button></div>
-    <h3 class="fe-groups-title">Groups</h3>
-    <div class="hint">Bundle related fields under a labeled section header in the card modal. A field can belong to one group at a time; ungrouped fields render alone at the bottom.</div>
-    <div id="fieldGroupsEditor" class="fields-groups"></div>
-    <div class="add-row"><input id="fAddGroup" placeholder="New group name (e.g. Product configuration)…" autocomplete="off" /><button class="primary" id="fAddGroupBtn">Add group</button></div>
+    <div class="hint" style="margin-top:14px;">Groups now live in <b>Manage → Groups</b> — bundle fields (and card-identity sections) with per-section color and width.</div>
     <div class="modal-actions"><div class="spacer"></div><button id="fieldsDone">Done</button></div>
   </div>
 </div>
@@ -1679,8 +1703,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "4.08";
+const VERSION = "4.09";
 const CHANGELOG = [
+  "v4.09 — Manage overlay cleanup: (1) title changed from 'Manage board' to 'Manage' since it applies to every view. (2) Each section (Lanes, Channels, People, Custom fields, Groups, Promotions) is now a collapsible card with a count pill — click the header to open/close, persisted per section in localStorage. Lanes stays open by default, the rest collapsed so the overlay isn't a wall of text. (3) The Groups editor moved from inside the Custom fields overlay to its own top-level section in Manage. The Custom fields overlay now just points to Manage → Groups.",
   "v4.08 — Groups editor simplified: the two separate Add-chip rows (custom fields + card identity sections) collapsed into one Add dropdown with both kinds of entries. Built-in sections are the first optgroup, custom fields the second with a ✎ marker. A field already in another group shows '— in: GroupName' in its label and still picks (moving it over). Also flipped the ON-chip icon: custom entries now carry ✎, built-ins are plain (matches the dropdown convention).",
   "v4.07 — Unified field groups: built-in card sections (Owners, Due date, Status, Brand & Channel, Promotion, etc.) can now be dropped into a field group alongside custom fields. Same group picks up its color, each entry gets ⅓/½/1 width. In Manage → Custom fields → Groups, each group card has a new 'Add — card identity sections' row of built-in chips (shown with a ◆ prefix and a purple tint); click to assign. On the card modal the built-in section moves inside the group's colored container at the width you set, in whichever position the group sits. Drag the group header to reorder it like any section. Also added a second quick link in the card ⚙ popover: '✎ Custom fields & groups…' opens the editor directly.",
   "v4.06 — Quick link to Manage from the card ⚙ settings popover. New \"Board setup → ⚙ Open Manage…\" row at the bottom closes the card modal and opens the full Manage editor (lanes, brands, channels, custom fields, groups). No need to Cancel back to the board header first.",
@@ -8761,6 +8786,30 @@ function renderManage() {
   fillManage("managePeople", peopleList, "person");
   updateFieldsSummary();
   fillManagePromos();
+  renderFieldGroupsEditor();
+  // Section counts shown in each collapsible header.
+  const setCount = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n ? "(" + n + ")" : ""; };
+  setCount("mCountLanes", statusList.length);
+  setCount("mCountChannels", channelsList.length);
+  setCount("mCountPeople", peopleList.length);
+  setCount("mCountFields", fieldsList.length);
+  setCount("mCountGroups", fieldGroups.length);
+  // Promotions count comes from the live list once it renders.
+  const promos = document.querySelectorAll("#managePromos .manage-row"); setCount("mCountPromos", promos.length);
+}
+// Toggle a Manage section's collapsed state and persist per-section.
+function _wireManageCollapsibles() {
+  document.querySelectorAll("#manageOverlay .manage-sec").forEach(sec => {
+    if (sec.dataset.collapsibleWired === "1") return; sec.dataset.collapsibleWired = "1";
+    const head = sec.querySelector(":scope > .sec-head"); if (!head) return;
+    const key = sec.dataset.secKey || "";
+    const storeKey = "planner-manage-collapsed-" + key;
+    try { if (localStorage.getItem(storeKey) === "1") sec.classList.add("collapsed"); else if (localStorage.getItem(storeKey) === "0") sec.classList.remove("collapsed"); } catch (e) {}
+    head.addEventListener("click", () => {
+      sec.classList.toggle("collapsed");
+      try { localStorage.setItem(storeKey, sec.classList.contains("collapsed") ? "1" : "0"); } catch (e) {}
+    });
+  });
 }
 // Render the Auto-log settings — one checkbox per scalar field. Custom fields are toggled per-field in the
 // Custom fields editor; the button below opens that. Persists to localStorage via autologPrefs.
@@ -9120,6 +9169,7 @@ function openManage() {
   manageOpen = true;
   const ps = document.getElementById("mPromoSearch"); if (ps) { ps.value = ""; ps.oninput = fillManagePromos; }
   renderManage();
+  _wireManageCollapsibles();
   document.getElementById("manageOverlay").classList.add("show");
 }
 function closeManage() { manageOpen = false; document.getElementById("manageOverlay").classList.remove("show"); }
