@@ -1676,6 +1676,7 @@ const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
 const VERSION = "4.00";
 const CHANGELOG = [
+  "v4.05 — Subtask → deliverable conversion now opens a dialog with inheritance checkboxes: Due date, Owners, and every Link-type custom field on the parent. Defaults match Jason's rule — pre-check Due and Owners only when the subtask has none of its own (so subtask-level overrides aren't clobbered), pre-check every parent link URL. Cancel / Esc / click-outside aborts; Convert creates the new card inheriting whichever boxes are checked plus the existing brand/channel/promo. Replaces the plain yes/no confirm.",
   "v4.04 — Link custom fields show a type preview chip (icon + label) next to the 🔗 Open button. Detects Google Sheets / Doc / Slides / Drive, SharePoint, Dropbox, Figma, Notion, Airtable, YouTube / Vimeo / Loom, GitHub, Canva, Miro, plus file extensions (.pdf, .xlsx, .docx, .pptx, .zip, .mp4, images). Falls back to a plain 🔗 + hostname when it's an unknown service. The chip updates as you type and disappears when the field is empty.",
   "v4.03 — RTE highlights now auto-contrast their text color. Picking a highlight swatch now also sets the selection's text color to black-on-light or white-on-dark based on the swatch's luminance, so dark-mode highlights are legible instead of white-on-yellow. Added a CSS safety net that gives dark text to any pre-existing highlighted span that only carries a background-color (so old notes don't need to be re-highlighted). Also: empty-state text on the images zone now reads \"No files yet\" since it holds attachments too.",
   "v4.02 — File attachments on cards. Drop/paste/pick PDFs, spreadsheets, docs, zips, videos (any non-image, up to 25 MB) into the same gallery zone as cover images. Non-image files upload to a Supabase Storage bucket (`card-attachments`) instead of inlining into the row, so attachments don't bloat the DB. They render as icon tiles inside the gallery (📕 📊 📝 📎) with filename + size, click to open in a new tab, ⬇ to download, ✕ to remove (also deletes the Storage object). The ☆ Make cover button works on file tiles too, and on board cards without an image cover, the first file now renders as a cover tile (icon + name) instead of nothing. Requires running supabase/migrations/0009_card_attachments_bucket.sql to create the bucket + anon RLS policies.",
@@ -7185,19 +7186,83 @@ function renderSubsEdit() {
   setTimeout(() => { document.querySelectorAll("#f_subs .sub-text").forEach(t => autoGrowSubText(t)); }, 120);
 }
 // Turn a subtask row into a full deliverable card. Uses the subtask's text/owner/due, inherits the parent card's brand/channel/promotion.
+// Dialog shown when converting a subtask to a deliverable. Returns {dupDue, dupOwner, linkFieldNames} or null.
+// Each inheritable field renders as a checkbox pre-checked when the subtask lacks its own value (so the default
+// behavior matches what Jason asked for: don't clobber subtask-level overrides, but fill empties from the parent).
+function _promptConvertSubtask(opts) {
+  const { text, parentDue, parentOwners, linkFields, subHasDue, subHasOwner } = opts;
+  return new Promise(resolve => {
+    const overlay = document.createElement("div"); overlay.className = "overlay show"; overlay.style.zIndex = 1200;
+    const panel = document.createElement("div"); panel.className = "modal"; panel.style.width = "480px";
+    const trunc = (v, n) => v.length > n ? v.slice(0, n) + "..." : v;
+    const addOpt = (labelHtml, defaultChecked, disabled, disabledReason) => {
+      const row = document.createElement("label"); row.style.cssText = "display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-top:8px;cursor:pointer;" + (disabled ? "opacity:.5;cursor:default;" : "");
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = defaultChecked; cb.disabled = disabled; cb.style.marginTop = "2px";
+      const span = document.createElement("span"); span.style.flex = "1"; span.style.minWidth = "0"; span.innerHTML = labelHtml + (disabled ? ` <em style="color:var(--muted);font-size:11px;font-style:normal;">${disabledReason}</em>` : "");
+      row.appendChild(cb); row.appendChild(span); return { row, cb };
+    };
+    const title = document.createElement("h2"); title.textContent = `Convert "${text}" to a new deliverable`; panel.appendChild(title);
+    const sub = document.createElement("p"); sub.style.cssText = "margin:0 0 4px;font-size:12px;color:var(--muted);"; sub.textContent = "The subtask becomes a link to the new card. Inherit from this card:";
+    panel.appendChild(sub);
+    const list = document.createElement("div");
+    const dueOpt = parentDue ? addOpt(`<b>Due date</b> <code style="font-size:11px;color:var(--muted);">${parentDue}</code>`, !subHasDue, subHasDue, "(subtask has one)") : null;
+    if (dueOpt) list.appendChild(dueOpt.row);
+    const ownerOpt = parentOwners.length ? addOpt(`<b>Owners</b> <code style="font-size:11px;color:var(--muted);">${parentOwners.join(", ")}</code>`, !subHasOwner, subHasOwner, "(subtask has one)") : null;
+    if (ownerOpt) list.appendChild(ownerOpt.row);
+    const linkOpts = linkFields.map(lf => {
+      const o = addOpt(`<b>${lf.name}</b> <code style="font-size:11px;color:var(--muted);word-break:break-all;">${trunc(lf.value, 70)}</code>`, true, false, "");
+      list.appendChild(o.row); return o;
+    });
+    if (!dueOpt && !ownerOpt && !linkOpts.length) {
+      const none = document.createElement("div"); none.style.cssText = "padding:10px;color:var(--muted);font-size:12px;"; none.textContent = "Nothing on this card to inherit.";
+      list.appendChild(none);
+    }
+    panel.appendChild(list);
+    const btns = document.createElement("div"); btns.style.cssText = "display:flex;gap:8px;justify-content:flex-end;margin-top:14px;";
+    const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "ghost"; cancel.textContent = "Cancel";
+    const go = document.createElement("button"); go.type = "button"; go.className = "primary"; go.textContent = "Convert";
+    btns.appendChild(cancel); btns.appendChild(go); panel.appendChild(btns);
+    overlay.appendChild(panel); document.body.appendChild(overlay);
+    const kill = v => { overlay.remove(); document.removeEventListener("keydown", key); resolve(v); };
+    const key = e => { if (e.key === "Escape") kill(null); else if (e.key === "Enter" && e.target.tagName !== "BUTTON") go.click(); };
+    document.addEventListener("keydown", key);
+    cancel.onclick = () => kill(null);
+    overlay.addEventListener("click", e => { if (e.target === overlay) kill(null); });
+    go.onclick = () => kill({
+      dupDue: !!(dueOpt && dueOpt.cb.checked && !dueOpt.cb.disabled),
+      dupOwner: !!(ownerOpt && ownerOpt.cb.checked && !ownerOpt.cb.disabled),
+      linkFieldNames: linkFields.filter((_, i) => linkOpts[i].cb.checked).map(lf => lf.name),
+    });
+  });
+}
 async function convertSubtaskToDeliverable(s) {
   const text = (s.text || "").trim();
   if (!text) { toast("Add a title before converting."); return; }
-  if (!confirm(`Convert "${text}" to a new deliverable? The subtask will be replaced with a link to the new card.`)) return;
-  // Inherit context from the currently-open card (parent).
+  // Gather inheritable values from the open modal + parent card so the prompt can show them.
+  const parentDue = (document.getElementById("f_due").value || "").trim();
+  const parentOwners = [...modalOwners];
+  const parent = cards.find(c => c.id === _modalCardId);
+  const linkFields = [];
+  if (parent && parent.fields) {
+    fieldsList.forEach(f => {
+      if (f.type !== "link") return;
+      const v = (parent.fields[f.name] || "").toString().trim();
+      if (v) linkFields.push({ name: f.name, value: v });
+    });
+  }
+  const choice = await _promptConvertSubtask({ text, parentDue, parentOwners, linkFields, subHasDue: !!s.due, subHasOwner: !!s.owner });
+  if (!choice) return;
   const parentBrand = document.getElementById("f_brand").value;
   const parentChannel = [...modalChannels].join(", ");
   const parentPromo = document.getElementById("f_promo").value;
   const fields = {};
   if (parentPromo && parentPromo !== "__add_promo__") fields[PROMO_KEY] = parentPromo;
+  for (const lf of linkFields) { if (choice.linkFieldNames.includes(lf.name)) fields[lf.name] = lf.value; }
   const newId = await createCard({
-    title: text, brand: parentBrand, channel: parentChannel, owner: s.owner || "",
-    due: s.due || "", end: "", status: statusList[0] ? statusList[0].name : "Backlog", notes: "", fields,
+    title: text, brand: parentBrand, channel: parentChannel,
+    owner: s.owner || (choice.dupOwner ? parentOwners.join(", ") : ""),
+    due: s.due || (choice.dupDue ? parentDue : ""),
+    end: "", status: statusList[0] ? statusList[0].name : "Backlog", notes: "", fields,
   });
   if (!newId) return;   // createCard already toasted the error
   // createCard fires refetch() without awaiting (so bulk callers don't pay for the round-trip); when we render the
