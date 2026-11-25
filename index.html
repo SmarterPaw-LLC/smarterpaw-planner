@@ -870,6 +870,8 @@
   }
   .field-link-open { flex: none; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .field-link-open:hover { border-color: var(--accent); background: rgba(109,93,252,.06); }
+  .field-link-kind { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; font-size: 11px; font-weight: 600; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; white-space: nowrap; }
+  .field-link-kind .flk-icon { font-size: 13px; line-height: 1; }
   .user-btn.on { color: var(--text); border-color: var(--danger); background: rgba(239,68,68,.12); }
   /* Alerts toolbar button — much louder than the old Overdue button when there's anything to see. */
   #alertsBtn { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
@@ -1674,6 +1676,7 @@ const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
 const VERSION = "4.00";
 const CHANGELOG = [
+  "v4.04 — Link custom fields show a type preview chip (icon + label) next to the 🔗 Open button. Detects Google Sheets / Doc / Slides / Drive, SharePoint, Dropbox, Figma, Notion, Airtable, YouTube / Vimeo / Loom, GitHub, Canva, Miro, plus file extensions (.pdf, .xlsx, .docx, .pptx, .zip, .mp4, images). Falls back to a plain 🔗 + hostname when it's an unknown service. The chip updates as you type and disappears when the field is empty.",
   "v4.03 — RTE highlights now auto-contrast their text color. Picking a highlight swatch now also sets the selection's text color to black-on-light or white-on-dark based on the swatch's luminance, so dark-mode highlights are legible instead of white-on-yellow. Added a CSS safety net that gives dark text to any pre-existing highlighted span that only carries a background-color (so old notes don't need to be re-highlighted). Also: empty-state text on the images zone now reads \"No files yet\" since it holds attachments too.",
   "v4.02 — File attachments on cards. Drop/paste/pick PDFs, spreadsheets, docs, zips, videos (any non-image, up to 25 MB) into the same gallery zone as cover images. Non-image files upload to a Supabase Storage bucket (`card-attachments`) instead of inlining into the row, so attachments don't bloat the DB. They render as icon tiles inside the gallery (📕 📊 📝 📎) with filename + size, click to open in a new tab, ⬇ to download, ✕ to remove (also deletes the Storage object). The ☆ Make cover button works on file tiles too, and on board cards without an image cover, the first file now renders as a cover tile (icon + name) instead of nothing. Requires running supabase/migrations/0009_card_attachments_bucket.sql to create the bucket + anon RLS policies.",
   "v4.01 — Gallery images now have a ☆ Make cover button in the bottom-right corner. Click it to promote any gallery image to the card's cover — no more having to clear the current cover first and reorder the gallery. The current cover (whether it's an explicit upload or the auto gallery[0] fallback) shows a ★ COVER chip; the ☆ Make cover button appears on every other gallery item. Fixes the usability gap where swapping covers wasn't discoverable once an explicit cover was set.",
@@ -7641,13 +7644,19 @@ function _renderOneFieldWrapper(f, cur) {
         inp.placeholder = f.type === "link" ? "https://..." : "";
         const row = document.createElement("div"); row.className = "field-link-row";
         row.appendChild(inp);
+        const kind = document.createElement("span"); kind.className = "field-link-kind";
         const open = document.createElement("button"); open.type = "button"; open.className = "field-link-open"; open.textContent = "🔗 Open"; open.title = "Open the URL in a new tab";
-        // Link type: always show the button (even if blank) so it's a stable affordance. Text type: show only
-        // when the value looks like a URL.
-        const refresh = () => { open.style.display = (f.type === "link" || /^https?:\/\//i.test(inp.value || "")) ? "" : "none"; };
+        const refresh = () => {
+          const v = (inp.value || "").trim();
+          const looksLink = f.type === "link" || /^https?:\/\//i.test(v);
+          open.style.display = looksLink ? "" : "none";
+          const d = looksLink && v ? _describeUrl(v) : null;
+          if (d) { kind.innerHTML = `<span class="flk-icon">${d.icon}</span>${d.label}`; kind.style.display = ""; }
+          else { kind.style.display = "none"; }
+        };
         open.onclick = () => { const v = (inp.value || "").trim(); if (!v) return; const url = /^https?:\/\//i.test(v) ? v : "https://" + v; try { window.open(url, "_blank", "noopener,noreferrer"); } catch (e) {} };
         inp.addEventListener("input", refresh); refresh();
-        row.appendChild(open);
+        row.appendChild(kind); row.appendChild(open);
         wrap.appendChild(row);
       } else if (f.type === "currency") {
         const row = document.createElement("div"); row.className = "field-currency-row";
@@ -8085,6 +8094,43 @@ function _iconForFile(entry) {
   if (/\.(mp3|wav|m4a|flac|ogg)$/.test(name) || /^audio\//.test(type)) return "🎵";
   if (/\.(txt|md|log)$/.test(name) || /^text\//.test(type)) return "📄";
   return "📎";
+}
+// Describe a URL by the service / file-type it points at, for the Link-field preview chip.
+// Returns {icon, label} or null when we can't make a confident call (fallback to just the hostname).
+function _describeUrl(u) {
+  const s = (u || "").trim(); if (!s) return null;
+  let url; try { url = new URL(/^https?:\/\//i.test(s) ? s : "https://" + s); } catch (e) { return null; }
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+  const path = url.pathname.toLowerCase();
+  if (host === "docs.google.com") {
+    if (path.startsWith("/spreadsheets")) return { icon: "📊", label: "Google Sheets" };
+    if (path.startsWith("/document")) return { icon: "📝", label: "Google Doc" };
+    if (path.startsWith("/presentation")) return { icon: "📽", label: "Google Slides" };
+    if (path.startsWith("/forms")) return { icon: "📋", label: "Google Form" };
+    return { icon: "📄", label: "Google Docs" };
+  }
+  if (host === "drive.google.com") return { icon: "📁", label: "Google Drive" };
+  if (/\.sharepoint\.com$/.test(host) || host === "onedrive.live.com" || host === "1drv.ms") return { icon: "📁", label: "SharePoint / OneDrive" };
+  if (host === "dropbox.com" || host === "db.tt") return { icon: "📁", label: "Dropbox" };
+  if (host === "figma.com") return { icon: "🎨", label: "Figma" };
+  if (host === "notion.so" || /\.notion\.site$/.test(host)) return { icon: "📒", label: "Notion" };
+  if (host === "airtable.com") return { icon: "📊", label: "Airtable" };
+  if (host === "youtube.com" || host === "youtu.be") return { icon: "🎬", label: "YouTube" };
+  if (host === "vimeo.com") return { icon: "🎬", label: "Vimeo" };
+  if (host === "loom.com") return { icon: "🎬", label: "Loom" };
+  if (host === "github.com") return { icon: "🐙", label: "GitHub" };
+  if (host === "canva.com") return { icon: "🎨", label: "Canva" };
+  if (host === "miro.com") return { icon: "🧠", label: "Miro" };
+  if (host === "slack.com" || /\.slack\.com$/.test(host)) return { icon: "💬", label: "Slack" };
+  if (/\.pdf($|\?)/.test(path)) return { icon: "📕", label: "PDF" };
+  if (/\.(xlsx?|csv|ods|numbers)($|\?)/.test(path)) return { icon: "📊", label: "Spreadsheet" };
+  if (/\.(docx?|rtf|odt|pages)($|\?)/.test(path)) return { icon: "📝", label: "Document" };
+  if (/\.(pptx?|key|odp)($|\?)/.test(path)) return { icon: "📽", label: "Presentation" };
+  if (/\.(zip|rar|7z|tar|gz)($|\?)/.test(path)) return { icon: "🗜", label: "Archive" };
+  if (/\.(mp4|mov|avi|webm|mkv)($|\?)/.test(path)) return { icon: "🎬", label: "Video" };
+  if (/\.(mp3|wav|m4a|flac|ogg)($|\?)/.test(path)) return { icon: "🎵", label: "Audio" };
+  if (/\.(png|jpe?g|gif|webp|svg|avif)($|\?)/.test(path)) return { icon: "🖼", label: "Image" };
+  return { icon: "🔗", label: host };
 }
 function _fmtBytes(n) {
   if (!n && n !== 0) return "";
