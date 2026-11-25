@@ -1679,8 +1679,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "4.07";
+const VERSION = "4.08";
 const CHANGELOG = [
+  "v4.08 — Groups editor simplified: the two separate Add-chip rows (custom fields + card identity sections) collapsed into one Add dropdown with both kinds of entries. Built-in sections are the first optgroup, custom fields the second with a ✎ marker. A field already in another group shows '— in: GroupName' in its label and still picks (moving it over). Also flipped the ON-chip icon: custom entries now carry ✎, built-ins are plain (matches the dropdown convention).",
   "v4.07 — Unified field groups: built-in card sections (Owners, Due date, Status, Brand & Channel, Promotion, etc.) can now be dropped into a field group alongside custom fields. Same group picks up its color, each entry gets ⅓/½/1 width. In Manage → Custom fields → Groups, each group card has a new 'Add — card identity sections' row of built-in chips (shown with a ◆ prefix and a purple tint); click to assign. On the card modal the built-in section moves inside the group's colored container at the width you set, in whichever position the group sits. Drag the group header to reorder it like any section. Also added a second quick link in the card ⚙ popover: '✎ Custom fields & groups…' opens the editor directly.",
   "v4.06 — Quick link to Manage from the card ⚙ settings popover. New \"Board setup → ⚙ Open Manage…\" row at the bottom closes the card modal and opens the full Manage editor (lanes, brands, channels, custom fields, groups). No need to Cancel back to the board header first.",
   "v4.05 — Subtask → deliverable conversion now opens a dialog with inheritance checkboxes: Due date, Owners, and every Link-type custom field on the parent. Defaults match Jason's rule — pre-check Due and Owners only when the subtask has none of its own (so subtask-level overrides aren't clobbered), pre-check every parent link URL. Cancel / Esc / click-outside aborts; Convert creates the new card inheriting whichever boxes are checked plus the existing brand/channel/promo. Replaces the plain yes/no confirm.",
@@ -8881,7 +8882,7 @@ function renderFieldGroupsEditor() {
       const chip = document.createElement("div"); chip.className = "fg-chip on" + (kind === "builtin" ? " builtin" : ""); chip.title = "Click name to remove, arrows to reorder, ⅓ ½ 1 to set width";
       const left = document.createElement("button"); left.type = "button"; left.className = "fg-chip-arrow"; left.textContent = "◀"; left.title = "Move left"; left.disabled = chipIdx === 0;
       left.addEventListener("click", e => { e.stopPropagation(); reorderFieldInGroup(g.id, chipIdx, chipIdx - 1); });
-      const nameSpan = document.createElement("span"); nameSpan.className = "fg-chip-name"; nameSpan.textContent = (kind === "builtin" ? "◆ " : "") + label;
+      const nameSpan = document.createElement("span"); nameSpan.className = "fg-chip-name"; nameSpan.textContent = (kind === "custom" ? "✎ " : "") + label;
       nameSpan.addEventListener("click", () => setFieldInGroup(g.id, kind, entry.name, false));
       const right = document.createElement("button"); right.type = "button"; right.className = "fg-chip-arrow"; right.textContent = "▶"; right.title = "Move right"; right.disabled = chipIdx === g.fields.length - 1;
       right.addEventListener("click", e => { e.stopPropagation(); reorderFieldInGroup(g.id, chipIdx, chipIdx + 2); });
@@ -8895,32 +8896,38 @@ function renderFieldGroupsEditor() {
       chips.appendChild(chip);
     });
     card.appendChild(chips);
-    // Available-to-add chips: custom fields first, then built-in card-identity sections. Click to add.
-    const addLab = document.createElement("div"); addLab.className = "fg-picker-lab"; addLab.style.marginTop = "10px"; addLab.textContent = "Add — custom fields";
-    card.appendChild(addLab);
-    const addChips = document.createElement("div"); addChips.className = "fg-chips";
-    if (!fieldsList.length) { const e = document.createElement("span"); e.className = "fe-none"; e.textContent = "No custom fields exist yet."; addChips.appendChild(e); }
-    fieldsList.forEach(f => {
-      if (g.fields.some(x => x.name === f.name && (x.kind || "custom") === "custom")) return;
-      const taken = takenByOther(g.id, "custom", f.name);
-      const chip = document.createElement("button"); chip.type = "button"; chip.className = "fg-chip" + (taken ? " taken" : "");
-      chip.textContent = f.name; chip.title = taken ? "Already in another group — click to move it here" : "Click to add to this group";
-      chip.onclick = () => setFieldInGroup(g.id, "custom", f.name, true);
-      addChips.appendChild(chip);
-    });
-    card.appendChild(addChips);
-    const biLab = document.createElement("div"); biLab.className = "fg-picker-lab"; biLab.style.marginTop = "10px"; biLab.textContent = "Add — card identity sections";
-    card.appendChild(biLab);
-    const biChips = document.createElement("div"); biChips.className = "fg-chips";
+    // One dropdown with everything addable: built-in sections first, then custom fields marked with ✎.
+    // A field already in another group shows an "— in: GroupName" suffix and still picks (moves it here).
+    const addRow = document.createElement("div"); addRow.className = "fg-add-row"; addRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-top:10px;";
+    const addLab = document.createElement("span"); addLab.className = "fg-picker-lab"; addLab.style.margin = "0"; addLab.textContent = "Add";
+    const sel = document.createElement("select"); sel.className = "fg-add-sel"; sel.style.cssText = "flex:1;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel-2);color:var(--text);font-size:12px;";
+    const ph = document.createElement("option"); ph.value = ""; ph.textContent = "— Pick a field or section —"; sel.appendChild(ph);
+    const groupNameOf = (gid) => (fieldGroups.find(x => x.id === gid) || {}).name || "";
+    const findHolder = (kind, name) => fieldGroups.find(g => g.fields.some(f => f.name === name && (f.kind || "custom") === kind));
+    const biGrp = document.createElement("optgroup"); biGrp.label = "Card identity sections";
     BUILTIN_SECTIONS.forEach(b => {
       if (g.fields.some(x => x.name === b.key && x.kind === "builtin")) return;
-      const taken = takenByOther(g.id, "builtin", b.key);
-      const chip = document.createElement("button"); chip.type = "button"; chip.className = "fg-chip builtin" + (taken ? " taken" : "");
-      chip.textContent = "◆ " + b.label; chip.title = taken ? "Already in another group — click to move it here" : "Click to add to this group";
-      chip.onclick = () => setFieldInGroup(g.id, "builtin", b.key, true);
-      biChips.appendChild(chip);
+      const holder = findHolder("builtin", b.key); const taken = holder && holder.id !== g.id;
+      const opt = document.createElement("option"); opt.value = "builtin:" + b.key;
+      opt.textContent = b.label + (taken ? ` — in: ${holder.name}` : "");
+      biGrp.appendChild(opt);
     });
-    card.appendChild(biChips);
+    if (biGrp.childNodes.length) sel.appendChild(biGrp);
+    const cfGrp = document.createElement("optgroup"); cfGrp.label = "Custom fields";
+    fieldsList.forEach(f => {
+      if (g.fields.some(x => x.name === f.name && (x.kind || "custom") === "custom")) return;
+      const holder = findHolder("custom", f.name); const taken = holder && holder.id !== g.id;
+      const opt = document.createElement("option"); opt.value = "custom:" + f.name;
+      opt.textContent = "✎ " + f.name + (taken ? ` — in: ${holder.name}` : "");
+      cfGrp.appendChild(opt);
+    });
+    if (cfGrp.childNodes.length) sel.appendChild(cfGrp);
+    sel.onchange = () => {
+      const v = sel.value; if (!v) return;
+      const idx = v.indexOf(":"); const kind = v.slice(0, idx); const name = v.slice(idx + 1);
+      setFieldInGroup(g.id, kind, name, true);
+    };
+    addRow.appendChild(addLab); addRow.appendChild(sel); card.appendChild(addRow);
     box.appendChild(card);
   });
 }
