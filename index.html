@@ -275,10 +275,15 @@
   .manage-sec > .sec-body { padding: 10px 12px 12px; }
   .manage-sec.collapsed > .sec-body { display: none; }
   .manage-list { display: flex; flex-direction: column; gap: 6px; }
-  .manage-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px 6px 12px; }
+  .manage-row { display: flex; align-items: center; gap: 8px; min-width: 0;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .manage-row .row-left { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .manage-row .row-ctrls { flex: none; flex-wrap: nowrap; }
+  .manage-row .lane-dsg { max-width: 150px; }
   .manage-row button { padding: 2px 9px; color: var(--danger); border-color: transparent; background: transparent; }
   .manage-row button:hover { border-color: var(--danger); }
+  .manage-row .mv { padding: 2px 6px; font-size: 13px; line-height: 1; }
+  .manage-row .row-ctrls > button:last-child { padding: 3px 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
   .add-row { display: flex; gap: 8px; margin-top: 9px; } .add-row input { flex: 1; }
   .sec-search { width: 100%; margin-bottom: 8px; padding: 6px 10px; }
   .scroll-cap { max-height: 230px; overflow-y: auto; padding-right: 3px; }
@@ -997,7 +1002,7 @@
   #userOverlayChoices button { display: block; width: 100%; padding: 12px 14px; text-align: left; font-size: 14px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; color: var(--text); }
   #userOverlayChoices button:hover { border-color: var(--accent); background: rgba(109,93,252,.08); }
   #userOverlayChoices button.on { border-color: var(--accent); background: rgba(109,93,252,.15); }
-  .row-ctrls { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .row-ctrls { display: inline-flex; gap: 4px; align-items: center; flex-wrap: nowrap; justify-content: flex-end; }
   .mv { padding: 2px 8px; color: var(--text); border-color: transparent; background: transparent; font-weight: 700; }
   .lane-dsg { padding: 3px 6px; font-size: 12px; font-weight: 600; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
   .lane-dsg:hover { border-color: var(--accent); }
@@ -1720,8 +1725,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "4.12";
+const VERSION = "4.13";
 const CHANGELOG = [
+  "v4.13 — Tighter Manage rows: single-line layout that doesn't wrap. Name truncates with ellipsis instead of pushing controls onto a second row, role dropdown capped at 150px, ↑↓/✎ buttons compact, Remove button small-caps so the whole row fits regardless of width.",
   "v4.12 — Removed the 'Groups now live in Manage → Groups' hint from the Custom fields overlay.",
   "v4.11 — Person avatars. Each person in Manage → People gets an avatar well (click the circle to upload a JPG/PNG — resized client-side to 128px). When a card has owners, badge-mode views (Board, Calendar bars, Gallery, Planning) render the owners as a stacked avatar row (overlapping circles, +N when there are more than 4). Owner chips in the card modal picker also show the avatar next to the name. Text-mode List/Grid keeps the comma-joined names so tabular layouts stay scannable. Fallback for anyone without an uploaded avatar: a colored initials disc (stable hue per name).",
   "v4.10 — Channel roles: every channel in Manage → Channels now has a role dropdown (— role — / 🎨 Theme). The Theme role controls the candy-stripe decoration on cards. You can reassign Theme to any channel (or clear it entirely). Default stays as the channel literally named 'Theme' for back-compat when no channel has been explicitly assigned. Role migrates when a channel is renamed and clears when it's removed.",
