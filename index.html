@@ -1703,8 +1703,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "4.09";
+const VERSION = "4.10";
 const CHANGELOG = [
+  "v4.10 — Channel roles: every channel in Manage → Channels now has a role dropdown (— role — / 🎨 Theme). The Theme role controls the candy-stripe decoration on cards. You can reassign Theme to any channel (or clear it entirely). Default stays as the channel literally named 'Theme' for back-compat when no channel has been explicitly assigned. Role migrates when a channel is renamed and clears when it's removed.",
   "v4.09 — Manage overlay cleanup: (1) title changed from 'Manage board' to 'Manage' since it applies to every view. (2) Each section (Lanes, Channels, People, Custom fields, Groups, Promotions) is now a collapsible card with a count pill — click the header to open/close, persisted per section in localStorage. Lanes stays open by default, the rest collapsed so the overlay isn't a wall of text. (3) The Groups editor moved from inside the Custom fields overlay to its own top-level section in Manage. The Custom fields overlay now just points to Manage → Groups.",
   "v4.08 — Groups editor simplified: the two separate Add-chip rows (custom fields + card identity sections) collapsed into one Add dropdown with both kinds of entries. Built-in sections are the first optgroup, custom fields the second with a ✎ marker. A field already in another group shows '— in: GroupName' in its label and still picks (moving it over). Also flipped the ON-chip icon: custom entries now carry ✎, built-ins are plain (matches the dropdown convention).",
   "v4.07 — Unified field groups: built-in card sections (Owners, Due date, Status, Brand & Channel, Promotion, etc.) can now be dropped into a field group alongside custom fields. Same group picks up its color, each entry gets ⅓/½/1 width. In Manage → Custom fields → Groups, each group card has a new 'Add — card identity sections' row of built-in chips (shown with a ◆ prefix and a purple tint); click to assign. On the card modal the built-in section moves inside the group's colored container at the width you set, in whichever position the group sits. Drag the group header to reorder it like any section. Also added a second quick link in the card ⚙ popover: '✎ Custom fields & groups…' opens the editor directly.",
@@ -2045,6 +2046,12 @@ const BRAND_DARK_COLORS_KEY = "__brand_dark_colors__";
 const FIELD_GROUPS_KEY = "__field_groups__";
 let fieldGroups = [];
 let _fieldGroupsRowId = null;
+// Channel role map: { channelName: "theme" }. Lets any channel play the Theme candy-stripe role instead
+// of hard-wiring it to the channel literally named "Theme". Backward compat: when no explicit map exists,
+// a channel named "Theme" (case-insensitive) auto-plays the theme role.
+const CHANNEL_ROLES_KEY = "__channel_roles__";
+let channelRoles = {};
+let _channelRolesRowId = null;
 // Modal section order — a workspace-scoped sentinel row holding `{order:[sec,...]}`. Lets the user drag the
 // Edit-deliverable modal's section blocks (title, brand/channel, owners, due, status, …) into any order and have
 // that order persist for every teammate. Unknown or missing keys fall back to the hard-coded default order so
@@ -2122,7 +2129,15 @@ function cardIsAlert(c) { return !!(c && c.fields && c.fields[ALERT_KEY]); }
 // `.theme-channel` AND stamps a per-card hue onto `--theme-hue`, so the shared ::after candy-stripe overlay
 // paints a unique color per card across every view. Hue derived from the card id so the color is stable
 // across renders / across users.
-function cardHasThemeChannel(c) { return !!(c && splitChannels(c.channel).some(ch => ch.toLowerCase() === "theme")); }
+function _hasExplicitChannelRoleMap() { return Object.keys(channelRoles || {}).length > 0; }
+function channelRoleOf(name) {
+  if (!name) return "";
+  // Explicit map wins; otherwise fall back to the legacy "literally named Theme" rule for back-compat.
+  if (channelRoles && channelRoles[name]) return channelRoles[name];
+  if (!_hasExplicitChannelRoleMap() && name.toLowerCase() === "theme") return "theme";
+  return "";
+}
+function cardHasThemeChannel(c) { return !!(c && splitChannels(c.channel).some(ch => channelRoleOf(ch) === "theme")); }
 // Month-appropriate stripe palette — pair per month that reads as the season/holiday without being heavy-handed.
 // Jan: icy winter · Feb: Valentine's · Mar: St Patrick's · Apr: Easter pastels · May: spring bloom ·
 // Jun/Jul: patriotic red/blue · Aug: late summer · Sep: back-to-school / early fall · Oct: Halloween ·
@@ -3526,7 +3541,12 @@ async function loadLists() {
   data.filter(r => r.kind === "promotion").forEach(r => { if (r.color) promoOverrides[r.name] = { id: r.id, color: r.color }; });
   // Custom fields store their config (type + dropdown options) as JSON in the `color` column (no migration needed).
   // The sentinel name PROMO_COLORS_KEY holds a JSON {promoName: hexColor} map — pulled into promoOverrides, not fieldsList.
-  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY && r.name !== FIELD_GROUPS_KEY && r.name !== INNOVATION_START_YEAR_KEY && r.name !== MODAL_SECTION_ORDER_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  fieldsList = data.filter(r => r.kind === "field" && r.name !== PROMO_COLORS_KEY && r.name !== BRAND_DARK_COLORS_KEY && r.name !== BRAND_COLORS_DB_KEY && r.name !== FIELD_GROUPS_KEY && r.name !== INNOVATION_START_YEAR_KEY && r.name !== MODAL_SECTION_ORDER_KEY && r.name !== CHANNEL_ROLES_KEY).map(r => { let cfg = {}; try { cfg = JSON.parse(r.color || "{}"); } catch (e) {} return { id: r.id, name: r.name, type: FIELD_TYPE_VALS.includes(cfg.type) ? cfg.type : "text", options: Array.isArray(cfg.options) ? cfg.options : [] }; });
+  // Channel roles sentinel (per-workspace). Shape: { "Channel Name": "theme" }
+  const crRow = data.find(r => r.kind === "field" && r.name === CHANNEL_ROLES_KEY);
+  _channelRolesRowId = crRow ? crRow.id : null;
+  channelRoles = {};
+  if (crRow && crRow.color) { try { const m = JSON.parse(crRow.color); if (m && typeof m === "object") channelRoles = m; } catch (e) {} }
   // Innovation start-year sentinel (global). Unscoped lookup so a row written under any workspace resolves.
   let isyRow = data.find(r => r.kind === "field" && r.name === INNOVATION_START_YEAR_KEY);
   if (!isyRow && ONLINE && !WS_COL_MISSING) {
@@ -3730,6 +3750,25 @@ async function savePromoOverrides() {
 }
 async function setPromoColor(name, color) { promoOverrides[name] = color; await savePromoOverrides(); }
 async function resetPromoColor(name) { if (!(name in promoOverrides)) return; delete promoOverrides[name]; await savePromoOverrides(); }
+async function saveChannelRoles() {
+  if (!ONLINE) { saveListsLocal(); afterListsChanged(); render(); return; }
+  const empty = !Object.keys(channelRoles).length;
+  const payload = JSON.stringify(channelRoles);
+  if (_channelRolesRowId) {
+    if (empty) { const { error } = await db.from("lists").delete().eq("id", _channelRolesRowId); if (error) { toast("Save failed: " + error.message); return; } _channelRolesRowId = null; }
+    else { const { error } = await db.from("lists").update({ color: payload }).eq("id", _channelRolesRowId); if (error) { toast("Save failed: " + error.message); return; } }
+  } else if (!empty) {
+    const { data, error } = await db.from("lists").insert(wsStamp({ kind: "field", name: CHANNEL_ROLES_KEY, color: payload, position: 99996 })).select("id").single();
+    if (error) { toast("Save failed: " + error.message); return; }
+    _channelRolesRowId = data.id;
+  }
+  afterListsChanged(); render();
+}
+async function setChannelRole(channelName, role) {
+  if (role === "theme") channelRoles[channelName] = "theme"; else delete channelRoles[channelName];
+  await saveChannelRoles();
+  renderManage();
+}
 // Persist the current fieldGroups to the sentinel row. Insert on first write, delete when empty.
 async function saveFieldGroups() {
   if (!ONLINE) { saveListsLocal(); afterListsChanged(); return; }
@@ -4069,6 +4108,7 @@ async function removeList(kind, item) {
   const { error } = await db.from("lists").delete().eq("id", item.id);
   if (error) { toast("Remove failed: " + error.message); return; }
   if (kind === "brand") { clearBrandColorGlobal(item.name, null); syncBrandColorsToDB(); }   // drop both light + dark overrides from the global toolkit
+  if (kind === "channel" && channelRoles[item.name]) { delete channelRoles[item.name]; await saveChannelRoles(); }
   if (kind === "field") {
     // Pull the deleted field out of any field group so the modal doesn't try to render a ghost section item.
     let touched = false;
@@ -4156,6 +4196,8 @@ async function renameList(kind, item, newName) {
   const { error } = await db.from("lists").update({ name: newName }).eq("id", item.id);
   if (error) { toast("Rename failed: " + error.message); return; }
   await cascadeRenameDB(kind, old, newName);
+  // Migrate channel-role attachment to the new name so the Theme role stays with the channel across renames.
+  if (kind === "channel" && channelRoles[old]) { channelRoles[newName] = channelRoles[old]; delete channelRoles[old]; await saveChannelRoles(); }
   await reloadListsAndUI(); await refetch();
 }
 
@@ -9158,6 +9200,15 @@ function manageRow(kind, item, idx) {
     const up = document.createElement("button"); up.textContent = "↑"; up.className = "mv"; up.disabled = idx === 0; up.onclick = () => moveStatus(item, -1);
     const dn = document.createElement("button"); dn.textContent = "↓"; dn.className = "mv"; dn.disabled = idx === statusList.length - 1; dn.onclick = () => moveStatus(item, 1);
     ctrls.appendChild(up); ctrls.appendChild(dn);
+  }
+  if (kind === "channel") {
+    const dsg = document.createElement("select"); dsg.className = "mv lane-dsg"; dsg.title = "Designate this channel's role (Theme = candy-stripe decoration on cards)";
+    const cur = channelRoleOf(item.name);
+    [["", "— role —"], ["theme", "🎨 Theme"]].forEach(([v, l]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === cur) o.selected = true; dsg.appendChild(o);
+    });
+    dsg.onchange = () => setChannelRole(item.name, dsg.value);
+    ctrls.appendChild(dsg);
   }
   const ed = document.createElement("button"); ed.textContent = "✎"; ed.className = "mv"; ed.title = "Rename";
   ed.onclick = () => { const nn = prompt("Rename “" + item.name + "” to:", item.name); if (nn) renameList(kind, item, nn); };
