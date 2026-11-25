@@ -959,6 +959,27 @@
      paint over static children in the same stacking context — explicit z-index on direct children fixes it. */
   .card.theme-channel > *, .planning-card.theme-channel > *,
   .list-task.theme-channel > *, .gallery-tile.theme-channel > * { position: relative; z-index: 1; }
+  /* Launch role — pulsing glow border + 🚀 corner badge. Signals go-live energy without hiding the card
+     content underneath. Border uses inset box-shadow so it hugs any card shape; glow animates opacity. */
+  .launch-channel { position: relative; }
+  .launch-channel::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 2px var(--launch-c1, #ff6b35), 0 0 10px var(--launch-c1, #ff6b35);
+    animation: launch-pulse 2.6s ease-in-out infinite;
+  }
+  @keyframes launch-pulse {
+    0%, 100% { opacity: .55; }
+    50%      { opacity: 1; }
+  }
+  .launch-badge { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 999px;
+    background: var(--launch-c1, #ff6b35); color: #fff; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; z-index: 3; pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+  .card.launch-channel > *, .planning-card.launch-channel > *,
+  .list-task.launch-channel > *, .gallery-tile.launch-channel > * { position: relative; z-index: 1; }
+  /* Calendar bars are tight — tone the glow + shrink the badge so it doesn't swallow the title. */
+  .ev.launch-channel::before, .ev-bar.launch-channel::before { box-shadow: inset 0 0 0 1.5px var(--launch-c1, #ff6b35); animation: none; opacity: .9; }
+  .ev.launch-channel .launch-badge, .ev-bar.launch-channel .launch-badge { width: 14px; height: 14px; font-size: 8px; top: 2px; right: 2px; }
   /* Modal alert button — top-right, next to ✕ Close. Lights up red when toggled on. */
   .modal-alert { position: absolute; top: 10px; right: 48px; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
   .modal-alert:hover { color: var(--text); border-color: var(--danger); }
@@ -1372,9 +1393,11 @@
         </select>
       </div>
       <div class="mcs-sub">Applies everywhere this card renders. Alert state (red) still supersedes.</div>
-      <div class="mcs-row"><span class="mcs-lab">Stripe 1</span><input type="color" class="tc-color" id="f_themeC1" /><button type="button" class="tc-reset" id="f_themeC1Reset" title="Use the month default">✕</button></div>
-      <div class="mcs-row"><span class="mcs-lab">Stripe 2</span><input type="color" class="tc-color" id="f_themeC2" /><button type="button" class="tc-reset" id="f_themeC2Reset" title="Use the month default">✕</button></div>
-      <div class="mcs-sub">Stripes only render on cards with the <b>Theme</b> channel on.</div>
+      <div class="mcs-row theme-only"><span class="mcs-lab">Stripe 1</span><input type="color" class="tc-color" id="f_themeC1" /><button type="button" class="tc-reset" id="f_themeC1Reset" title="Use the month default">✕</button></div>
+      <div class="mcs-row theme-only"><span class="mcs-lab">Stripe 2</span><input type="color" class="tc-color" id="f_themeC2" /><button type="button" class="tc-reset" id="f_themeC2Reset" title="Use the month default">✕</button></div>
+      <div class="mcs-sub theme-only">Stripes render on cards with a channel that has the <b>Theme</b> role.</div>
+      <div class="mcs-row launch-only"><span class="mcs-lab">🚀 Launch glow</span><input type="color" class="tc-color" id="f_launchC1" /><button type="button" class="tc-reset" id="f_launchC1Reset" title="Use the default fiery orange">✕</button></div>
+      <div class="mcs-sub launch-only">Glow pulses on cards with a channel that has the <b>Launch</b> role.</div>
       <div class="mcs-row" id="wsMoveRow" style="display:none"><span class="mcs-lab">Workspace</span><select id="wsMoveSel" class="mcs-dir" title="Move this card to a different workspace"></select></div>
       <div class="mcs-sub" id="wsMoveHint" style="display:none">Moves this card to the other board.</div>
       <div class="mcs-row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:4px;"><span class="mcs-lab">Board setup</span><button type="button" id="f_openManageFromCard" class="mcs-dir" style="cursor:pointer;text-align:left;padding:7px 10px;">⚙ Open Manage…</button></div>
@@ -1725,8 +1748,9 @@ const DEFAULT_CHANNELS = ["Organic Social", "Email", "Meta Campaigns", "Web / La
 const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // ── Version & changelog ───────────────────────────────────────────────
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
-const VERSION = "4.13";
+const VERSION = "4.14";
 const CHANGELOG = [
+  "v4.14 — New 🚀 Launch channel role + appearance controls now self-hide. (1) Channel role dropdown in Manage gains a second option: 🚀 Launch. Any channel assigned the Launch role decorates its cards with a pulsing glow border and a 🚀 badge in the top-right corner — a lively complement to Theme's static candy stripes. (2) The ⚙ card appearance popover's Stripe 1 / Stripe 2 rows only appear when the card has a Theme-role channel on it, and the new 🚀 Launch glow row only appears when the card has a Launch-role channel. Cards with neither role get a clean popover (card color + gradient only). (3) Launch glow color is configurable per-card in that popover; default is a fiery orange.",
   "v4.13 — Tighter Manage rows: single-line layout that doesn't wrap. Name truncates with ellipsis instead of pushing controls onto a second row, role dropdown capped at 150px, ↑↓/✎ buttons compact, Remove button small-caps so the whole row fits regardless of width.",
   "v4.12 — Removed the 'Groups now live in Manage → Groups' hint from the Custom fields overlay.",
   "v4.11 — Person avatars. Each person in Manage → People gets an avatar well (click the circle to upload a JPG/PNG — resized client-side to 128px). When a card has owners, badge-mode views (Board, Calendar bars, Gallery, Planning) render the owners as a stacked avatar row (overlapping circles, +N when there are more than 4). Owner chips in the card modal picker also show the avatar next to the name. Text-mode List/Grid keeps the comma-joined names so tabular layouts stay scannable. Fallback for anyone without an uploaded avatar: a colored initials disc (stable hue per name).",
@@ -2144,7 +2168,7 @@ const PRIORITIES = [
 function cardPriority(c) { return (c.fields && c.fields[PRIORITY_KEY]) || "No Priority"; }
 function priorityColor(name) { const p = PRIORITIES.find(x => x.name === name); return p ? p.color : "#6b7280"; }
 // Sprint (ISO week string e.g. "2026-W24") and subtasks ([{id,text,done}]) — both in the fields blob, no schema change.
-const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries", ALERT_KEY = "__alert", ALERT_NOTE_KEY = "__alert_note", ALERT_OWNER_KEY = "__alert_owner", ALERT_DATE_KEY = "__alert_date", THEME_BAR_KEY = "__theme_bar", THEME_BAR2_KEY = "__theme_bar2", THEME_BAR_DIR_KEY = "__theme_bar_dir", THEME_C1_KEY = "__theme_c1", THEME_C2_KEY = "__theme_c2";
+const SPRINT_KEY = "__sprint", SUBTASKS_KEY = "__subtasks", SPRINTHIST_KEY = "__sprintHistory", EMAILS_KEY = "__emails", HIST_SPRINTS_KEY = "__historicalSprints", NOTES_UPDATED_KEY = "__notesUpdatedAt", LINKS_KEY = "__linkedCards", COVER_KEY = "__coverUrl", GALLERY_KEY = "__gallery", NOTES_ENTRIES_KEY = "__notes_entries", ALERT_KEY = "__alert", ALERT_NOTE_KEY = "__alert_note", ALERT_OWNER_KEY = "__alert_owner", ALERT_DATE_KEY = "__alert_date", THEME_BAR_KEY = "__theme_bar", THEME_BAR2_KEY = "__theme_bar2", THEME_BAR_DIR_KEY = "__theme_bar_dir", THEME_C1_KEY = "__theme_c1", THEME_C2_KEY = "__theme_c2", LAUNCH_C1_KEY = "__launch_c1";
 // Red-alert flag — a workspace-agnostic boolean stored on the card itself (c.fields.__alert). Alerted cards get
 // a red background in every view, always sort to the top regardless of other sort, and feed the toolbar's
 // Alerts counter + Notes-view alerts section. The companion __alert_note / __alert_owner fields hold the
@@ -2163,6 +2187,7 @@ function channelRoleOf(name) {
   return "";
 }
 function cardHasThemeChannel(c) { return !!(c && splitChannels(c.channel).some(ch => channelRoleOf(ch) === "theme")); }
+function cardHasLaunchChannel(c) { return !!(c && splitChannels(c.channel).some(ch => channelRoleOf(ch) === "launch")); }
 // Month-appropriate stripe palette — pair per month that reads as the season/holiday without being heavy-handed.
 // Jan: icy winter · Feb: Valentine's · Mar: St Patrick's · Apr: Easter pastels · May: spring bloom ·
 // Jun/Jul: patriotic red/blue · Aug: late summer · Sep: back-to-school / early fall · Oct: Halloween ·
@@ -2188,17 +2213,26 @@ function themeMonth(c) {
   return m ? Math.max(0, Math.min(11, parseInt(m[1], 10) - 1)) : new Date().getMonth();
 }
 function decorateTheme(el, c) {
-  if (!cardHasThemeChannel(c)) return;
-  el.classList.add("theme-channel");
-  const [defC1, defC2] = THEME_MONTH_COLORS[themeMonth(c)];
-  const f = (c && c.fields) || {};
-  const c1 = f[THEME_C1_KEY] || defC1;
-  const c2 = f[THEME_C2_KEY] || defC2;
-  el.style.setProperty("--theme-c1", c1);
-  el.style.setProperty("--theme-c2", c2);
-  // Calendar bars have their inline background set BEFORE this runs (via cardAccentColor); expose it as --theme-bg
-  // so the inset content backdrop can mirror the bar color instead of masking it with a panel gray.
-  if (el.style && el.style.background) el.style.setProperty("--theme-bg", el.style.background);
+  if (cardHasThemeChannel(c)) {
+    el.classList.add("theme-channel");
+    const [defC1, defC2] = THEME_MONTH_COLORS[themeMonth(c)];
+    const f = (c && c.fields) || {};
+    const c1 = f[THEME_C1_KEY] || defC1;
+    const c2 = f[THEME_C2_KEY] || defC2;
+    el.style.setProperty("--theme-c1", c1);
+    el.style.setProperty("--theme-c2", c2);
+    if (el.style && el.style.background) el.style.setProperty("--theme-bg", el.style.background);
+  }
+  if (cardHasLaunchChannel(c)) {
+    el.classList.add("launch-channel");
+    const lc = ((c && c.fields) || {})[LAUNCH_C1_KEY] || "#ff6b35";
+    el.style.setProperty("--launch-c1", lc);
+    // Inject the 🚀 badge once per element (no pseudo-element conflict with Theme).
+    if (!el.querySelector(":scope > .launch-badge")) {
+      const b = document.createElement("span"); b.className = "launch-badge"; b.textContent = "🚀"; b.title = "Launch";
+      el.appendChild(b);
+    }
+  }
 }
 // Convert a #rrggbb hex to a `"r,g,b"` string for use in rgba() — needed because color-mix() can't blend a
 // gradient, so a gradient tint uses `rgba()` stops at the chosen opacity over the panel background.
@@ -3797,7 +3831,7 @@ async function saveChannelRoles() {
   afterListsChanged(); render();
 }
 async function setChannelRole(channelName, role) {
-  if (role === "theme") channelRoles[channelName] = "theme"; else delete channelRoles[channelName];
+  if (role === "theme" || role === "launch") channelRoles[channelName] = role; else delete channelRoles[channelName];
   await saveChannelRoles();
   renderManage();
 }
@@ -7021,6 +7055,7 @@ function initThemeColorsPicker(card) {
   const dirRow = document.getElementById("f_themeBarDirRow");
   const c1Inp = document.getElementById("f_themeC1");
   const c2Inp = document.getElementById("f_themeC2");
+  const launchInp = document.getElementById("f_launchC1");
   const popover = document.getElementById("f_settingsPop");
   const openBtn = document.getElementById("f_settingsBtn");
   const closeBtn = document.getElementById("f_settingsClose");
@@ -7030,12 +7065,22 @@ function initThemeColorsPicker(card) {
   const dir = normDir(f[THEME_BAR_DIR_KEY]);
   const c1 = f[THEME_C1_KEY] || "";
   const c2 = f[THEME_C2_KEY] || "";
+  const launchC1 = f[LAUNCH_C1_KEY] || "";
   const barDef = card ? colorFor(card) : "#888888";
   const monthIdx = card ? themeMonth(card) : new Date().getMonth();
   const [defC1, defC2] = THEME_MONTH_COLORS[monthIdx];
+  // Show stripe/launch rows only when the card actually has the matching role on a channel — Jason doesn't want
+  // to see the Theme controls on cards that have no Theme channel on them.
+  const hasTheme = cardHasThemeChannel(card);
+  const hasLaunch = cardHasLaunchChannel(card);
+  if (popover) {
+    popover.querySelectorAll(".theme-only").forEach(e => e.style.display = hasTheme ? "" : "none");
+    popover.querySelectorAll(".launch-only").forEach(e => e.style.display = hasLaunch ? "" : "none");
+  }
   const refreshOverrideBadge = () => {
     if (!openBtn) return;
-    const any = [barInp, bar2Inp, c1Inp, c2Inp].some(i => i && i.dataset.active === "1");
+    const inputs = [barInp, bar2Inp, c1Inp, c2Inp]; if (launchInp) inputs.push(launchInp);
+    const any = inputs.some(i => i && i.dataset.active === "1");
     openBtn.classList.toggle("has-override", any);
   };
   const syncGradientRowVisibility = () => {
@@ -7056,6 +7101,7 @@ function initThemeColorsPicker(card) {
   dirSel.value = dir;
   set(c1Inp, "f_themeC1Reset", c1, defC1);
   set(c2Inp, "f_themeC2Reset", c2, defC2);
+  if (launchInp) set(launchInp, "f_launchC1Reset", launchC1, "#ff6b35");
   refreshOverrideBadge();
   syncGradientRowVisibility();
   if (popover) popover.hidden = true;
@@ -7067,7 +7113,8 @@ function initThemeColorsPicker(card) {
       const o = { start: barInp.value, end: bar2Inp.dataset.active === "1" ? bar2Inp.value : "", dir: dirSel.value };
       modal.style.background = tintedBg(o, 10, "var(--panel)");
     };
-    [barInp, bar2Inp, c1Inp, c2Inp].forEach(inp => {
+    const livePickers = [barInp, bar2Inp, c1Inp, c2Inp]; if (launchInp) livePickers.push(launchInp);
+    livePickers.forEach(inp => {
       inp.addEventListener("input", () => {
         inp.dataset.active = "1"; inp.classList.remove("inactive");
         const rid = inp.id + "Reset"; const r = document.getElementById(rid); if (r) r.disabled = false;
@@ -7088,6 +7135,7 @@ function initThemeColorsPicker(card) {
     wireReset("f_themeBar2Reset", bar2Inp);
     wireReset("f_themeC1Reset", c1Inp);
     wireReset("f_themeC2Reset", c2Inp);
+    if (launchInp) wireReset("f_launchC1Reset", launchInp);
     if (openBtn && popover) {
       openBtn.addEventListener("click", e => { e.stopPropagation(); popover.hidden = !popover.hidden; });
       document.addEventListener("click", e => {
@@ -7101,7 +7149,7 @@ function initThemeColorsPicker(card) {
     if (openManageBtn && popover) openManageBtn.addEventListener("click", () => { popover.hidden = true; closeModal(); openManage(); });
     const openFieldsBtnFromCard = document.getElementById("f_openFieldsFromCard");
     if (openFieldsBtnFromCard && popover) openFieldsBtnFromCard.addEventListener("click", () => { popover.hidden = true; closeModal(); openFields(); });
-    barInp.dataset.wired = "1"; bar2Inp.dataset.wired = "1"; c1Inp.dataset.wired = "1"; c2Inp.dataset.wired = "1";
+    barInp.dataset.wired = "1"; bar2Inp.dataset.wired = "1"; c1Inp.dataset.wired = "1"; c2Inp.dataset.wired = "1"; if (launchInp) launchInp.dataset.wired = "1";
   }
 }
 // Pull the picker's current state into the fields object. Called from saveModal — only writes keys when the user
@@ -7122,6 +7170,8 @@ function collectThemeColors(fields) {
   }
   if (c1Inp && c1Inp.dataset.active === "1") fields[THEME_C1_KEY] = c1Inp.value; else delete fields[THEME_C1_KEY];
   if (c2Inp && c2Inp.dataset.active === "1") fields[THEME_C2_KEY] = c2Inp.value; else delete fields[THEME_C2_KEY];
+  const launchInp = document.getElementById("f_launchC1");
+  if (launchInp && launchInp.dataset.active === "1") fields[LAUNCH_C1_KEY] = launchInp.value; else delete fields[LAUNCH_C1_KEY];
 }
 // Walk a flat subtasks array and compute {headerId → {done, total}}. Headers group everything BELOW them up to
 // the next header (or end). Anything before the first header is ungrouped (not counted per-header).
@@ -8968,7 +9018,7 @@ function buildAutologEntry(existingCard, newData, newFields, newSubs) {
   checkScalar("promo",   "Promotion",prevFields[PROMO_KEY]    || "", newFields[PROMO_KEY]    || "");
   checkScalar("sprint",  "Sprint",   prevFields[SPRINT_KEY]   || "", newFields[SPRINT_KEY]   || "");
   // Custom fields — only those explicitly toggled ON in the Custom fields editor (field:<name> in autologPrefs).
-  const skip = new Set([PRIORITY_KEY, PROMO_KEY, SPRINT_KEY, SUBTASKS_KEY, EMAILS_KEY, SPRINTHIST_KEY, HIST_SPRINTS_KEY, NOTES_UPDATED_KEY, LINKS_KEY, COVER_KEY, GALLERY_KEY, NOTES_ENTRIES_KEY, ALERT_KEY, ALERT_NOTE_KEY, ALERT_OWNER_KEY, ALERT_DATE_KEY, THEME_BAR_KEY, THEME_BAR2_KEY, THEME_BAR_DIR_KEY, THEME_C1_KEY, THEME_C2_KEY]);
+  const skip = new Set([PRIORITY_KEY, PROMO_KEY, SPRINT_KEY, SUBTASKS_KEY, EMAILS_KEY, SPRINTHIST_KEY, HIST_SPRINTS_KEY, NOTES_UPDATED_KEY, LINKS_KEY, COVER_KEY, GALLERY_KEY, NOTES_ENTRIES_KEY, ALERT_KEY, ALERT_NOTE_KEY, ALERT_OWNER_KEY, ALERT_DATE_KEY, THEME_BAR_KEY, THEME_BAR2_KEY, THEME_BAR_DIR_KEY, THEME_C1_KEY, THEME_C2_KEY, LAUNCH_C1_KEY]);
   const keys = new Set([...Object.keys(prevFields), ...Object.keys(newFields)].filter(k => !skip.has(k) && !k.startsWith("__")));
   keys.forEach(k => {
     if (!autologFieldEnabled(k)) return;
@@ -9296,9 +9346,9 @@ function manageRow(kind, item, idx) {
     ctrls.appendChild(up); ctrls.appendChild(dn);
   }
   if (kind === "channel") {
-    const dsg = document.createElement("select"); dsg.className = "mv lane-dsg"; dsg.title = "Designate this channel's role (Theme = candy-stripe decoration on cards)";
+    const dsg = document.createElement("select"); dsg.className = "mv lane-dsg"; dsg.title = "Designate this channel's role (Theme = candy-stripe decoration; Launch = pulsing glow + 🚀)";
     const cur = channelRoleOf(item.name);
-    [["", "— role —"], ["theme", "🎨 Theme"]].forEach(([v, l]) => {
+    [["", "— role —"], ["theme", "🎨 Theme"], ["launch", "🚀 Launch"]].forEach(([v, l]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === cur) o.selected = true; dsg.appendChild(o);
     });
     dsg.onchange = () => setChannelRole(item.name, dsg.value);
