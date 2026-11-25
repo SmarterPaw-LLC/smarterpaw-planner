@@ -532,6 +532,8 @@
   .fg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .fg-chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
   .fg-chip.on { background: var(--accent); color: #fff; border-color: var(--accent); padding: 2px 4px 2px 2px; cursor: default; }
+  .fg-chip.builtin { background: rgba(109,93,252,.08); border-color: rgba(109,93,252,.4); color: var(--accent); }
+  .fg-chip.builtin.on { background: linear-gradient(135deg, var(--accent), #8b7afc); color: #fff; border-color: var(--accent); }
   .fg-chip-name { padding: 0 6px; cursor: pointer; }
   .fg-chip-name:hover { text-decoration: line-through; opacity: .85; }
   .fg-chip-arrow { background: rgba(255,255,255,.18); color: #fff; border: 0; border-radius: 999px; width: 18px; height: 18px; padding: 0; font-size: 10px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
@@ -1345,7 +1347,8 @@
       <div class="mcs-row" id="wsMoveRow" style="display:none"><span class="mcs-lab">Workspace</span><select id="wsMoveSel" class="mcs-dir" title="Move this card to a different workspace"></select></div>
       <div class="mcs-sub" id="wsMoveHint" style="display:none">Moves this card to the other board.</div>
       <div class="mcs-row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:4px;"><span class="mcs-lab">Board setup</span><button type="button" id="f_openManageFromCard" class="mcs-dir" style="cursor:pointer;text-align:left;padding:7px 10px;">⚙ Open Manage…</button></div>
-      <div class="mcs-sub">Lanes, brands, channels, custom fields, groups.</div>
+      <div class="mcs-row" style="padding-top:0;"><span class="mcs-lab">Fields &amp; groups</span><button type="button" id="f_openFieldsFromCard" class="mcs-dir" style="cursor:pointer;text-align:left;padding:7px 10px;">✎ Custom fields &amp; groups…</button></div>
+      <div class="mcs-sub">Groups can bundle built-in sections (Owners, Due, Status…) + custom fields with per-section color &amp; width.</div>
     </div>
     <h2 id="modalTitle">New deliverable</h2>
     <!-- Alert banner — rendered inside the modal body when the flag is on. Shows the note + owner the alerter
@@ -1678,6 +1681,7 @@ const DEFAULT_PEOPLE = ["Jason", "Brennan"];
 // To log a release: bump VERSION and add a line to the TOP of CHANGELOG.
 const VERSION = "4.00";
 const CHANGELOG = [
+  "v4.07 — Unified field groups: built-in card sections (Owners, Due date, Status, Brand & Channel, Promotion, etc.) can now be dropped into a field group alongside custom fields. Same group picks up its color, each entry gets ⅓/½/1 width. In Manage → Custom fields → Groups, each group card has a new 'Add — card identity sections' row of built-in chips (shown with a ◆ prefix and a purple tint); click to assign. On the card modal the built-in section moves inside the group's colored container at the width you set, in whichever position the group sits. Drag the group header to reorder it like any section. Also added a second quick link in the card ⚙ popover: '✎ Custom fields & groups…' opens the editor directly.",
   "v4.06 — Quick link to Manage from the card ⚙ settings popover. New \"Board setup → ⚙ Open Manage…\" row at the bottom closes the card modal and opens the full Manage editor (lanes, brands, channels, custom fields, groups). No need to Cancel back to the board header first.",
   "v4.05 — Subtask → deliverable conversion now opens a dialog with inheritance checkboxes: Due date, Owners, and every Link-type custom field on the parent. Defaults match Jason's rule — pre-check Due and Owners only when the subtask has none of its own (so subtask-level overrides aren't clobbered), pre-check every parent link URL. Cancel / Esc / click-outside aborts; Convert creates the new card inheriting whichever boxes are checked plus the existing brand/channel/promo. Replaces the plain yes/no confirm.",
   "v4.04 — Link custom fields show a type preview chip (icon + label) next to the 🔗 Open button. Detects Google Sheets / Doc / Slides / Drive, SharePoint, Dropbox, Figma, Notion, Airtable, YouTube / Vimeo / Loom, GitHub, Canva, Miro, plus file extensions (.pdf, .xlsx, .docx, .pptx, .zip, .mp4, images). Falls back to a plain 🔗 + hostname when it's an unknown service. The chip updates as you type and disappears when the field is empty.",
@@ -2021,6 +2025,25 @@ let _fieldGroupsRowId = null;
 // new sections added later still appear automatically at their default spot.
 const MODAL_SECTION_ORDER_KEY = "__modal_section_order__";
 const MODAL_SECTION_DEFAULT = ["cover","gallery","title","brand-channel","owners","due","sprint","sprint-track","sprint-hist","status","priority","promo","subs","links","custom-fields","notes","emails"];
+// Card-identity sections that can be dropped into a field group alongside custom fields.
+// `key` matches the `data-sec` attribute on the section's DOM element; `label` is what the Groups editor shows.
+// The `custom-fields` sentinel from MODAL_SECTION_DEFAULT is excluded on purpose (it's just an ordering placeholder,
+// not a real DOM section), and cover/gallery/title/notes are excluded because they already own the modal's top.
+const BUILTIN_SECTIONS = [
+  { key: "brand-channel", label: "Brand & Channel" },
+  { key: "owners", label: "Owners" },
+  { key: "due", label: "Due date" },
+  { key: "sprint", label: "Sprint week" },
+  { key: "sprint-track", label: "Sprints tracked" },
+  { key: "sprint-hist", label: "Sprint history" },
+  { key: "status", label: "Status" },
+  { key: "priority", label: "Priority" },
+  { key: "promo", label: "Promotion" },
+  { key: "subs", label: "Subtasks" },
+  { key: "links", label: "Linked deliverables" },
+  { key: "emails", label: "Emails" },
+];
+function _builtinSectionLabel(key) { const s = BUILTIN_SECTIONS.find(x => x.key === key); return s ? s.label : key; }
 let modalSectionOrder = [];
 let _modalSectionOrderRowId = null;
 function fieldGroupId() { return "fg" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -3505,8 +3528,10 @@ async function loadLists() {
           // field can declare its render width inside the section ("full" | "half" | "third"). Tolerate the
           // old shape — read it as full-width.
           fields: Array.isArray(g && g.fields) ? g.fields.map(x => {
-            if (typeof x === "string") return { name: x, width: "full" };
-            const w = x && x.width; return { name: String((x && x.name) || ""), width: ["full", "half", "third"].includes(w) ? w : "full" };
+            if (typeof x === "string") return { name: x, width: "full", kind: "custom" };
+            const w = x && x.width;
+            const k = (x && x.kind) === "builtin" ? "builtin" : "custom";
+            return { name: String((x && x.name) || ""), width: ["full", "half", "third"].includes(w) ? w : "full", kind: k };
           }).filter(x => x.name) : [],
         })).filter(g => g.name);
       }
@@ -3725,7 +3750,10 @@ function applyModalSectionOrder() {
   const modal = document.querySelector("#overlay .modal"); if (!modal) return;
   const actions = modal.querySelector(".modal-actions");
   const order = effectiveModalSectionOrder();
+  const groupedBI = groupedBuiltinKeys();
   order.forEach(k => {
+    // Built-ins that live inside a field group are positioned by the group container — don't yank them back.
+    if (groupedBI.has(k)) return;
     const el = modal.querySelector(`[data-sec="${CSS.escape(k)}"]`);
     if (!el) return;
     if (actions) modal.insertBefore(el, actions); else modal.appendChild(el);
@@ -3785,9 +3813,9 @@ function ensureModalSectionHandle(el, sec) {
 // Add a new empty group with the given name.
 function addFieldGroup(name) { const n = (name || "").trim(); if (!n) return; fieldGroups.push({ id: fieldGroupId(), name: n, color: "", fields: [] }); saveFieldGroups(); renderFieldsEditor(); }
 function setFieldGroupColor(id, color) { const g = fieldGroups.find(x => x.id === id); if (!g) return; g.color = /^#[0-9a-f]{3,8}$/i.test(color) ? color : ""; saveFieldGroups(); renderFieldGroupsEditor(); }
-function setFieldWidthInGroup(groupId, fieldName, width) {
+function setFieldWidthInGroup(groupId, kind, fieldName, width) {
   const g = fieldGroups.find(x => x.id === groupId); if (!g) return;
-  const entry = g.fields.find(f => f.name === fieldName); if (!entry) return;
+  const entry = g.fields.find(f => f.name === fieldName && (f.kind || "custom") === kind); if (!entry) return;
   entry.width = ["full", "half", "third"].includes(width) ? width : "full";
   saveFieldGroups(); renderFieldGroupsEditor();
 }
@@ -3813,19 +3841,22 @@ function reorderFieldInGroup(groupId, fromIdx, toIdx) {
 // Add or remove a field from a group. A field can belong to one group at a time — adding to group B removes
 // it from group A so the modal doesn't render it twice. New additions default to full width; the group
 // editor exposes ⅓ ½ 1 toggles to change that.
-function setFieldInGroup(groupId, fieldName, on) {
+function setFieldInGroup(groupId, kind, fieldName, on) {
   const g = fieldGroups.find(x => x.id === groupId); if (!g) return;
+  const match = (f) => f.name === fieldName && (f.kind || "custom") === kind;
   if (on) {
-    fieldGroups.forEach(x => { if (x.id !== groupId) x.fields = x.fields.filter(f => f.name !== fieldName); });
-    if (!g.fields.some(f => f.name === fieldName)) g.fields.push({ name: fieldName, width: "full" });
+    fieldGroups.forEach(x => { if (x.id !== groupId) x.fields = x.fields.filter(f => !match(f)); });
+    if (!g.fields.some(match)) g.fields.push({ name: fieldName, width: "full", kind });
   } else {
-    g.fields = g.fields.filter(f => f.name !== fieldName);
+    g.fields = g.fields.filter(f => !match(f));
   }
   saveFieldGroups(); renderFieldsEditor();
 }
-// All field names currently assigned to any group — modal uses this to know which fields render inside their
+// All custom field names currently assigned to any group — modal uses this to know which fields render inside their
 // group block vs. in the ungrouped section.
-function groupedFieldNames() { const s = new Set(); fieldGroups.forEach(g => g.fields.forEach(f => s.add(f.name))); return s; }
+function groupedFieldNames() { const s = new Set(); fieldGroups.forEach(g => g.fields.forEach(f => { if ((f.kind || "custom") === "custom") s.add(f.name); })); return s; }
+// All built-in section keys currently assigned to any group.
+function groupedBuiltinKeys() { const s = new Set(); fieldGroups.forEach(g => g.fields.forEach(f => { if (f.kind === "builtin") s.add(f.name); })); return s; }
 // Global brand-color writes — localStorage-only, workspace-agnostic. Both Planner and Innovation reflect
 // the change on next render.
 // Persist the current global brand-color map to Supabase (the __brand_colors_db__ sentinel row). Chatty saves are
@@ -6927,6 +6958,8 @@ function initThemeColorsPicker(card) {
     if (closeBtn && popover) closeBtn.addEventListener("click", () => { popover.hidden = true; });
     const openManageBtn = document.getElementById("f_openManageFromCard");
     if (openManageBtn && popover) openManageBtn.addEventListener("click", () => { popover.hidden = true; closeModal(); openManage(); });
+    const openFieldsBtnFromCard = document.getElementById("f_openFieldsFromCard");
+    if (openFieldsBtnFromCard && popover) openFieldsBtnFromCard.addEventListener("click", () => { popover.hidden = true; closeModal(); openFields(); });
     barInp.dataset.wired = "1"; bar2Inp.dataset.wired = "1"; c1Inp.dataset.wired = "1"; c2Inp.dataset.wired = "1";
   }
 }
@@ -7472,11 +7505,23 @@ function renderFieldInputs(values) {
   const modal = document.querySelector("#overlay .modal");
   const actions = modal ? modal.querySelector(".modal-actions") : null;
   const insert = (el) => { if (modal) { if (actions) modal.insertBefore(el, actions); else modal.appendChild(el); } };
+  // Any built-in sections that previous renders moved into a group container need to be popped back up to the
+  // modal body first — otherwise the group gets re-rendered and the built-in stays orphaned inside the old
+  // container that's about to be removed.
+  BUILTIN_SECTIONS.forEach(b => {
+    const el = modal && modal.querySelector(`.field-group-fields > [data-sec="${CSS.escape(b.key)}"]`);
+    if (el) { insert(el); el.classList.remove("w-full", "w-half", "w-third"); }
+  });
   // Groups first — each becomes a top-level section (data-sec="group:ID") that participates in the same drag-
   // reorder system as every built-in section. Groups whose fields don't exist (renamed/removed) are skipped.
   const grouped = groupedFieldNames();
   fieldGroups.forEach(g => {
-    const resolved = g.fields.map(e => ({ f: fieldsList.find(x => x.name === e.name), width: e.width || "full" })).filter(x => x.f);
+    const resolved = g.fields.map(e => {
+      const kind = e.kind || "custom";
+      if (kind === "custom") { const f = fieldsList.find(x => x.name === e.name); return f ? { kind, f, width: e.width || "full" } : null; }
+      const biEl = modal && modal.querySelector(`[data-sec="${CSS.escape(e.name)}"]`);
+      return biEl ? { kind, el: biEl, width: e.width || "full" } : null;
+    }).filter(Boolean);
     if (!resolved.length) return;
     const section = document.createElement("div"); section.className = "field-group-section"; section.dataset.groupId = g.id;
     section.dataset.sec = "group:" + g.id;
@@ -7484,10 +7529,16 @@ function renderFieldInputs(values) {
     const header = document.createElement("div"); header.className = "field-group-header"; header.textContent = g.name;
     section.appendChild(header);
     const inner = document.createElement("div"); inner.className = "field-group-fields";
-    resolved.forEach(({ f, width }) => {
-      const w = _renderOneFieldWrapper(f, (values && values[f.name]) || "");
-      w.classList.add(width === "half" ? "w-half" : width === "third" ? "w-third" : "w-full");
-      inner.appendChild(w);
+    resolved.forEach(r => {
+      if (r.kind === "custom") {
+        const w = _renderOneFieldWrapper(r.f, (values && values[r.f.name]) || "");
+        w.classList.add(r.width === "half" ? "w-half" : r.width === "third" ? "w-third" : "w-full");
+        inner.appendChild(w);
+      } else {
+        r.el.classList.remove("w-full", "w-half", "w-third");
+        r.el.classList.add(r.width === "half" ? "w-half" : r.width === "third" ? "w-third" : "w-full");
+        inner.appendChild(r.el);
+      }
     });
     section.appendChild(inner);
     insert(section);
@@ -8793,7 +8844,7 @@ function renderFieldGroupsEditor() {
   const box = document.getElementById("fieldGroupsEditor"); if (!box) return;
   box.innerHTML = "";
   if (!fieldGroups.length) { const e = document.createElement("div"); e.className = "fe-none"; e.textContent = "No groups yet. Add one below to bundle fields."; box.appendChild(e); return; }
-  const takenByOther = (gid, name) => fieldGroups.some(g => g.id !== gid && g.fields.some(f => f.name === name));
+  const takenByOther = (gid, kind, name) => fieldGroups.some(g => g.id !== gid && g.fields.some(f => f.name === name && (f.kind || "custom") === kind));
   fieldGroups.forEach((g, idx) => {
     const card = document.createElement("div"); card.className = "fg-card"; card.dataset.idx = String(idx);
     if (g.color) card.style.setProperty("--group-color", g.color);
@@ -8814,43 +8865,62 @@ function renderFieldGroupsEditor() {
     }
     const del = document.createElement("button"); del.className = "fg-del"; del.type = "button"; del.textContent = "Remove"; del.onclick = () => { if (confirm('Remove group "' + g.name + '"? Its fields stay as custom fields, just ungrouped.')) removeFieldGroup(g.id); };
     top.appendChild(nm); top.appendChild(colorWrap); top.appendChild(del); card.appendChild(top);
-    const lab = document.createElement("div"); lab.className = "fg-picker-lab"; lab.textContent = "Fields in this group";
+    const lab = document.createElement("div"); lab.className = "fg-picker-lab"; lab.textContent = "In this group";
     card.appendChild(lab);
     const chips = document.createElement("div"); chips.className = "fg-chips";
-    if (!fieldsList.length) { const e = document.createElement("span"); e.className = "fe-none"; e.textContent = "No custom fields exist yet."; chips.appendChild(e); }
-    // Render ON chips first (in g.fields order) with drag-to-reorder + width toggle (⅓ ½ 1); OFF/other-group
-    // chips come after and only respond to click. Drag within the ON row updates g.fields; dragging an ON
-    // chip over an OFF chip is a no-op (payload sentinel + srcGid check guard against it).
-    // ON chips: a left-arrow + name + right-arrow + width toggle (⅓ ½ 1). The arrows do the reordering so the
-    // whole chip is NOT draggable (dragging it was fighting the group-card drag). The chip stays clickable on
-    // the name span to remove it from the group.
+    // ON chips: both custom + built-in entries, in g.fields order. Each has ◀ ▶ reorder + ⅓ ½ 1 width.
     g.fields.forEach((entry, chipIdx) => {
-      const f = fieldsList.find(x => x.name === entry.name); if (!f) return;
-      const chip = document.createElement("div"); chip.className = "fg-chip on"; chip.title = "Click name to remove, arrows to reorder, ⅓ ½ 1 to set width";
+      const kind = entry.kind || "custom";
+      let label;
+      if (kind === "custom") {
+        const f = fieldsList.find(x => x.name === entry.name); if (!f) return;
+        label = f.name;
+      } else {
+        label = _builtinSectionLabel(entry.name);
+      }
+      const chip = document.createElement("div"); chip.className = "fg-chip on" + (kind === "builtin" ? " builtin" : ""); chip.title = "Click name to remove, arrows to reorder, ⅓ ½ 1 to set width";
       const left = document.createElement("button"); left.type = "button"; left.className = "fg-chip-arrow"; left.textContent = "◀"; left.title = "Move left"; left.disabled = chipIdx === 0;
       left.addEventListener("click", e => { e.stopPropagation(); reorderFieldInGroup(g.id, chipIdx, chipIdx - 1); });
-      const nameSpan = document.createElement("span"); nameSpan.className = "fg-chip-name"; nameSpan.textContent = f.name;
-      nameSpan.addEventListener("click", () => setFieldInGroup(g.id, f.name, false));
+      const nameSpan = document.createElement("span"); nameSpan.className = "fg-chip-name"; nameSpan.textContent = (kind === "builtin" ? "◆ " : "") + label;
+      nameSpan.addEventListener("click", () => setFieldInGroup(g.id, kind, entry.name, false));
       const right = document.createElement("button"); right.type = "button"; right.className = "fg-chip-arrow"; right.textContent = "▶"; right.title = "Move right"; right.disabled = chipIdx === g.fields.length - 1;
       right.addEventListener("click", e => { e.stopPropagation(); reorderFieldInGroup(g.id, chipIdx, chipIdx + 2); });
       const wrap = document.createElement("span"); wrap.className = "fg-width";
       [["third", "⅓"], ["half", "½"], ["full", "1"]].forEach(([w, lbl]) => {
         const b = document.createElement("button"); b.type = "button"; b.className = "fg-width-b" + (entry.width === w ? " on" : ""); b.textContent = lbl; b.title = w === "full" ? "Full width" : w === "half" ? "Half width" : "Third width";
-        b.addEventListener("click", e => { e.stopPropagation(); setFieldWidthInGroup(g.id, f.name, w); });
+        b.addEventListener("click", e => { e.stopPropagation(); setFieldWidthInGroup(g.id, kind, entry.name, w); });
         wrap.appendChild(b);
       });
       chip.appendChild(left); chip.appendChild(nameSpan); chip.appendChild(right); chip.appendChild(wrap);
       chips.appendChild(chip);
     });
+    card.appendChild(chips);
+    // Available-to-add chips: custom fields first, then built-in card-identity sections. Click to add.
+    const addLab = document.createElement("div"); addLab.className = "fg-picker-lab"; addLab.style.marginTop = "10px"; addLab.textContent = "Add — custom fields";
+    card.appendChild(addLab);
+    const addChips = document.createElement("div"); addChips.className = "fg-chips";
+    if (!fieldsList.length) { const e = document.createElement("span"); e.className = "fe-none"; e.textContent = "No custom fields exist yet."; addChips.appendChild(e); }
     fieldsList.forEach(f => {
-      if (g.fields.some(x => x.name === f.name)) return;
-      const taken = takenByOther(g.id, f.name);
+      if (g.fields.some(x => x.name === f.name && (x.kind || "custom") === "custom")) return;
+      const taken = takenByOther(g.id, "custom", f.name);
       const chip = document.createElement("button"); chip.type = "button"; chip.className = "fg-chip" + (taken ? " taken" : "");
       chip.textContent = f.name; chip.title = taken ? "Already in another group — click to move it here" : "Click to add to this group";
-      chip.onclick = () => setFieldInGroup(g.id, f.name, true);
-      chips.appendChild(chip);
+      chip.onclick = () => setFieldInGroup(g.id, "custom", f.name, true);
+      addChips.appendChild(chip);
     });
-    card.appendChild(chips);
+    card.appendChild(addChips);
+    const biLab = document.createElement("div"); biLab.className = "fg-picker-lab"; biLab.style.marginTop = "10px"; biLab.textContent = "Add — card identity sections";
+    card.appendChild(biLab);
+    const biChips = document.createElement("div"); biChips.className = "fg-chips";
+    BUILTIN_SECTIONS.forEach(b => {
+      if (g.fields.some(x => x.name === b.key && x.kind === "builtin")) return;
+      const taken = takenByOther(g.id, "builtin", b.key);
+      const chip = document.createElement("button"); chip.type = "button"; chip.className = "fg-chip builtin" + (taken ? " taken" : "");
+      chip.textContent = "◆ " + b.label; chip.title = taken ? "Already in another group — click to move it here" : "Click to add to this group";
+      chip.onclick = () => setFieldInGroup(g.id, "builtin", b.key, true);
+      biChips.appendChild(chip);
+    });
+    card.appendChild(biChips);
     box.appendChild(card);
   });
 }
